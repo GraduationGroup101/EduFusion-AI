@@ -26,6 +26,15 @@ export const AuthProvider = ({ children }) => {
     return data;
   };
 
+  const registerStudent = async (payload) => {
+    const { data } = await api.post('/auth/register-student', payload);
+    localStorage.setItem('token', data.token);
+    localStorage.setItem('user', JSON.stringify(data.user));
+    api.defaults.headers.common['Authorization'] = `Bearer ${data.token}`;
+    setUser(data.user);
+    return data;
+  };
+
   const logout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
@@ -34,7 +43,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading, isAuthenticated: !!user }}>
+    <AuthContext.Provider value={{ user, login, registerStudent, logout, loading, isAuthenticated: !!user }}>
       {children}
     </AuthContext.Provider>
   );

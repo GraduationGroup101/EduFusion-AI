@@ -125,6 +125,8 @@ export function AtRiskStudentsPage() {
 export function AcademicClockPage() {
   const [clocks, setClocks] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [globalDay, setGlobalDay] = useState(60);
 
   const loadClocks = async () => {
     setLoading(true);
@@ -138,23 +140,46 @@ export function AcademicClockPage() {
     }
   };
 
-  const tick = async (clock, days) => {
+  const recomputePredictions = async () => {
+    const { data } = await adminService.runDemoPredictions(150);
+    return data;
+  };
+
+  const tickAll = async (days) => {
+    setRunning(true);
     try {
-      await adminService.tickClock({ ...clock, days });
-      toast.success(`Advanced ${clock.code_module}/${clock.code_presentation} by ${days} day(s)`);
+      const { data } = await adminService.tickAllClocks(days);
+      toast.success(`Updated ${data.updatedClocks} clocks and recomputed ${data.predictions?.total_students || 0} predictions`);
       await loadClocks();
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Failed to update clock');
+      toast.error(err.response?.data?.error || 'Failed to update clocks and predictions');
+    } finally {
+      setRunning(false);
     }
   };
 
-  const reset = async (clock, day) => {
+  const resetAll = async (day) => {
+    setRunning(true);
     try {
-      await adminService.resetClock({ ...clock, day });
-      toast.success(`Reset ${clock.code_module}/${clock.code_presentation} to day ${day}`);
+      const { data } = await adminService.resetAllClocks(day);
+      toast.success(`Reset ${data.updatedClocks} clocks to day ${day} and recomputed ${data.predictions?.total_students || 0} predictions`);
       await loadClocks();
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Failed to reset clock');
+      toast.error(err.response?.data?.error || 'Failed to reset clocks and predictions');
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const runPredictions = async () => {
+    setRunning(true);
+    try {
+      const data = await recomputePredictions();
+      toast.success(`Recomputed ${data.total_students} predictions`);
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to run predictions');
+    } finally {
+      setRunning(false);
     }
   };
 
@@ -167,49 +192,88 @@ export function AcademicClockPage() {
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center justify-between">
         <div>
           <h1 className="font-display text-2xl font-bold text-gradient">Academic Clock</h1>
-          <p className="text-light-accent/55 text-sm mt-1">Control the simulated course day used by real-time predictions.</p>
+          <p className="text-light-accent/55 text-sm mt-1">Control one simulated day shared by all students and course presentations.</p>
         </div>
-        <button onClick={loadClocks} className="px-3 py-2 rounded-lg border border-border text-sm text-light-accent hover:bg-secondary/10">
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={runPredictions} disabled={running} className="px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium disabled:opacity-60">
+            {running ? 'Updating...' : 'Update Predictions'}
+          </button>
+          <button onClick={loadClocks} className="px-3 py-2 rounded-lg border border-border text-sm text-light-accent hover:bg-secondary/10">
+            Refresh
+          </button>
+        </div>
       </motion.div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+      <div className="rounded-2xl border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-800">
+        Changing the academic clock also recomputes demo predictions, so risk levels and student counts refresh for the new day.
+      </div>
+
+      <div className="glass rounded-2xl p-6 glow-border space-y-5">
+        <div className="flex items-center gap-3">
+          <Clock className="w-5 h-5 text-accent" />
+          <div>
+            <h2 className="font-display font-semibold text-light-accent">Unified Clock Control</h2>
+            <p className="text-xs text-light-accent/45">Changes apply to every student because predictions read the course clock before running the model.</p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <button disabled={running} onClick={() => tickAll(1)} className="px-4 py-2 rounded-lg bg-secondary text-white text-sm font-medium disabled:opacity-60">+1 day for all</button>
+          <button disabled={running} onClick={() => tickAll(10)} className="px-4 py-2 rounded-lg bg-secondary text-white text-sm font-medium disabled:opacity-60">+10 days for all</button>
+          <input
+            type="number"
+            min="0"
+            value={globalDay}
+            onChange={(e) => setGlobalDay(e.target.value)}
+            className="w-28 bg-surface border border-border rounded-lg px-3 py-2 text-sm text-light-accent focus:outline-none focus:border-accent"
+          />
+          <button disabled={running} onClick={() => resetAll(Number(globalDay))} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium disabled:opacity-60">
+            <RotateCcw className="w-4 h-4" />
+            Set all clocks
+          </button>
+          <button onClick={runPredictions} disabled={running} className="px-4 py-2 rounded-lg border border-border text-light-accent text-sm font-medium hover:bg-secondary/10 disabled:opacity-60">
+            {running ? 'Recomputing...' : 'Recompute after change'}
+          </button>
+        </div>
+      </div>
+
+      <div className="glass rounded-2xl p-5 glow-border">
+        <h2 className="font-display font-semibold text-light-accent mb-4">Clock Snapshot</h2>
         {loading ? (
-          <div className="glass rounded-2xl p-6 text-light-accent/40">Loading...</div>
-        ) : clocks.map((clock) => {
-          const pct = Math.round((clock.current_day / clock.max_day) * 100);
-          return (
-            <motion.div key={clock.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-2xl p-5 glow-border">
-              <div className="flex items-start justify-between mb-4">
-                <div>
-                  <h2 className="font-display font-semibold text-light-accent">{clock.code_module} / {clock.code_presentation}</h2>
-                  <p className="text-xs text-light-accent/45 font-mono">Max day {clock.max_day}</p>
-                </div>
-                <Clock className="w-5 h-5 text-accent" />
-              </div>
-
-              <div className="mb-4">
-                <div className="flex items-end justify-between mb-2">
-                  <span className="text-3xl font-display font-bold text-light-accent">{clock.current_day}</span>
-                  <span className="text-xs text-light-accent/45 font-mono">{pct}%</span>
-                </div>
-                <div className="h-2 rounded-full bg-surface-2 overflow-hidden">
-                  <div className="h-full bg-secondary" style={{ width: `${pct}%` }} />
-                </div>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <button onClick={() => tick(clock, 1)} className="px-3 py-2 rounded-lg bg-secondary text-white text-xs font-medium">+1 day</button>
-                <button onClick={() => tick(clock, 10)} className="px-3 py-2 rounded-lg bg-secondary text-white text-xs font-medium">+10 days</button>
-                <button onClick={() => reset(clock, 60)} className="flex items-center gap-1 px-3 py-2 rounded-lg border border-border text-xs text-light-accent hover:bg-accent/10">
-                  <RotateCcw className="w-3 h-3" />
-                  Day 60
-                </button>
-              </div>
-            </motion.div>
-          );
-        })}
+          <div className="h-24 flex items-center justify-center text-light-accent/40">Loading...</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left border-b border-border">
+                  {['Course', 'Current Day', 'Max Day', 'Progress'].map((h) => (
+                    <th key={h} className="pb-3 pr-4 text-xs font-mono text-light-accent/50 uppercase">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/60">
+                {clocks.map((clock) => {
+                  const pct = Math.round((clock.current_day / clock.max_day) * 100);
+                  return (
+                    <tr key={clock.id}>
+                      <td className="py-3 pr-4 text-light-accent font-medium">{clock.code_module} / {clock.code_presentation}</td>
+                      <td className="py-3 pr-4 text-light-accent/75 font-mono">{clock.current_day}</td>
+                      <td className="py-3 pr-4 text-light-accent/55 font-mono">{clock.max_day}</td>
+                      <td className="py-3 pr-4">
+                        <div className="flex items-center gap-2">
+                          <div className="h-2 w-32 rounded-full bg-surface-2 overflow-hidden">
+                            <div className="h-full bg-secondary" style={{ width: `${pct}%` }} />
+                          </div>
+                          <span className="text-xs text-light-accent/50 font-mono">{pct}%</span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

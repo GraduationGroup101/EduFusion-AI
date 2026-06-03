@@ -1,6 +1,6 @@
 const express = require('express');
 const { authenticate } = require('../middleware/auth');
-const { upsertChatSession } = require('../db/queries');
+const { getLatestPredictionRiskCounts, upsertChatSession } = require('../db/queries');
 
 const router = express.Router();
 
@@ -9,8 +9,7 @@ const EDUPREDICT_BASE = process.env.EDUPREDICT_API_URL || 'https://edupredict-ap
 
 const proxyFetch = async (url, options = {}) => {
   const fetch = global.fetch || (await import('node-fetch')).default;
-  const response = await fetch(url, options);
-  return response;
+  return fetch(url, options);
 };
 
 const personalQuestionTerms = [
@@ -32,15 +31,30 @@ const personalQuestionTerms = [
   'grades',
 ];
 
+const adminStatsTerms = [
+  'كم عدد',
+  'عدد الطلاب',
+  'كم طالب',
+  'في خطر',
+  'مش في خطر',
+  'ليسوا في خطر',
+  'not at risk',
+  'how many',
+  'count',
+];
+
 const asksAboutAnotherStudent = (question, currentStudentId) => {
   const matches = String(question).match(/\d{4,}/g) || [];
   return matches.some((value) => value !== String(currentStudentId));
 };
 
-const isPersonalAcademicQuestion = (question) => {
+const includesAny = (question, terms) => {
   const text = String(question || '').toLowerCase();
-  return personalQuestionTerms.some((term) => text.includes(term.toLowerCase()));
+  return terms.some((term) => text.includes(term.toLowerCase()));
 };
+
+const isPersonalAcademicQuestion = (question) => includesAny(question, personalQuestionTerms);
+const isAdminStatsQuestion = (question) => includesAny(question, adminStatsTerms);
 
 const riskLevelArabic = (level) => {
   const levels = {
@@ -84,16 +98,40 @@ const formatPredictionAnswer = (prediction) => {
   ].filter(Boolean).join('\n\n');
 };
 
+const formatAdminCountsAnswer = (counts) => (
+  [
+    'حسب آخر تنبؤ محفوظ في النظام:',
+    `عدد الطلاب في خطر: ${counts.at_risk_count}`,
+    `عدد الطلاب غير المعرضين للخطر: ${counts.not_at_risk_count}`,
+    `High Risk: ${counts.high_risk_count}`,
+    `Medium Risk: ${counts.medium_risk_count}`,
+    `Low Risk: ${counts.low_risk_count}`,
+    `إجمالي الطلاب الذين لديهم تنبؤ محفوظ: ${counts.total_predictions}`,
+  ].join('\n')
+);
+
 router.post('/chat', authenticate, async (req, res) => {
   try {
     const { question, session_id } = req.body;
-    const sessionId = session_id || `student-${req.user.id_student || req.user.id || 'default'}`;
+    const hasStudentId = req.user.id_student !== undefined && req.user.id_student !== null;
+    const sessionId = session_id || `student-${hasStudentId ? req.user.id_student : req.user.id || 'default'}`;
 
-    if (req.user.id_student) {
+    if ((req.user.role === 'admin' || req.user.role === 'advisor') && isAdminStatsQuestion(question)) {
+      const counts = await getLatestPredictionRiskCounts();
+      return res.json({
+        answer: formatAdminCountsAnswer(counts),
+        session_id: sessionId,
+        top_chunks: [],
+        source: 'edupredict-admin',
+        counts,
+      });
+    }
+
+    if (hasStudentId) {
       await upsertChatSession(sessionId, req.user.id_student);
     }
 
-    if (req.user.id_student && asksAboutAnotherStudent(question, req.user.id_student)) {
+    if (hasStudentId && asksAboutAnotherStudent(question, req.user.id_student)) {
       return res.json({
         answer: 'لا أستطيع عرض بيانات طالب آخر. أقدر أساعدك فقط ببيانات حسابك الحالي.',
         session_id: sessionId,
@@ -102,10 +140,8 @@ router.post('/chat', authenticate, async (req, res) => {
       });
     }
 
-    if (req.user.id_student && isPersonalAcademicQuestion(question)) {
-      const response = await proxyFetch(
-        `${EDUPREDICT_BASE}/students/${req.user.id_student}/prediction`
-      );
+    if (hasStudentId && isPersonalAcademicQuestion(question)) {
+      const response = await proxyFetch(`${EDUPREDICT_BASE}/students/${req.user.id_student}/prediction`);
       const data = await response.json();
 
       if (!response.ok) {

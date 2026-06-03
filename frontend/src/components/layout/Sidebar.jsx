@@ -11,7 +11,10 @@ import toast from 'react-hot-toast';
 
 const studentNavItems = [
   { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', exact: true },
+  { path: '/dashboard/my-prediction', icon: Sparkles, label: 'Prediction Tool' },
   { path: '/dashboard/chatbot', icon: MessageSquare, label: 'AI Chatbot' },
+  { path: '/dashboard/question-gen', icon: FileQuestion, label: 'Question Generator' },
+  { path: '/dashboard/youtube', icon: Youtube, label: 'YouTube Extractor' },
 ];
 
 const adminNavItems = [
@@ -19,9 +22,7 @@ const adminNavItems = [
   { path: '/dashboard/admin/at-risk', icon: AlertTriangle, label: 'At-Risk Students' },
   { path: '/dashboard/admin/clock', icon: Clock, label: 'Academic Clock' },
   { path: '/dashboard/chatbot', icon: MessageSquare, label: 'AI Chatbot' },
-  { path: '/dashboard/ai-tool', icon: Sparkles, label: 'AI Tool' },
-  { path: '/dashboard/question-gen', icon: FileQuestion, label: 'Question Generator' },
-  { path: '/dashboard/youtube', icon: Youtube, label: 'YouTube Extractor' },
+  { path: '/dashboard/ai-tool', icon: Sparkles, label: 'Prediction Tool' },
 ];
 
 export default function Sidebar() {

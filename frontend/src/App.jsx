@@ -8,6 +8,7 @@ import DashboardHome from './pages/DashboardHome';
 import ChatbotPage from './pages/ChatbotPage';
 import { AcademicClockPage, AtRiskStudentsPage } from './pages/AdminPages';
 import { AIToolPage, QuestionGeneratorPage, YouTubeExtractorPage } from './pages/Placeholders';
+import StudentPredictionPage from './pages/StudentPredictionPage';
 
 export default function App() {
   return (
@@ -22,6 +23,7 @@ export default function App() {
           }>
             <Route index element={<DashboardHome />} />
             <Route path="chatbot" element={<ChatbotPage />} />
+            <Route path="my-prediction" element={<StudentPredictionPage />} />
             <Route path="admin/at-risk" element={<AtRiskStudentsPage />} />
             <Route path="admin/clock" element={<AcademicClockPage />} />
             <Route path="ai-tool" element={<AIToolPage />} />

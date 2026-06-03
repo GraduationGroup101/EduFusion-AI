@@ -25,7 +25,7 @@ router.get('/stats', authenticate, async (req, res) => {
 
 router.get('/student-summary', authenticate, async (req, res) => {
   try {
-    if (req.user.role !== 'student' || !req.user.id_student) {
+    if (req.user.role !== 'student' || req.user.id_student === undefined || req.user.id_student === null) {
       return res.status(403).json({ error: 'Student account required' });
     }
 

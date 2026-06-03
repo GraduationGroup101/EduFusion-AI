@@ -2,7 +2,7 @@ import axios from 'axios';
 
 const api = axios.create({
   baseURL: '/api',
-  timeout: 30000,
+  timeout: 90000,
 });
 
 api.interceptors.response.use(
@@ -33,12 +33,22 @@ export const chatbotService = {
 
 export const adminService = {
   getAtRiskStudents: (params = {}) => api.get('/admin/students/at-risk', { params }),
+  getStudentPrediction: (idStudent, params = {}) => api.get(`/admin/students/${idStudent}/prediction`, { params }),
+  getRiskCounts: () => api.get('/admin/predictions/risk-counts'),
   runDemoPredictions: (limit = 150) => api.post(`/admin/predictions/run-demo?limit=${limit}`),
   getClocks: () => api.get('/admin/clock'),
+  tickAllClocks: (days = 1) => api.post('/admin/clock/tick-all', { days }),
+  resetAllClocks: (day = 60) => api.post('/admin/clock/reset-all', { day }),
   tickClock: ({ code_module, code_presentation, days = 1 }) =>
     api.post('/admin/clock/tick', { code_module, code_presentation, days }),
   resetClock: ({ code_module, code_presentation, day = 60 }) =>
     api.post('/admin/clock/reset', { code_module, code_presentation, day }),
+};
+
+export const studentService = {
+  getPredictionData: () => api.get('/student/prediction-data'),
+  updatePredictionData: (enrollmentId, data) => api.put(`/student/prediction-data/${enrollmentId}`, data),
+  getPrediction: (params = {}) => api.get('/student/prediction', { params }),
 };
 
 export default api;
