@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary: #F5F5F5;
+  --secondary: #76ABAE;
+  --accent: #FF5722;
+  --light-accent: #222831;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background-color: #F5F5F5;
+  color: #222831;
+  font-family: 'DM Sans', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #F5F5F5; }
+::-webkit-scrollbar-thumb { background: #76ABAE; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #FF5722; }
+
+.glass {
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(118, 171, 174, 0.28);
+}
+
+.glow-border {
+  box-shadow: 0 12px 32px rgba(34, 40, 49, 0.08), inset 0 0 0 1px rgba(255, 255, 255, 0.72);
+}
+
+.text-gradient {
+  background: linear-gradient(135deg, #222831 0%, #76ABAE 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.chat-bubble-user {
+  background: #76ABAE;
+}
+
+.chat-bubble-bot {
+  background: #FFFFFF;
+  border: 1px solid rgba(118, 171, 174, 0.28);
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.cursor-blink { animation: blink 1s infinite; }
+
+.sidebar-item-active {
+  background: rgba(118, 171, 174, 0.18);
+  border-left: 2px solid #FF5722;
+}
+
+.grid-pattern {
+  background-image: 
+    linear-gradient(rgba(118,171,174,0.18) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(118,171,174,0.18) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
