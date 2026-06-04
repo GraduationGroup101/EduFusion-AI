@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { chatbotService } from '../services/api';
-import { Send, Trash2, Bot, User, MessageSquare, Sparkles } from 'lucide-react';
+import { Send, Trash2, Bot, User, MessageSquare } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -44,13 +44,6 @@ const MessageBubble = ({ msg }) => {
     </motion.div>
   );
 };
-
-const suggestedQuestions = [
-  'What programs does IUG offer?',
-  'How do I enroll at IUG?',
-  'What grants are available?',
-  'Tell me about the university facilities',
-];
 
 export default function ChatbotPage() {
   const [messages, setMessages] = useState([]);
@@ -117,7 +110,7 @@ export default function ChatbotPage() {
           </div>
           <div>
             <h1 className="font-display font-semibold text-light-accent">IUG AI Chatbot</h1>
-            <p className="text-xs text-accent/60 font-mono">Powered by Semantic Search + LLM</p>
+            <p className="text-xs text-accent/60 font-mono">Academic assistant</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -140,28 +133,15 @@ export default function ChatbotPage() {
         <AnimatePresence>
           {messages.length === 0 && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="flex flex-col items-center justify-center h-full gap-8 pt-12">
+              className="flex flex-col items-center justify-center h-full pt-12">
               <div className="text-center">
                 <div className="w-16 h-16 rounded-2xl mx-auto mb-4 flex items-center justify-center"
                      style={{ background: '#76ABAE' }}>
-                  <Sparkles className="w-8 h-8 text-white" />
+                  <Bot className="w-8 h-8 text-white" />
                 </div>
                 <h2 className="font-display text-xl font-semibold text-light-accent mb-2">
-                  IUG University Assistant
+                  How can I help?
                 </h2>
-                <p className="text-light-accent/40 text-sm max-w-sm">
-                  Ask anything about Islamic University of Gaza — programs, enrollment, grants, and more.
-                </p>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-lg">
-                {suggestedQuestions.map((q, i) => (
-                  <motion.button key={i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.1 }}
-                    onClick={() => sendMessage(q)}
-                    className="text-left p-3 rounded-xl glass glow-border hover:border-accent/40 transition-all text-sm text-light-accent/70 hover:text-light-accent">
-                    {q}
-                  </motion.button>
-                ))}
               </div>
             </motion.div>
           )}
@@ -180,16 +160,15 @@ export default function ChatbotPage() {
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Ask about IUG programs, enrollment, grants..."
+              placeholder="Type your question..."
               rows={1}
               style={{ resize: 'none', maxHeight: 120 }}
-              className="w-full bg-surface/50 border border-border rounded-xl px-4 py-3 pr-12 text-light-accent placeholder-light-accent/25 focus:outline-none focus:border-accent transition-colors text-sm leading-relaxed"
+              className="w-full bg-surface/50 border border-border rounded-xl px-4 py-3 text-light-accent placeholder-light-accent/25 focus:outline-none focus:border-accent transition-colors text-sm leading-relaxed"
               onInput={e => {
                 e.target.style.height = 'auto';
                 e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
               }}
             />
-            <span className="absolute right-3 bottom-3 text-xs text-light-accent/20 font-mono">↵</span>
           </div>
           <motion.button
             whileTap={{ scale: 0.95 }}
@@ -205,9 +184,6 @@ export default function ChatbotPage() {
             <Send className={`w-4 h-4 ${input.trim() && !loading ? 'text-white' : 'text-accent/40'}`} />
           </motion.button>
         </div>
-        <p className="text-center text-xs text-light-accent/20 mt-2 font-mono">
-          Session: {sessionId.slice(0, 8)}...
-        </p>
       </div>
     </div>
   );
