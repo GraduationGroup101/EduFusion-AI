@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { chatbotService } from '../services/api';
-import { Send, Trash2, Bot, User, MessageSquare } from 'lucide-react';
+import { Send, Trash2, Bot, User, MessageSquare, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -14,8 +14,16 @@ const TypingDots = () => (
   </div>
 );
 
+const WakingUp = () => (
+  <div className="flex items-center gap-2 text-xs text-accent/60 font-mono">
+    <RefreshCw className="w-3 h-3 animate-spin" />
+    <span>جاري تشغيل الخدمة، قد يستغرق حتى 30 ثانية…</span>
+  </div>
+);
+
 const MessageBubble = ({ msg }) => {
   const isUser = msg.role === 'user';
+  const isWaking = msg.content === '__waking__';
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -32,7 +40,8 @@ const MessageBubble = ({ msg }) => {
       <div className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed
         ${isUser ? 'chat-bubble-user text-white rounded-tr-sm' : 'chat-bubble-bot text-light-accent rounded-tl-sm'}`}
       >
-        {msg.content === '__typing__' ? <TypingDots /> : (
+        {msg.content === '__typing__' ? <TypingDots /> :
+         isWaking ? <WakingUp /> : (
           <p className="whitespace-pre-wrap">{msg.content}</p>
         )}
         {msg.sources && msg.sources.length > 0 && (
@@ -64,18 +73,35 @@ export default function ChatbotPage() {
     setInput('');
     setMessages(prev => [...prev, { role: 'user', content: q, id: Date.now() }]);
     setLoading(true);
+
+    // Show typing dots first
     setMessages(prev => [...prev, { role: 'assistant', content: '__typing__', id: 'typing' }]);
+
+    // After 4s with no response, switch to "waking up" message
+    const wakingTimer = setTimeout(() => {
+      setMessages(prev =>
+        prev.map(m => m.id === 'typing' ? { ...m, content: '__waking__' } : m)
+      );
+    }, 4000);
 
     try {
       const { data } = await chatbotService.sendMessage(q, sessionId);
+      clearTimeout(wakingTimer);
       setMessages(prev => [
         ...prev.filter(m => m.id !== 'typing'),
         { role: 'assistant', content: data.answer, sources: data.top_chunks, id: Date.now() + 1 }
       ]);
     } catch (err) {
+      clearTimeout(wakingTimer);
       setMessages(prev => prev.filter(m => m.id !== 'typing'));
-      toast.error('Failed to get response');
-      console.error(err);
+
+      const serverMsg = err.response?.data?.error;
+      const displayMsg = serverMsg || 'الخدمة غير متاحة حالياً، حاول مجدداً بعد لحظة.';
+
+      setMessages(prev => [
+        ...prev,
+        { role: 'assistant', content: displayMsg, id: Date.now() + 1 }
+      ]);
     } finally {
       setLoading(false);
       inputRef.current?.focus();
