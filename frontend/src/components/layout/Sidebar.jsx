@@ -5,7 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import {
   Brain, MessageSquare, FileQuestion, Youtube,
   LayoutDashboard, LogOut, ChevronLeft, ChevronRight,
-  Sparkles, User, AlertTriangle, Clock
+  Sparkles, User, AlertTriangle, Clock, Database
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -21,6 +21,7 @@ const adminNavItems = [
   { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', exact: true },
   { path: '/dashboard/admin/at-risk', icon: AlertTriangle, label: 'At-Risk Students' },
   { path: '/dashboard/admin/clock', icon: Clock, label: 'Academic Clock' },
+  { path: '/dashboard/admin/chatbot-files', icon: Database, label: 'Chatbot Files' },
   { path: '/dashboard/chatbot', icon: MessageSquare, label: 'AI Chatbot' },
   { path: '/dashboard/ai-tool', icon: Sparkles, label: 'Prediction Tool' },
 ];

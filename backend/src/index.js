@@ -5,8 +5,10 @@ const cors = require('cors');
 const authRoutes = require('./routes/auth');
 const dashboardRoutes = require('./routes/dashboard');
 const chatbotRoutes = require('./routes/chatbot');
+const chatbotFilesRoutes = require('./routes/chatbotFiles');
 const adminRoutes = require('./routes/admin');
 const studentRoutes = require('./routes/student');
+const questionGeneratorRoutes = require('./routes/questionGenerator');
 
 const app = express();
 
@@ -20,6 +22,8 @@ app.use(express.json());
 app.use('/api/auth', authRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/chatbot', chatbotRoutes);
+app.use('/api/chatbot-files', chatbotFilesRoutes);
+app.use('/api/question-generator', questionGeneratorRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/student', studentRoutes);
 

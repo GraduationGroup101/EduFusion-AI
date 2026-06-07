@@ -4,6 +4,61 @@ const { authenticate } = require('../middleware/auth');
 const router = express.Router();
 
 const CHATBOT_BASE = process.env.CHATBOT_API_URL || 'https://iug-chatbot.onrender.com';
+const CHATBOT_DEFAULT_STUDENT_ID = String(process.env.CHATBOT_DEFAULT_STUDENT_ID || '1');
+const CHAT_HISTORY_TTL_MS = Number(process.env.CHAT_HISTORY_TTL_MS || 24 * 60 * 60 * 1000);
+const CHAT_HISTORY_MAX_MESSAGES = Number(process.env.CHAT_HISTORY_MAX_MESSAGES || 100);
+const chatHistoryCache = new Map();
+
+const normalizeSessionId = (sessionId) => {
+  const value = String(sessionId || 'default').trim();
+  return value || 'default';
+};
+
+const getUserCacheKey = (user) => {
+  if (user?.id_student) return `student:${user.id_student}`;
+  if (user?.id) return `user:${user.id}`;
+  if (user?.email) return `email:${user.email}`;
+  return 'anonymous';
+};
+
+const getCacheKey = (user, sessionId) => `${getUserCacheKey(user)}:${normalizeSessionId(sessionId)}`;
+
+const getCachedMessages = (user, sessionId) => {
+  const cacheKey = getCacheKey(user, sessionId);
+  const cached = chatHistoryCache.get(cacheKey);
+
+  if (!cached) return [];
+  if (cached.expiresAt <= Date.now()) {
+    chatHistoryCache.delete(cacheKey);
+    return [];
+  }
+
+  return cached.messages;
+};
+
+const setCachedMessages = (user, sessionId, messages) => {
+  const cacheKey = getCacheKey(user, sessionId);
+  chatHistoryCache.set(cacheKey, {
+    messages: messages.slice(-CHAT_HISTORY_MAX_MESSAGES),
+    expiresAt: Date.now() + CHAT_HISTORY_TTL_MS,
+  });
+};
+
+const appendChatExchange = (user, sessionId, question, data) => {
+  const messages = getCachedMessages(user, sessionId);
+  const now = new Date().toISOString();
+
+  setCachedMessages(user, sessionId, [
+    ...messages,
+    { role: 'user', content: question, created_at: now },
+    {
+      role: 'assistant',
+      content: data.answer || data.response || '',
+      sources: data.top_chunks || data.sources || [],
+      created_at: now,
+    },
+  ]);
+};
 
 const proxyFetch = async (url, options = {}) => {
   const fetch = global.fetch || (await import('node-fetch')).default;
@@ -59,11 +114,13 @@ const fetchWithRetry = async (url, options = {}, { retries = 3, timeoutMs = 9000
 router.post('/chat', authenticate, async (req, res) => {
   try {
     const { question, session_id } = req.body;
+    const sessionId = normalizeSessionId(session_id);
     const externalSessionId = req.user?.id_student
       ? String(req.user.id_student)
-      : String(session_id || 'default');
+      : CHATBOT_DEFAULT_STUDENT_ID;
+    const trimmedQuestion = String(question || '').trim();
 
-    if (!question || !String(question).trim()) {
+    if (!trimmedQuestion) {
       return res.status(400).json({ error: 'Question is required' });
     }
 
@@ -73,7 +130,7 @@ router.post('/chat', authenticate, async (req, res) => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          question: String(question).trim(),
+          question: trimmedQuestion,
           session_id: externalSessionId,
         }),
       },
@@ -81,7 +138,14 @@ router.post('/chat', authenticate, async (req, res) => {
     );
 
     const data = await safeJson(response);
-    return res.status(response.ok ? 200 : response.status).json(data);
+    if (response.ok) {
+      appendChatExchange(req.user, sessionId, trimmedQuestion, data);
+    }
+
+    return res.status(response.ok ? 200 : response.status).json({
+      ...data,
+      session_id: sessionId,
+    });
   } catch (err) {
     console.error('[chatbot] chat error:', err.message);
     const isAbort = err.name === 'AbortError';
@@ -96,32 +160,26 @@ router.post('/chat', authenticate, async (req, res) => {
 // GET /api/chatbot/history/:session_id
 router.get('/history/:session_id', authenticate, async (req, res) => {
   try {
-    const response = await fetchWithRetry(
-      `${CHATBOT_BASE}/history/${req.params.session_id}`,
-      {},
-      { retries: 2, timeoutMs: 15000 }
-    );
-    const data = await safeJson(response);
-    res.status(response.status).json(data);
+    const sessionId = normalizeSessionId(req.params.session_id);
+    res.json({
+      session_id: sessionId,
+      messages: getCachedMessages(req.user, sessionId),
+    });
   } catch (err) {
     console.error('[chatbot] history error:', err.message);
-    res.status(503).json({ error: 'Chatbot service unavailable' });
+    res.status(500).json({ error: 'Unable to read cached chat history' });
   }
 });
 
 // DELETE /api/chatbot/history/:session_id
 router.delete('/history/:session_id', authenticate, async (req, res) => {
   try {
-    const response = await fetchWithRetry(
-      `${CHATBOT_BASE}/history/${req.params.session_id}`,
-      { method: 'DELETE' },
-      { retries: 2, timeoutMs: 15000 }
-    );
-    const data = await safeJson(response);
-    res.status(response.status).json(data);
+    const sessionId = normalizeSessionId(req.params.session_id);
+    chatHistoryCache.delete(getCacheKey(req.user, sessionId));
+    res.json({ success: true, session_id: sessionId });
   } catch (err) {
     console.error('[chatbot] history delete error:', err.message);
-    res.status(503).json({ error: 'Chatbot service unavailable' });
+    res.status(500).json({ error: 'Unable to clear cached chat history' });
   }
 });
 

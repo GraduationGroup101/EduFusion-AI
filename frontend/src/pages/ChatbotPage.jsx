@@ -5,6 +5,46 @@ import { Send, Trash2, Bot, User, MessageSquare, RefreshCw } from 'lucide-react'
 import toast from 'react-hot-toast';
 import { v4 as uuidv4 } from 'uuid';
 
+const CHAT_SESSION_STORAGE_PREFIX = 'edufusion_chatbot_session_id';
+
+const getChatSessionStorageKey = () => {
+  try {
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const userId = user.id_student || user.id || user.email || 'guest';
+    return `${CHAT_SESSION_STORAGE_PREFIX}:${userId}`;
+  } catch {
+    return CHAT_SESSION_STORAGE_PREFIX;
+  }
+};
+
+const getOrCreateSessionId = () => {
+  const storageKey = getChatSessionStorageKey();
+  const existingSessionId = localStorage.getItem(storageKey);
+
+  if (existingSessionId) return existingSessionId;
+
+  const nextSessionId = uuidv4();
+  localStorage.setItem(storageKey, nextSessionId);
+  return nextSessionId;
+};
+
+const normalizeCachedMessages = (data, sessionId) => {
+  const cachedMessages = Array.isArray(data?.messages)
+    ? data.messages
+    : Array.isArray(data?.history)
+      ? data.history
+      : [];
+
+  return cachedMessages
+    .map((msg, index) => ({
+      role: msg.role || (msg.type === 'human' || msg.sender === 'user' ? 'user' : 'assistant'),
+      content: msg.content || msg.message || msg.answer || '',
+      sources: msg.sources || msg.top_chunks || [],
+      id: msg.id || `${sessionId}-${index}-${msg.role || msg.sender || 'message'}`,
+    }))
+    .filter(msg => msg.content);
+};
+
 const TypingDots = () => (
   <div className="flex gap-1 items-center h-5">
     {[0, 1, 2].map(i => (
@@ -58,9 +98,37 @@ export default function ChatbotPage() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [sessionId] = useState(() => uuidv4());
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [sessionId] = useState(getOrCreateSessionId);
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadCachedHistory = async () => {
+      try {
+        const { data } = await chatbotService.getHistory(sessionId);
+        if (!cancelled) {
+          setMessages(normalizeCachedMessages(data, sessionId));
+        }
+      } catch {
+        if (!cancelled) {
+          setMessages([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setHistoryLoading(false);
+        }
+      }
+    };
+
+    loadCachedHistory();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -157,7 +225,7 @@ export default function ChatbotPage() {
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
         <AnimatePresence>
-          {messages.length === 0 && (
+          {!historyLoading && messages.length === 0 && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               className="flex flex-col items-center justify-center h-full pt-12">
               <div className="text-center">

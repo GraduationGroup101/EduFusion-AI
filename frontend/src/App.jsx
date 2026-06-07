@@ -6,7 +6,7 @@ import DashboardLayout from './components/layout/DashboardLayout';
 import Login from './pages/Login';
 import DashboardHome from './pages/DashboardHome';
 import ChatbotPage from './pages/ChatbotPage';
-import { AcademicClockPage, AtRiskStudentsPage } from './pages/AdminPages';
+import { AcademicClockPage, AtRiskStudentsPage, ChatbotFilesPage } from './pages/AdminPages';
 import { AIToolPage, QuestionGeneratorPage, YouTubeExtractorPage } from './pages/Placeholders';
 import StudentPredictionPage from './pages/StudentPredictionPage';
 
@@ -26,6 +26,7 @@ export default function App() {
             <Route path="my-prediction" element={<StudentPredictionPage />} />
             <Route path="admin/at-risk" element={<AtRiskStudentsPage />} />
             <Route path="admin/clock" element={<AcademicClockPage />} />
+            <Route path="admin/chatbot-files" element={<ChatbotFilesPage />} />
             <Route path="ai-tool" element={<AIToolPage />} />
             <Route path="question-gen" element={<QuestionGeneratorPage />} />
             <Route path="youtube" element={<YouTubeExtractorPage />} />
