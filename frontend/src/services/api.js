@@ -60,6 +60,25 @@ export const questionGeneratorService = {
   },
 };
 
+export const lectureScribeService = {
+  health: () => api.get('/lecture-scribe/health'),
+  createJob: ({ youtube_url, clean }) =>
+    api.post('/lecture-scribe/jobs', {
+      youtube_url,
+      clean,
+      skip_audio_cache: false,
+      use_cached_outputs: true,
+      language: 'ar',
+    }),
+  listJobs: () => api.get('/lecture-scribe/jobs'),
+  getJob: (jobId) => api.get(`/lecture-scribe/jobs/${encodeURIComponent(jobId)}`),
+  getTranscript: (jobId, kind = 'cleaned') =>
+    api.get(`/lecture-scribe/jobs/${encodeURIComponent(jobId)}/transcript`, {
+      params: { kind },
+      responseType: 'text',
+    }),
+};
+
 export const adminService = {
   getAtRiskStudents: (params = {}) => api.get('/admin/students/at-risk', { params }),
   getStudentPrediction: (idStudent, params = {}) => api.get(`/admin/students/${idStudent}/prediction`, { params }),

@@ -5,7 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import {
   Brain, MessageSquare, FileQuestion, Youtube,
   LayoutDashboard, LogOut, ChevronLeft, ChevronRight,
-  Sparkles, User, AlertTriangle, Clock, Database
+  Sparkles, User, AlertTriangle, Clock, Database, X
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -14,7 +14,7 @@ const studentNavItems = [
   { path: '/dashboard/my-prediction', icon: Sparkles, label: 'Prediction Tool' },
   { path: '/dashboard/chatbot', icon: MessageSquare, label: 'AI Chatbot' },
   { path: '/dashboard/question-gen', icon: FileQuestion, label: 'Question Generator' },
-  { path: '/dashboard/youtube', icon: Youtube, label: 'YouTube Extractor' },
+  { path: '/dashboard/youtube', icon: Youtube, label: 'LectureScribe' },
 ];
 
 const adminNavItems = [
@@ -24,9 +24,10 @@ const adminNavItems = [
   { path: '/dashboard/admin/chatbot-files', icon: Database, label: 'Chatbot Files' },
   { path: '/dashboard/chatbot', icon: MessageSquare, label: 'AI Chatbot' },
   { path: '/dashboard/ai-tool', icon: Sparkles, label: 'Prediction Tool' },
+  { path: '/dashboard/youtube', icon: Youtube, label: 'LectureScribe' },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ mobileOpen = false, onMobileClose = () => {} }) {
   const [collapsed, setCollapsed] = useState(false);
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -35,6 +36,7 @@ export default function Sidebar() {
   const handleLogout = () => {
     logout();
     toast.success('Signed out successfully');
+    onMobileClose();
     navigate('/login');
   };
 
@@ -42,7 +44,9 @@ export default function Sidebar() {
     <motion.aside
       animate={{ width: collapsed ? 72 : 240 }}
       transition={{ duration: 0.3, ease: 'easeInOut' }}
-      className="flex flex-col h-screen sticky top-0 flex-shrink-0"
+      className={`fixed inset-y-0 left-0 z-50 flex h-screen flex-col flex-shrink-0 transition-transform duration-200 md:sticky md:top-0 md:z-auto md:translate-x-0 ${
+        mobileOpen ? 'translate-x-0' : '-translate-x-full'
+      }`}
       style={{ background: '#FFFFFF', borderRight: '1px solid rgba(118,171,174,0.26)' }}
     >
       {/* Logo */}
@@ -59,6 +63,15 @@ export default function Sidebar() {
             </motion.div>
           )}
         </AnimatePresence>
+        <button
+          type="button"
+          onClick={onMobileClose}
+          className="ml-auto w-9 h-9 inline-flex items-center justify-center text-light-accent/55 md:hidden"
+          aria-label="Close navigation"
+          title="Close navigation"
+        >
+          <X className="w-5 h-5" />
+        </button>
       </div>
 
       {/* Nav */}
@@ -68,6 +81,7 @@ export default function Sidebar() {
             key={path}
             to={path}
             end={exact}
+            onClick={onMobileClose}
             className={({ isActive }) =>
               `flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 group relative overflow-hidden
                ${isActive ? 'sidebar-item-active text-light-accent' : 'text-light-accent/55 hover:text-light-accent hover:bg-secondary/10'}`
@@ -129,7 +143,7 @@ export default function Sidebar() {
         </button>
 
         <button onClick={() => setCollapsed(p => !p)}
-          className="flex items-center gap-3 w-full px-3 py-2 rounded-xl text-light-accent/45 hover:text-light-accent hover:bg-secondary/10 transition-all duration-200 text-sm">
+          className="hidden md:flex items-center gap-3 w-full px-3 py-2 rounded-xl text-light-accent/45 hover:text-light-accent hover:bg-secondary/10 transition-all duration-200 text-sm">
           {collapsed
             ? <ChevronRight className="w-4 h-4 flex-shrink-0" />
             : <><ChevronLeft className="w-4 h-4 flex-shrink-0" /><span className="text-xs">Collapse</span></>

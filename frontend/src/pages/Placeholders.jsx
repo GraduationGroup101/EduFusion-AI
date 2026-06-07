@@ -4,7 +4,6 @@ import toast from 'react-hot-toast';
 import {
   AlertCircle,
   CheckCircle2,
-  Construction,
   Copy,
   FileQuestion,
   FileText,
@@ -15,7 +14,6 @@ import {
   Search,
   Sparkles,
   Upload,
-  Youtube,
 } from 'lucide-react';
 import { adminService, questionGeneratorService } from '../services/api';
 
@@ -121,22 +119,6 @@ export function AIToolPage() {
     </div>
   );
 }
-
-const PlaceholderPage = ({ title, description, icon: Icon, accentColor = '#FF5722' }) => (
-  <div className="flex flex-col h-full items-center justify-center p-8">
-    <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center max-w-md">
-      <div className="w-20 h-20 rounded-3xl mx-auto mb-6 flex items-center justify-center relative"
-           style={{ background: `linear-gradient(135deg, ${accentColor}30, ${accentColor}15)`, border: `1px solid ${accentColor}30` }}>
-        <Icon className="w-10 h-10" style={{ color: accentColor }} />
-        <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-amber-500 flex items-center justify-center">
-          <Construction className="w-3 h-3 text-white" />
-        </div>
-      </div>
-      <h1 className="font-display text-2xl font-bold text-gradient mb-3">{title}</h1>
-      <p className="text-light-accent/50 text-sm leading-relaxed mb-8">{description}</p>
-    </motion.div>
-  </div>
-);
 
 const QuestionCountControl = ({ label, value, onChange }) => {
   const updateValue = (nextValue) => {
@@ -395,13 +377,4 @@ export function QuestionGeneratorPage() {
       )}
     </div>
   );
-}
-
-export function YouTubeExtractorPage() {
-  return <PlaceholderPage
-    title="YouTube Question Extractor"
-    description="Extract key concepts and generate questions from educational YouTube videos. Connect your API to activate."
-    icon={Youtube}
-    accentColor="#f87171"
-  />;
 }
