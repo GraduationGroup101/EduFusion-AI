@@ -9,6 +9,8 @@ A production-ready AI academic platform with authentication, dashboard, and chat
 **Database:** PostgreSQL (Render)  
 **Chatbot API:** https://iug-chatbot.onrender.com
 
+**LectureScribe API:** https://lecturescribe.app
+
 ## Project Structure
 
 ```
@@ -46,7 +48,8 @@ edupredict/
     │       ├── Login.jsx
     │       ├── DashboardHome.jsx
     │       ├── ChatbotPage.jsx
-    │       └── Placeholders.jsx  # AI Tool, Q-Gen, YouTube (ready for APIs)
+    │       ├── Placeholders.jsx
+    │       └── LectureScribePage.jsx # YouTube lecture transcription
     ├── tailwind.config.js
     ├── vite.config.js
     └── package.json
@@ -93,6 +96,17 @@ npm run build      # production build
 - `GET  /api/chatbot/history/:session_id`
 - `DELETE /api/chatbot/history/:session_id`
 
+### LectureScribe
+- `GET  /api/lecture-scribe/health` — Check the transcription service
+- `POST /api/lecture-scribe/jobs` — Submit a YouTube lecture
+- `GET  /api/lecture-scribe/jobs` — List persisted transcription jobs
+- `GET  /api/lecture-scribe/jobs/:jobId` — Poll job progress
+- `GET  /api/lecture-scribe/jobs/:jobId/transcript?kind=cleaned` — Read the result
+
+All LectureScribe endpoints require the EduFusion bearer token. The Express backend
+proxies requests to `LECTURESCRIBE_API_URL`, keeping the external service URL and
+cross-origin behavior out of the browser.
+
 ## Color Palette
 | Variable | Hex |
 |---|---|
@@ -107,7 +121,7 @@ The following pages are scaffolded and ready for API integration:
 
 1. **AI Tool** (`/dashboard/ai-tool`) → Edit `src/pages/Placeholders.jsx`
 2. **Question Generator** (`/dashboard/question-gen`) → Edit `src/pages/Placeholders.jsx`
-3. **YouTube Extractor** (`/dashboard/youtube`) → Edit `src/pages/Placeholders.jsx`
+3. **LectureScribe** (`/dashboard/youtube`) → Connected to the external FastAPI service
 
 For each, add the API endpoint to `src/services/api.js` and build the UI component.
 

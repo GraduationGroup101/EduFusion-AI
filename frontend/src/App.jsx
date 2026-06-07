@@ -7,8 +7,9 @@ import Login from './pages/Login';
 import DashboardHome from './pages/DashboardHome';
 import ChatbotPage from './pages/ChatbotPage';
 import { AcademicClockPage, AtRiskStudentsPage, ChatbotFilesPage } from './pages/AdminPages';
-import { AIToolPage, QuestionGeneratorPage, YouTubeExtractorPage } from './pages/Placeholders';
+import { AIToolPage, QuestionGeneratorPage } from './pages/Placeholders';
 import StudentPredictionPage from './pages/StudentPredictionPage';
+import LectureScribePage from './pages/LectureScribePage';
 
 export default function App() {
   return (
@@ -29,7 +30,7 @@ export default function App() {
             <Route path="admin/chatbot-files" element={<ChatbotFilesPage />} />
             <Route path="ai-tool" element={<AIToolPage />} />
             <Route path="question-gen" element={<QuestionGeneratorPage />} />
-            <Route path="youtube" element={<YouTubeExtractorPage />} />
+            <Route path="youtube" element={<LectureScribePage />} />
           </Route>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

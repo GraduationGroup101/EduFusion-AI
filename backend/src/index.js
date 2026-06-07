@@ -9,6 +9,7 @@ const chatbotFilesRoutes = require('./routes/chatbotFiles');
 const adminRoutes = require('./routes/admin');
 const studentRoutes = require('./routes/student');
 const questionGeneratorRoutes = require('./routes/questionGenerator');
+const lectureScribeRoutes = require('./routes/lectureScribe');
 
 const app = express();
 
@@ -24,6 +25,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/chatbot', chatbotRoutes);
 app.use('/api/chatbot-files', chatbotFilesRoutes);
 app.use('/api/question-generator', questionGeneratorRoutes);
+app.use('/api/lecture-scribe', lectureScribeRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/student', studentRoutes);
 
