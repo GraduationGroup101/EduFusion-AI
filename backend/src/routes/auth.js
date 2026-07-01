@@ -11,7 +11,7 @@ const {
 const { authenticate } = require('../middleware/auth');
 
 const router = express.Router();
-const EDUPREDICT_BASE = process.env.EDUPREDICT_API_URL || 'https://edupredict-api-isex.onrender.com';
+const EDUPREDICT_BASE = process.env.EDUPREDICT_API_URL || 'https://edupredict-api-6ob5.onrender.com';
 
 const proxyFetch = async (url, options = {}) => {
   const fetch = global.fetch || (await import('node-fetch')).default;
