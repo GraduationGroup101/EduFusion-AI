@@ -99,6 +99,7 @@ export default function ChatbotPage() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(true);
+  const [serviceStatus, setServiceStatus] = useState('checking');
   const [sessionId] = useState(getOrCreateSessionId);
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
@@ -131,6 +132,22 @@ export default function ChatbotPage() {
   }, [sessionId]);
 
   useEffect(() => {
+    let cancelled = false;
+
+    chatbotService.health()
+      .then(() => {
+        if (!cancelled) setServiceStatus('online');
+      })
+      .catch(() => {
+        if (!cancelled) setServiceStatus('offline');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
@@ -157,8 +174,14 @@ export default function ChatbotPage() {
       clearTimeout(wakingTimer);
       setMessages(prev => [
         ...prev.filter(m => m.id !== 'typing'),
-        { role: 'assistant', content: data.answer, sources: data.top_chunks, id: Date.now() + 1 }
+        {
+          role: 'assistant',
+          content: data.answer || 'لم يصل رد نصي من خدمة البوت.',
+          sources: data.top_chunks,
+          id: Date.now() + 1,
+        }
       ]);
+      setServiceStatus('online');
     } catch (err) {
       clearTimeout(wakingTimer);
       setMessages(prev => prev.filter(m => m.id !== 'typing'));
@@ -170,6 +193,9 @@ export default function ChatbotPage() {
         ...prev,
         { role: 'assistant', content: displayMsg, id: Date.now() + 1 }
       ]);
+      if (!err.response || err.response.status >= 500) {
+        setServiceStatus('offline');
+      }
     } finally {
       setLoading(false);
       inputRef.current?.focus();
@@ -208,9 +234,29 @@ export default function ChatbotPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-green-500/10 border border-green-500/20">
-            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-            <span className="text-xs text-green-400 font-mono">Online</span>
+          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border ${
+            serviceStatus === 'online'
+              ? 'bg-green-500/10 border-green-500/20'
+              : serviceStatus === 'offline'
+                ? 'bg-red-500/10 border-red-500/20'
+                : 'bg-amber-500/10 border-amber-500/20'
+          }`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${
+              serviceStatus === 'online'
+                ? 'bg-green-500 animate-pulse'
+                : serviceStatus === 'offline'
+                  ? 'bg-red-500'
+                  : 'bg-amber-500 animate-pulse'
+            }`} />
+            <span className={`text-xs font-mono ${
+              serviceStatus === 'online'
+                ? 'text-green-500'
+                : serviceStatus === 'offline'
+                  ? 'text-red-500'
+                  : 'text-amber-600'
+            }`}>
+              {serviceStatus === 'online' ? 'Online' : serviceStatus === 'offline' ? 'Offline' : 'Checking'}
+            </span>
           </div>
           {messages.length > 0 && (
             <button onClick={clearChat}

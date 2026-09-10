@@ -1,9 +1,10 @@
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Brain } from 'lucide-react';
 
 export default function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -15,7 +16,7 @@ export default function ProtectedRoute({ children }) {
           </div>
           <div className="flex gap-1">
             {[0,1,2].map(i => (
-              <span key={i} className="w-2 h-2 rounded-full bg-accent"
+              <span key={i} className="w-2 h-2 rounded-full bg-secondary"
                     style={{ animation: `blink 1s ${i * 0.2}s infinite` }} />
             ))}
           </div>
@@ -24,5 +25,9 @@ export default function ProtectedRoute({ children }) {
     );
   }
 
-  return isAuthenticated ? children : <Navigate to="/login" replace />;
+  // Remember where they were headed so a refresh on a deep link returns there
+  // after signing in, instead of always dumping them on the dashboard index.
+  return isAuthenticated
+    ? children
+    : <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
 }

@@ -34,7 +34,7 @@ export default function DashboardLayout() {
             <span className="w-8 h-8 bg-secondary text-white inline-flex items-center justify-center">
               <Brain className="w-4 h-4" />
             </span>
-            <span className="font-display text-sm font-bold text-light-accent">EduPredict</span>
+            <span className="font-display text-sm font-bold text-light-accent">EduFusion AI</span>
           </div>
           <span className="w-10" aria-hidden="true" />
         </header>

@@ -3,7 +3,8 @@ import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './context/AuthContext';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import DashboardLayout from './components/layout/DashboardLayout';
-import Login from './pages/Login';
+import Landing from './pages/Landing';
+import Auth from './pages/Auth';
 import DashboardHome from './pages/DashboardHome';
 import ChatbotPage from './pages/ChatbotPage';
 import { AcademicClockPage, AtRiskStudentsPage, ChatbotFilesPage } from './pages/AdminPages';
@@ -16,7 +17,12 @@ export default function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          <Route path="/login" element={<Login />} />
+          {/* Public */}
+          <Route path="/" element={<Landing />} />
+          <Route path="/login" element={<Auth mode="login" />} />
+          <Route path="/register" element={<Auth mode="register" />} />
+
+          {/* Protected */}
           <Route path="/dashboard" element={
             <ProtectedRoute>
               <DashboardLayout />
@@ -32,8 +38,9 @@ export default function App() {
             <Route path="question-gen" element={<QuestionGeneratorPage />} />
             <Route path="youtube" element={<LectureScribePage />} />
           </Route>
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+
+          {/* Unknown paths land on the public home rather than a hard 404 */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
       <Toaster

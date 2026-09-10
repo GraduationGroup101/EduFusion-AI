@@ -1,10 +1,12 @@
 const express = require('express');
+const crypto = require('crypto');
 const { authenticate } = require('../middleware/auth');
 
 const router = express.Router();
 
-const CHATBOT_BASE = process.env.CHATBOT_API_URL || 'https://iug-chatbot.onrender.com';
-const CHATBOT_DEFAULT_STUDENT_ID = String(process.env.CHATBOT_DEFAULT_STUDENT_ID || '1');
+const CHATBOT_BASE = String(
+  process.env.CHATBOT_API_URL || 'https://final-iug-chat-botv2.onrender.com'
+).replace(/\/+$/, '');
 const CHAT_HISTORY_TTL_MS = Number(process.env.CHAT_HISTORY_TTL_MS || 24 * 60 * 60 * 1000);
 const CHAT_HISTORY_MAX_MESSAGES = Number(process.env.CHAT_HISTORY_MAX_MESSAGES || 100);
 const chatHistoryCache = new Map();
@@ -22,6 +24,14 @@ const getUserCacheKey = (user) => {
 };
 
 const getCacheKey = (user, sessionId) => `${getUserCacheKey(user)}:${normalizeSessionId(sessionId)}`;
+
+// The new chatbot guest API accepts an opaque conversation namespace. Hashing
+// the EduFusion cache key keeps user identifiers out of the upstream payload
+// while providing a stable, schema-valid value for follow-up turns.
+const getConversationId = (user, sessionId) => crypto
+  .createHash('sha256')
+  .update(getCacheKey(user, sessionId))
+  .digest('hex');
 
 const getCachedMessages = (user, sessionId) => {
   const cacheKey = getCacheKey(user, sessionId);
@@ -60,9 +70,23 @@ const appendChatExchange = (user, sessionId, question, data) => {
   ]);
 };
 
-const proxyFetch = async (url, options = {}) => {
-  const fetch = global.fetch || (await import('node-fetch')).default;
-  return fetch(url, options);
+const toGuestHistory = (messages) => {
+  const turns = [];
+
+  for (let index = 0; index < messages.length - 1; index += 1) {
+    const userMessage = messages[index];
+    const assistantMessage = messages[index + 1];
+
+    if (userMessage?.role === 'user' && assistantMessage?.role === 'assistant') {
+      turns.push({
+        user: String(userMessage.content || '').slice(0, 2000),
+        assistant: String(assistantMessage.content || '').slice(0, 20000),
+      });
+      index += 1;
+    }
+  }
+
+  return turns.filter((turn) => turn.user && turn.assistant).slice(-5);
 };
 
 const safeJson = async (response) => {
@@ -72,6 +96,13 @@ const safeJson = async (response) => {
   } catch {
     return { error: text || 'Invalid JSON response' };
   }
+};
+
+const upstreamErrorMessage = (data) => {
+  if (typeof data?.error === 'string') return data.error;
+  if (typeof data?.error?.message === 'string') return data.error.message;
+  if (typeof data?.detail === 'string') return data.detail;
+  return 'Chatbot service rejected the request';
 };
 
 // Retry with timeout — handles Render cold starts (503 / connection errors)
@@ -115,9 +146,6 @@ router.post('/chat', authenticate, async (req, res) => {
   try {
     const { question, session_id } = req.body;
     const sessionId = normalizeSessionId(session_id);
-    const externalSessionId = req.user?.id_student
-      ? String(req.user.id_student)
-      : CHATBOT_DEFAULT_STUDENT_ID;
     const trimmedQuestion = String(question || '').trim();
 
     if (!trimmedQuestion) {
@@ -125,24 +153,30 @@ router.post('/chat', authenticate, async (req, res) => {
     }
 
     const response = await fetchWithRetry(
-      `${CHATBOT_BASE}/chat`,
+      `${CHATBOT_BASE}/api/chat/guest`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           question: trimmedQuestion,
-          session_id: externalSessionId,
+          conversation_id: getConversationId(req.user, sessionId),
+          history: toGuestHistory(getCachedMessages(req.user, sessionId)),
         }),
       },
       { retries: 3, timeoutMs: 90000 }
     );
 
     const data = await safeJson(response);
-    if (response.ok) {
-      appendChatExchange(req.user, sessionId, trimmedQuestion, data);
+    if (!response.ok) {
+      return res.status(response.status).json({
+        error: upstreamErrorMessage(data),
+        session_id: sessionId,
+      });
     }
 
-    return res.status(response.ok ? 200 : response.status).json({
+    appendChatExchange(req.user, sessionId, trimmedQuestion, data);
+
+    return res.json({
       ...data,
       session_id: sessionId,
     });
@@ -154,6 +188,27 @@ router.post('/chat', authenticate, async (req, res) => {
         ? 'Chatbot is taking too long to respond. Please try again.'
         : 'Chatbot service is unavailable. Please try again in a moment.',
     });
+  }
+});
+
+// Lightweight upstream liveness check used by the EduFusion chat page.
+router.get('/health', authenticate, async (req, res) => {
+  try {
+    const response = await fetchWithRetry(
+      `${CHATBOT_BASE}/live`,
+      { headers: { Accept: 'application/json' } },
+      { retries: 2, timeoutMs: 20000 }
+    );
+    const data = await safeJson(response);
+
+    if (!response.ok) {
+      return res.status(response.status).json({ error: upstreamErrorMessage(data) });
+    }
+
+    return res.json({ status: 'online', upstream: data });
+  } catch (err) {
+    console.error('[chatbot] health error:', err.message);
+    return res.status(503).json({ error: 'Chatbot service is unavailable' });
   }
 });
 

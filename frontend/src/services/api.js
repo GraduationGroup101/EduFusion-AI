@@ -5,17 +5,45 @@ const api = axios.create({
   timeout: 90000,
 });
 
+/** Routes a signed-out visitor is allowed to sit on without being bounced to /login. */
+const PUBLIC_PATHS = ['/', '/login', '/register'];
+
+export const clearSession = () => {
+  localStorage.removeItem('token');
+  localStorage.removeItem('user');
+  delete api.defaults.headers.common['Authorization'];
+};
+
+// Read the token per request instead of relying on a default header set at boot.
+// On a page refresh the header would otherwise be missing until AuthProvider's
+// effect had run, so the first call of the new page could fire unauthenticated.
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token && !config.headers.Authorization) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.href = '/login';
+    // `skipAuthRedirect` lets the caller (session bootstrap, the login form)
+    // handle a 401 itself rather than triggering a full-page bounce.
+    if (error.response?.status === 401 && !error.config?.skipAuthRedirect) {
+      clearSession();
+      if (!PUBLIC_PATHS.includes(window.location.pathname)) {
+        window.location.replace('/login?expired=1');
+      }
     }
     return Promise.reject(error);
   }
 );
+
+export const authService = {
+  me: () => api.get('/auth/me', { skipAuthRedirect: true }),
+  registrationCourses: () => api.get('/auth/registration-courses'),
+};
 
 export const dashboardService = {
   getStats: () => api.get('/dashboard/stats'),
@@ -26,26 +54,10 @@ export const dashboardService = {
 };
 
 export const chatbotService = {
+  health: () => api.get('/chatbot/health', { timeout: 25000 }),
   sendMessage: (question, session_id) => api.post('/chatbot/chat', { question, session_id }),
   getHistory: (session_id) => api.get(`/chatbot/history/${session_id}`),
   clearHistory: (session_id) => api.delete(`/chatbot/history/${session_id}`),
-};
-
-export const chatbotFilesService = {
-  uploadFile: ({ file, collection_name }) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    if (collection_name?.trim()) {
-      formData.append('collection_name', collection_name.trim());
-    }
-    return api.post('/chatbot-files/upload-file', formData, { timeout: 180000 });
-  },
-  chatWithFile: ({ question, collection_name, session_id = 'default' }) =>
-    api.post('/chatbot-files/chat/file', { question, collection_name, session_id }),
-  listFiles: () => api.get('/chatbot-files/files/list'),
-  deleteFile: (collection_name) => api.delete(`/chatbot-files/files/${encodeURIComponent(collection_name)}`),
-  reloadFile: (collection_name) => api.post(`/chatbot-files/files/${encodeURIComponent(collection_name)}/reload`),
-  getChunks: (collection_name) => api.get(`/chatbot-files/files/${encodeURIComponent(collection_name)}/chunks`),
 };
 
 export const questionGeneratorService = {

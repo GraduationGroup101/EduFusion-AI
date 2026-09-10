@@ -21,7 +21,7 @@ const adminNavItems = [
   { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', exact: true },
   { path: '/dashboard/admin/at-risk', icon: AlertTriangle, label: 'At-Risk Students' },
   { path: '/dashboard/admin/clock', icon: Clock, label: 'Academic Clock' },
-  { path: '/dashboard/admin/chatbot-files', icon: Database, label: 'Chatbot Files' },
+  { path: '/dashboard/admin/chatbot-files', icon: Database, label: 'Chatbot Admin' },
   { path: '/dashboard/chatbot', icon: MessageSquare, label: 'AI Chatbot' },
   { path: '/dashboard/ai-tool', icon: Sparkles, label: 'Prediction Tool' },
   { path: '/dashboard/youtube', icon: Youtube, label: 'LectureScribe' },
@@ -58,7 +58,7 @@ export default function Sidebar({ mobileOpen = false, onMobileClose = () => {} }
         <AnimatePresence>
           {!collapsed && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <span className="font-display font-bold text-light-accent text-sm">EduPredict</span>
+              <span className="font-display font-bold text-light-accent text-sm">EduFusion</span>
               <span className="block text-accent/60 text-xs font-mono">AI Platform</span>
             </motion.div>
           )}

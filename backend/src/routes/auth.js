@@ -105,23 +105,28 @@ router.get('/registration-courses', async (req, res) => {
   }
 });
 
+// `email` is deliberately absent: it is optional, and an empty value is stored as NULL.
+const REQUIRED_REGISTRATION_FIELDS = [
+  'id_student',
+  'pin',
+  'student_name',
+  'course_presentation_id',
+  'gender',
+  'disability',
+  'age_band',
+  'highest_education',
+  'imd_band',
+  'num_of_prev_attempts',
+  'studied_credits',
+];
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 router.post('/register-student', async (req, res) => {
   try {
-    const required = [
-      'id_student',
-      'pin',
-      'student_name',
-      'course_presentation_id',
-      'gender',
-      'disability',
-      'age_band',
-      'highest_education',
-      'imd_band',
-      'num_of_prev_attempts',
-      'studied_credits',
-    ];
-
-    const missing = required.filter((key) => req.body?.[key] === undefined || req.body?.[key] === '');
+    const missing = REQUIRED_REGISTRATION_FIELDS.filter(
+      (key) => req.body?.[key] === undefined || req.body?.[key] === ''
+    );
     if (missing.length > 0) {
       return res.status(400).json({ error: `Missing required fields: ${missing.join(', ')}` });
     }
@@ -130,7 +135,13 @@ router.post('/register-student', async (req, res) => {
       return res.status(400).json({ error: 'PIN must be at least 4 digits' });
     }
 
-    const registered = await registerStudentWithEnrollment(req.body);
+    // Optional email: blank/absent is fine, but a supplied one must be well-formed.
+    const email = typeof req.body.email === 'string' ? req.body.email.trim() : '';
+    if (email && !EMAIL_PATTERN.test(email)) {
+      return res.status(400).json({ error: 'Please enter a valid email address, or leave it empty' });
+    }
+
+    const registered = await registerStudentWithEnrollment({ ...req.body, email: email || null });
 
     const warnings = [];
     try {
