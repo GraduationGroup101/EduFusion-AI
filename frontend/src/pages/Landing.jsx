@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   Brain, MessageSquare, FileQuestion, Youtube, TrendingUp,
   ArrowRight, Check, Menu, X, GraduationCap, Building2, Users,
-  ShieldCheck, Sparkles, LineChart, Volume2, VolumeX, Play, Pause,
+  ShieldCheck, Sparkles, LineChart,
 } from 'lucide-react';
 
 const TOOLS = [
@@ -147,84 +147,82 @@ const Reveal = ({ children, delay = 0, className = '' }) => (
   </motion.div>
 );
 
+const CLIPS = ['/edufusion-preview-1.mp4', '/edufusion-preview-2.mp4'];
+const CROSSFADE_MS = 700;
+
 /**
- * Ambient concept film for the platform. Autoplay only works while muted, so the
- * clip starts silent with an explicit control to bring the audio in, and it never
- * autoplays for visitors who asked the OS for reduced motion.
+ * Ambient concept film: the clips play back to back on an endless loop, with the
+ * next one fading in over the tail of the current one so the seam is not visible.
+ * The files carry no audio track at all, so there is nothing to mute and no
+ * controls are rendered — it is decorative, not a player.
  */
 const PreviewFilm = () => {
-  const videoRef = useRef(null);
-  const [muted, setMuted] = useState(true);
-  const [playing, setPlaying] = useState(true);
+  const videoRefs = useRef([]);
+  const [active, setActive] = useState(0);
+  const activeRef = useRef(0);
+  const switchingRef = useRef(false);
 
-  useEffect(() => {
-    const video = videoRef.current;
+  const playClip = (index) => {
+    const video = videoRefs.current[index];
     if (!video) return;
-    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    if (reduceMotion) {
-      video.pause();
-      setPlaying(false);
-      return;
-    }
-    // Set muted on the element itself: React applies it as a property, and some
-    // browsers check the attribute before allowing autoplay.
     video.muted = true;
-    // Some browsers reject the autoplay promise anyway; fall back to poster + play button.
-    video.play().catch(() => setPlaying(false));
-  }, []);
-
-  const togglePlay = () => {
-    const video = videoRef.current;
-    if (!video) return;
-    if (video.paused) {
-      video.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
-    } else {
-      video.pause();
-      setPlaying(false);
-    }
+    video.currentTime = 0;
+    video.play?.()?.catch(() => {});
   };
 
-  const toggleMuted = () => {
-    const video = videoRef.current;
-    if (!video) return;
-    video.muted = !video.muted;
-    setMuted(video.muted);
-    if (video.muted === false && video.paused) togglePlay();
+  useEffect(() => {
+    playClip(0);
+  }, []);
+
+  // Start the next clip while the current one is still on screen, then let the
+  // CSS opacity transition carry the hand-off.
+  const advanceFrom = (index) => {
+    if (switchingRef.current || activeRef.current !== index) return;
+    switchingRef.current = true;
+
+    const next = (index + 1) % CLIPS.length;
+    playClip(next);
+    activeRef.current = next;
+    setActive(next);
+
+    window.setTimeout(() => {
+      const finished = videoRefs.current[index];
+      if (finished) {
+        finished.pause();
+        finished.currentTime = 0;
+      }
+      switchingRef.current = false;
+    }, CROSSFADE_MS);
+  };
+
+  const handleTimeUpdate = (index) => {
+    const video = videoRefs.current[index];
+    if (!video || !Number.isFinite(video.duration)) return;
+    if (video.duration - video.currentTime <= CROSSFADE_MS / 1000) advanceFrom(index);
   };
 
   return (
     <div className="relative overflow-hidden rounded-3xl border border-border bg-light-accent shadow-2xl shadow-light-accent/15">
-      <video
-        ref={videoRef}
-        className="block w-full"
-        src="/edufusion-preview.mp4"
-        poster="/edufusion-preview-poster.jpg"
-        muted={muted}
-        loop
-        playsInline
-        preload="metadata"
-        aria-label="EduFusion AI concept film"
-      />
-
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-light-accent/70 to-transparent" />
-
-      <div className="absolute bottom-4 right-4 flex gap-2">
-        <button
-          type="button"
-          onClick={togglePlay}
-          className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur-md transition-colors hover:bg-white/25"
-          aria-label={playing ? 'Pause the film' : 'Play the film'}
-        >
-          {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-        </button>
-        <button
-          type="button"
-          onClick={toggleMuted}
-          className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur-md transition-colors hover:bg-white/25"
-          aria-label={muted ? 'Turn the sound on' : 'Turn the sound off'}
-        >
-          {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
-        </button>
+      {/* Fixed ratio box so the section does not jump while the first clip loads. */}
+      <div className="relative w-full" style={{ aspectRatio: '16 / 9' }}>
+        {CLIPS.map((src, index) => (
+          <video
+            key={src}
+            ref={(el) => { videoRefs.current[index] = el; }}
+            className="absolute inset-0 h-full w-full object-cover transition-opacity ease-linear"
+            style={{ opacity: active === index ? 1 : 0, transitionDuration: `${CROSSFADE_MS}ms` }}
+            src={src}
+            poster={index === 0 ? '/edufusion-preview-poster.jpg' : undefined}
+            muted
+            playsInline
+            preload="auto"
+            disablePictureInPicture
+            aria-hidden="true"
+            tabIndex={-1}
+            onTimeUpdate={() => handleTimeUpdate(index)}
+            onEnded={() => advanceFrom(index)}
+          />
+        ))}
       </div>
     </div>
   );

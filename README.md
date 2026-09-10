@@ -54,8 +54,9 @@ edupredict/
     │       ├── Placeholders.jsx
     │       └── LectureScribePage.jsx # YouTube lecture transcription
     ├── public/
-    │   ├── edufusion-preview.mp4        # Concept film shown on the landing page
-    │   └── edufusion-preview-poster.jpg # Its poster frame
+    │   ├── edufusion-preview-1.mp4      # Concept film, part 1 (silent, no audio track)
+    │   ├── edufusion-preview-2.mp4      # Concept film, part 2 - crossfades from part 1
+    │   └── edufusion-preview-poster.jpg # Poster frame for the first clip
     ├── vercel.json            # SPA rewrite — required, see Deployment
     ├── tailwind.config.js
     ├── vite.config.js
@@ -139,6 +140,15 @@ is ever built from the repository root instead, move `vercel.json` there too.
 
 Set `VITE_API_URL` in the Vercel project to the deployed backend's `/api` base, and
 `FRONTEND_URL` on the backend so CORS allows the deployed origin.
+
+### Cold starts
+
+`EDUPREDICT_API_URL` and the chatbot both run on free Render instances that sleep
+when idle; a cold start there has been measured at **~80 seconds**. Registration used
+to `await` a seed prediction with no timeout, so signing up inherited that whole delay.
+It now gives that call a budget of `PREDICTION_SEED_TIMEOUT_MS` (default 4000 ms) and
+returns a warning instead of blocking. `backend/scripts/renderKeepAlive.js` pings those
+services to keep them warm.
 
 ## Optional Render Keep-Alive Checks
 

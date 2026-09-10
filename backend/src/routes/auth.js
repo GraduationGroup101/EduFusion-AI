@@ -18,6 +18,21 @@ const proxyFetch = async (url, options = {}) => {
   return fetch(url, options);
 };
 
+// EduPredict is hosted on a free Render instance that sleeps when idle; a cold
+// start there has been measured at ~80s. Registration must never wait that long,
+// so the seed-prediction call gets a hard budget and is treated as best-effort.
+const PREDICTION_SEED_TIMEOUT_MS = Number(process.env.PREDICTION_SEED_TIMEOUT_MS || 4000);
+
+const fetchWithTimeout = async (url, timeoutMs) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await proxyFetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: process.env.NODE_ENV === 'production' ? 10 : 100,
@@ -143,21 +158,32 @@ router.post('/register-student', async (req, res) => {
 
     const registered = await registerStudentWithEnrollment({ ...req.body, email: email || null });
 
+    // The account already exists at this point. Seeding a first prediction is a
+    // nice-to-have, so it runs on a short budget: if the prediction service is
+    // warm the student lands on a populated dashboard, and if it is still waking
+    // up we return immediately and let the request finish warming it in the
+    // background instead of holding the signup open.
+    const params = new URLSearchParams({
+      code_module: registered.code_module,
+      code_presentation: registered.code_presentation,
+    });
+    const predictionUrl = `${EDUPREDICT_BASE}/students/${registered.id_student}/prediction?${params}`;
+
     const warnings = [];
     try {
-      const params = new URLSearchParams({
-        code_module: registered.code_module,
-        code_presentation: registered.code_presentation,
-      });
-      const response = await proxyFetch(
-        `${EDUPREDICT_BASE}/students/${registered.id_student}/prediction?${params}`
-      );
+      const response = await fetchWithTimeout(predictionUrl, PREDICTION_SEED_TIMEOUT_MS);
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
         warnings.push(data.detail || data.error || 'Initial prediction could not be generated');
       }
     } catch (err) {
-      warnings.push('Initial prediction could not be generated');
+      if (err.name === 'AbortError') {
+        warnings.push('The prediction service is starting up — your first prediction will appear shortly.');
+        // Keep the warm-up going without blocking the response.
+        proxyFetch(predictionUrl).catch(() => {});
+      } else {
+        warnings.push('Initial prediction could not be generated');
+      }
     }
 
     const token = jwt.sign(
