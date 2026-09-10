@@ -4,9 +4,18 @@ const { authenticate } = require('../middleware/auth');
 
 const router = express.Router();
 
-const CHATBOT_BASE = String(
-  process.env.CHATBOT_API_URL || 'https://final-iug-chat-botv2.onrender.com'
+const CURRENT_CHATBOT_BASE = 'https://final-iug-chat-botv2.onrender.com';
+const LEGACY_CHATBOT_BASES = new Set([
+  'https://iug-chatbot.onrender.com',
+]);
+const configuredChatbotBase = String(
+  process.env.CHATBOT_API_URL || CURRENT_CHATBOT_BASE
 ).replace(/\/+$/, '');
+// Vercel/Render can retain an old dashboard environment variable after a code
+// deploy. Never let the retired chatbot URL override the working endpoint.
+const CHATBOT_BASE = LEGACY_CHATBOT_BASES.has(configuredChatbotBase)
+  ? CURRENT_CHATBOT_BASE
+  : configuredChatbotBase;
 const CHAT_HISTORY_TTL_MS = Number(process.env.CHAT_HISTORY_TTL_MS || 24 * 60 * 60 * 1000);
 const CHAT_HISTORY_MAX_MESSAGES = Number(process.env.CHAT_HISTORY_MAX_MESSAGES || 100);
 const chatHistoryCache = new Map();

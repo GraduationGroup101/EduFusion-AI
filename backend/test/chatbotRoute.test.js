@@ -2,6 +2,9 @@ const assert = require('node:assert/strict');
 const { after, before, test } = require('node:test');
 const express = require('express');
 
+const originalChatbotApiUrl = process.env.CHATBOT_API_URL;
+process.env.CHATBOT_API_URL = 'https://iug-chatbot.onrender.com/';
+
 const originalFetch = global.fetch;
 const upstreamCalls = [];
 let upstreamMode = 'success';
@@ -74,6 +77,11 @@ before(async () => {
 
 after(async () => {
   global.fetch = originalFetch;
+  if (originalChatbotApiUrl === undefined) {
+    delete process.env.CHATBOT_API_URL;
+  } else {
+    process.env.CHATBOT_API_URL = originalChatbotApiUrl;
+  }
   await new Promise((resolve, reject) => {
     server.close((error) => (error ? reject(error) : resolve()));
   });
