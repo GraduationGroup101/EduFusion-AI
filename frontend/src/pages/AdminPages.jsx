@@ -191,6 +191,7 @@ export function AcademicClockPage() {
     setRunning(true);
     try {
       const { data } = await adminService.tickAllClocks(days);
+      (data.warnings || []).forEach((message) => toast(message));
       toast.success(`Updated ${data.updatedClocks} clocks and recomputed ${data.predictions?.total_students || 0} predictions`);
       await loadClocks();
     } catch (err) {
@@ -204,6 +205,7 @@ export function AcademicClockPage() {
     setRunning(true);
     try {
       const { data } = await adminService.resetAllClocks(day);
+      (data.warnings || []).forEach((message) => toast(message));
       toast.success(`Reset ${data.updatedClocks} clocks to day ${day} and recomputed ${data.predictions?.total_students || 0} predictions`);
       await loadClocks();
     } catch (err) {

@@ -19,8 +19,10 @@ export const clearSession = () => {
 // effect had run, so the first call of the new page could fire unauthenticated.
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
-  if (token && !config.headers.Authorization) {
+  if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+  } else {
+    delete config.headers.Authorization;
   }
   return config;
 });
@@ -41,7 +43,7 @@ api.interceptors.response.use(
 );
 
 export const authService = {
-  me: () => api.get('/auth/me', { skipAuthRedirect: true }),
+  me: () => api.get('/auth/me', { skipAuthRedirect: true, timeout: 10000 }),
   registrationCourses: () => api.get('/auth/registration-courses'),
 };
 
@@ -74,21 +76,37 @@ export const questionGeneratorService = {
 
 export const lectureScribeService = {
   health: () => api.get('/lecture-scribe/health'),
-  createJob: ({ youtube_url, clean }) =>
+  createJob: ({ youtube_url, clean, language = 'auto' }) =>
     api.post('/lecture-scribe/jobs', {
       youtube_url,
       clean,
       skip_audio_cache: false,
       use_cached_outputs: true,
-      language: 'ar',
+      language,
     }),
   listJobs: () => api.get('/lecture-scribe/jobs'),
-  getJob: (jobId) => api.get(`/lecture-scribe/jobs/${encodeURIComponent(jobId)}`),
+  getJob: (jobId, options = {}) => api.get(`/lecture-scribe/jobs/${encodeURIComponent(jobId)}`, options),
   getTranscript: (jobId, kind = 'cleaned') =>
     api.get(`/lecture-scribe/jobs/${encodeURIComponent(jobId)}/transcript`, {
       params: { kind },
       responseType: 'text',
     }),
+};
+
+// Keep the key after an uncertain result so a manual retry cannot tick twice.
+const clockCommand = async (url, body) => {
+  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  const key = `edufusion-clock:${user.id}:${url}:${JSON.stringify(body)}`;
+  const requestKey = sessionStorage.getItem(key) || crypto.randomUUID();
+  sessionStorage.setItem(key, requestKey);
+  try {
+    const result = await api.post(url, body, { headers: { 'Idempotency-Key': requestKey } });
+    sessionStorage.removeItem(key);
+    return result;
+  } catch (error) {
+    if (error.response?.status >= 400 && error.response?.status < 500) sessionStorage.removeItem(key);
+    throw error;
+  }
 };
 
 export const adminService = {
@@ -97,18 +115,19 @@ export const adminService = {
   getRiskCounts: () => api.get('/admin/predictions/risk-counts'),
   runDemoPredictions: (limit = 150) => api.post(`/admin/predictions/run-demo?limit=${limit}`),
   getClocks: () => api.get('/admin/clock'),
-  tickAllClocks: (days = 1) => api.post('/admin/clock/tick-all', { days }),
-  resetAllClocks: (day = 60) => api.post('/admin/clock/reset-all', { day }),
+  tickAllClocks: (days = 1) => clockCommand('/admin/clock/tick-all', { days }),
+  resetAllClocks: (day = 60) => clockCommand('/admin/clock/reset-all', { day }),
   tickClock: ({ code_module, code_presentation, days = 1 }) =>
-    api.post('/admin/clock/tick', { code_module, code_presentation, days }),
+    clockCommand('/admin/clock/tick', { code_module, code_presentation, days }),
   resetClock: ({ code_module, code_presentation, day = 60 }) =>
-    api.post('/admin/clock/reset', { code_module, code_presentation, day }),
+    clockCommand('/admin/clock/reset', { code_module, code_presentation, day }),
 };
 
 export const studentService = {
-  getPredictionData: () => api.get('/student/prediction-data'),
-  updatePredictionData: (enrollmentId, data) => api.put(`/student/prediction-data/${enrollmentId}`, data),
-  getPrediction: (params = {}) => api.get('/student/prediction', { params }),
+  getPredictionData: (options = {}) => api.get('/student/prediction-data', options),
+  saveScenario: (enrollmentId, data) => api.put(`/student/scenarios/${enrollmentId}`, data),
+  getScenario: (enrollmentId, options = {}) => api.get(`/student/scenarios/${enrollmentId}`, options),
+  getPrediction: (params = {}, options = {}) => api.get('/student/prediction', { ...options, params }),
 };
 
 export default api;

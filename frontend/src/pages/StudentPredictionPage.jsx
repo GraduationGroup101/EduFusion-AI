@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { BookOpen, MousePointerClick, RefreshCw, Save, Sparkles } from 'lucide-react';
@@ -40,6 +40,11 @@ const getLimits = (row, form = {}) => {
   };
 };
 
+const submissionTypes = (row) => row ? ['TMA', 'CMA'].filter((type) => {
+  const key = type.toLowerCase();
+  return row[`next_${key}_assessment_id`] && row[`next_${key}_due_date`] != null && Number(row[`next_${key}_due_date`]) <= Number(row.current_day);
+}) : [];
+
 const resetSimulationForm = (row, previous = {}) => ({
   ...row,
   quiz_clicks: 0,
@@ -50,7 +55,7 @@ const resetSimulationForm = (row, previous = {}) => ({
   tma_delay_days: '',
   latest_cma_score: row.latest_cma_score ?? '',
   cma_delay_days: '',
-  new_submission_type: previous.new_submission_type || (row.next_tma_assessment_id ? 'TMA' : row.next_cma_assessment_id ? 'CMA' : 'TMA'),
+  new_submission_type: submissionTypes(row).includes(previous.new_submission_type) ? previous.new_submission_type : submissionTypes(row)[0] || 'TMA',
   new_submission_score: '',
   new_submission_delay_days: '',
 });
@@ -59,6 +64,7 @@ const NumberInput = ({ label, value, onChange, max, min = 0, disabled = false, h
   <label className="space-y-2">
     <span className="text-xs font-mono uppercase text-light-accent/50">{label}</span>
     <input
+      aria-label={label}
       value={value ?? ''}
       type="number"
       min={min}
@@ -70,7 +76,7 @@ const NumberInput = ({ label, value, onChange, max, min = 0, disabled = false, h
           onChange('');
           return;
         }
-        onChange(clamp(Number(next), min, max));
+        onChange(clamp(Math.trunc(Number(next)), min, max));
       }}
       className="w-full rounded-xl border border-border bg-surface px-3 py-2 text-sm text-light-accent focus:outline-none focus:border-accent disabled:opacity-50"
     />
@@ -90,8 +96,11 @@ export default function StudentPredictionPage() {
   const [selectedId, setSelectedId] = useState('');
   const [form, setForm] = useState({});
   const [prediction, setPrediction] = useState(null);
+  const [scenario, setScenario] = useState(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const predictionRequest = useRef(null);
+  const scenarioRequest = useRef(null);
 
   const selected = useMemo(
     () => enrollments.find((item) => String(item.enrollment_id) === String(selectedId)),
@@ -99,21 +108,17 @@ export default function StudentPredictionPage() {
   );
 
   const limits = getLimits(selected, form);
-  const availableSubmissionTypes = selected
-    ? [
-        selected.next_tma_assessment_id ? 'TMA' : null,
-        selected.next_cma_assessment_id ? 'CMA' : null,
-      ].filter(Boolean)
-    : [];
+  const availableSubmissionTypes = submissionTypes(selected);
 
   const setField = (key, value) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
-  const loadData = async () => {
+  const loadData = async (signal) => {
     setLoading(true);
     try {
-      const { data } = await studentService.getPredictionData();
+      const { data } = await studentService.getPredictionData({ signal });
+      if (signal.aborted) return;
       const rows = data.enrollments || [];
       setEnrollments(rows);
       const first = rows[0];
@@ -122,32 +127,37 @@ export default function StudentPredictionPage() {
         setForm(resetSimulationForm(first));
       }
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Failed to load your data');
+      if (!signal.aborted) toast.error(err.response?.data?.error || 'Failed to load your data');
     } finally {
-      setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
   };
 
   const runPrediction = async (target = selected, force = false) => {
     if (!target) return;
+    predictionRequest.current?.abort();
+    const controller = new AbortController();
+    predictionRequest.current = controller;
     setLoading(true);
     try {
       const { data } = await studentService.getPrediction({
         code_module: target.code_module,
         code_presentation: target.code_presentation,
         force: force ? 1 : 0,
-      });
+      }, { signal: controller.signal });
+      if (controller.signal.aborted) return;
       setPrediction(data);
       toast.success(data.cached ? 'Current prediction loaded' : 'Prediction updated');
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Failed to run prediction');
+      if (!controller.signal.aborted) toast.error(err.response?.data?.error || 'Failed to run prediction');
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   };
 
   const saveData = async () => {
     if (!selected) return;
+    scenarioRequest.current?.abort();
     setSaving(true);
     try {
       const payload = {
@@ -170,15 +180,9 @@ export default function StudentPredictionPage() {
         }
       }
 
-      const { data } = await studentService.updatePredictionData(selected.enrollment_id, payload);
-      (data.warnings || []).forEach((message) => toast(message));
-      setEnrollments(data.enrollments || []);
-      const updated = (data.enrollments || []).find((item) => item.enrollment_id === selected.enrollment_id);
-      if (updated) {
-        setForm(resetSimulationForm(updated, form));
-        await runPrediction(updated, true);
-      }
-      toast.success('Changes applied');
+      const { data } = await studentService.saveScenario(selected.enrollment_id, payload);
+      setScenario(data.scenario);
+      toast.success('Scenario saved. Your academic records are unchanged.');
     } catch (err) {
       toast.error(err.response?.data?.error || err.response?.data?.detail || err.message || 'Failed to save your data');
     } finally {
@@ -187,15 +191,27 @@ export default function StudentPredictionPage() {
   };
 
   useEffect(() => {
-    loadData();
+    const controller = new AbortController();
+    loadData(controller.signal);
+    return () => controller.abort();
   }, []);
 
   useEffect(() => {
+    const controller = new AbortController();
+    scenarioRequest.current = controller;
     if (selected) {
-      setForm(resetSimulationForm(selected, form));
+      setForm(resetSimulationForm(selected));
+      setPrediction(null);
+      setScenario(null);
       runPrediction(selected);
+      studentService.getScenario(selected.enrollment_id, { signal: controller.signal }).then(({ data }) => {
+        if (!controller.signal.aborted) setScenario(data.scenario?.data || null);
+      }).catch((error) => {
+        if (!controller.signal.aborted) toast.error(error.response?.data?.error || 'Saved scenario could not be loaded');
+      });
     }
-  }, [selectedId]);
+    return () => { controller.abort(); predictionRequest.current?.abort(); };
+  }, [selected]);
 
   const summary = selected ? [
     ['Day', selected.current_day],
@@ -213,7 +229,7 @@ export default function StudentPredictionPage() {
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center justify-between gap-4">
         <div>
           <h1 className="font-display text-2xl font-bold text-gradient">My Prediction Tool</h1>
-          <p className="text-light-accent/55 text-sm mt-1">Try simple changes and see how your risk prediction responds.</p>
+          <p className="text-light-accent/55 text-sm mt-1">Explore a separate what-if scenario alongside your actual academic prediction.</p>
         </div>
         <button onClick={() => runPrediction(selected, true)} disabled={loading || !selected} className="flex items-center gap-2 rounded-xl border border-border px-4 py-2 text-sm text-light-accent hover:bg-secondary/10 disabled:opacity-60">
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -227,6 +243,7 @@ export default function StudentPredictionPage() {
             <span className="text-xs font-mono uppercase text-light-accent/50">Course</span>
             <select
               value={selectedId}
+              disabled={saving}
               onChange={(event) => setSelectedId(event.target.value)}
               className="w-full rounded-xl border border-border bg-surface px-3 py-2 text-sm text-light-accent focus:outline-none focus:border-accent"
             >
@@ -248,7 +265,7 @@ export default function StudentPredictionPage() {
             </div>
 
             <div className="rounded-2xl border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-800">
-              These are simple what-if inputs. Activity means extra interactions with the course platform up to the current day. The maximum is based on day {selected.current_day}.
+              These what-if inputs are stored separately and never change your actual grades or activity. Activity means extra interactions with the course platform up to the current day. The maximum is based on day {selected.current_day}.
             </div>
 
             <div className="rounded-2xl border border-border bg-surface/40 p-5 space-y-4">
@@ -281,7 +298,7 @@ export default function StudentPredictionPage() {
               <h2 className="font-display text-sm font-semibold text-light-accent">3. Add a New Submission</h2>
               {availableSubmissionTypes.length === 0 ? (
                 <div className="rounded-xl border border-border bg-surface/70 px-4 py-3 text-sm text-light-accent/60">
-                  No unsubmitted TMA/CMA is available for this course right now.
+                  No unsubmitted TMA/CMA is due by the current course day. Future submissions become available as the course clock advances.
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -303,7 +320,7 @@ export default function StudentPredictionPage() {
 
             <button onClick={saveData} disabled={saving} className="flex items-center gap-2 rounded-xl bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-60">
               <Save className="w-4 h-4" />
-              {saving ? 'Applying...' : 'Apply and Rerun'}
+              {saving ? 'Saving...' : 'Save Scenario'}
             </button>
           </>
         ) : (
@@ -313,11 +330,23 @@ export default function StudentPredictionPage() {
         )}
       </div>
 
+      {scenario && (
+        <section className="glass rounded-2xl p-5 space-y-3" aria-label="Saved scenario">
+          <h2 className="font-display font-semibold">Saved What-if Scenario</h2>
+          <p className="text-sm text-light-accent/65">{scenario.message}</p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <SummaryCard label="Projected Clicks" value={scenario.projected.total_clicks} />
+            <SummaryCard label="Projected TMA" value={scenario.projected.latest_tma_score ?? '—'} />
+            <SummaryCard label="Projected CMA" value={scenario.projected.latest_cma_score ?? '—'} />
+            <SummaryCard label="Based on Day" value={scenario.based_on_day} />
+          </div>
+        </section>
+      )}
       {prediction && (
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-2xl p-6 glow-border space-y-5">
           <div className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-accent" />
-            <h2 className="font-display font-semibold text-light-accent">Current Prediction</h2>
+            <h2 className="font-display font-semibold text-light-accent">Actual Academic Prediction</h2>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
@@ -334,7 +363,7 @@ export default function StudentPredictionPage() {
             </div>
             <div>
               <p className="text-xs font-mono uppercase text-light-accent/45">Day</p>
-              <p className="text-2xl font-display font-bold text-light-accent">{prediction.model_confidence?.day_of_course}</p>
+              <p className="text-2xl font-display font-bold text-light-accent">{prediction.day_of_course ?? prediction.model_confidence?.day_of_course ?? selected?.current_day}</p>
             </div>
           </div>
           <div>

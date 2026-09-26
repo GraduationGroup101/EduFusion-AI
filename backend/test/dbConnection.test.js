@@ -24,10 +24,20 @@ test('retries a transient database disconnect and returns the next result', asyn
   };
 
   try {
-    const result = await query('SELECT 1 AS value');
+    const result = await query('SELECT 1 AS value', [], { retrySafe: true });
     assert.equal(attempts, 3);
     assert.deepEqual(result.rows, [{ value: 1 }]);
   } finally {
     pool.query = originalQuery;
   }
+});
+
+test('does not repeat a write when its acknowledgement is lost', async () => {
+  const original = pool.query;
+  let writes = 0;
+  pool.query = async () => { writes += 1; throw Object.assign(new Error('Lost acknowledgement'), { code: 'ECONNRESET' }); };
+  try {
+    await assert.rejects(query('INSERT INTO events VALUES ($1)', [1]), { code: 'ECONNRESET' });
+    assert.equal(writes, 1);
+  } finally { pool.query = original; }
 });

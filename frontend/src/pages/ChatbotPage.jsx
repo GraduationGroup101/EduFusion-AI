@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { chatbotService } from '../services/api';
 import { Send, Trash2, Bot, User, MessageSquare, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { v4 as uuidv4 } from 'uuid';
 
 const CHAT_SESSION_STORAGE_PREFIX = 'edufusion_chatbot_session_id';
 
@@ -23,7 +22,7 @@ const getOrCreateSessionId = () => {
 
   if (existingSessionId) return existingSessionId;
 
-  const nextSessionId = uuidv4();
+  const nextSessionId = crypto.randomUUID();
   localStorage.setItem(storageKey, nextSessionId);
   return nextSessionId;
 };

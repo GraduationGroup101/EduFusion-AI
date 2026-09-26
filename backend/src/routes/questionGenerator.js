@@ -1,72 +1,46 @@
 const express = require('express');
 const { authenticate } = require('../middleware/auth');
-
+const { aiLimiter } = require('../middleware/limits');
+const { integer, badRequest } = require('../lib/validation');
+const { requestUpstream, readJson, upstreamStatus, sendError } = require('../lib/upstream');
 const router = express.Router();
-
-const QUESTION_GENERATOR_BASE =
-  process.env.QUESTION_GENERATOR_API_URL || 'https://question-generator-api-pol9.onrender.com';
-
-const proxyFetch = async (url, options = {}) => {
-  const fetch = (await import('node-fetch')).default;
-  return fetch(url, options);
-};
-
-const safeJson = async (response) => {
-  const text = await response.text();
-  try {
-    return text ? JSON.parse(text) : {};
-  } catch {
-    return { error: text || 'Invalid JSON response' };
-  }
-};
-
-router.get('/health', authenticate, async (req, res) => {
-  try {
-    const response = await proxyFetch(`${QUESTION_GENERATOR_BASE}/health`);
-    const data = await safeJson(response);
-    res.status(response.status).json(data);
-  } catch (err) {
-    console.error('[question-generator] health error:', err.message);
-    res.status(503).json({ error: 'Question generator service is unavailable' });
-  }
+const BASE=(process.env.QUESTION_GENERATOR_API_URL || 'https://question-generator-api-pol9.onrender.com').replace(/\/+$/,'');
+const MAX_UPLOAD_BYTES=4*1024*1024;
+router.use(authenticate);
+router.get('/health',async(req,res)=>{
+  try { const response=await requestUpstream(req,`${BASE}/health`,{},{timeoutMs:20000});res.status(upstreamStatus(response.status)).json(await readJson(response)); }
+  catch(error) { sendError(res,error); }
 });
-
-router.post('/generate', authenticate, async (req, res) => {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 180000);
-
+const readForm=async(req)=>{
+  const type=req.headers['content-type'] || '';
+  if(!/^multipart\/form-data;\s*boundary=/i.test(type)) throw badRequest('multipart/form-data is required');
+  if(Number(req.headers['content-length'])>MAX_UPLOAD_BYTES) { req.resume(); throw Object.assign(new Error('Upload exceeds 4 MB'),{statusCode:413}); }
+  const chunks=[];let bytes=0;
   try {
-    const contentType = req.headers['content-type'];
-    if (!contentType?.includes('multipart/form-data')) {
-      clearTimeout(timer);
-      return res.status(400).json({ error: 'multipart/form-data request is required' });
+    for await(const chunk of req.iterator({destroyOnReturn:false})){
+      bytes+=chunk.length;
+      if(bytes>MAX_UPLOAD_BYTES) throw Object.assign(new Error('Upload exceeds 4 MB'),{statusCode:413});
+      chunks.push(chunk);
     }
-
-    const headers = { 'Content-Type': contentType };
-    if (req.headers['content-length']) {
-      headers['Content-Length'] = req.headers['content-length'];
-    }
-
-    const response = await proxyFetch(`${QUESTION_GENERATOR_BASE}/generate`, {
-      method: 'POST',
-      headers,
-      body: req,
-      signal: controller.signal,
-    });
-
-    clearTimeout(timer);
-    const data = await safeJson(response);
-    return res.status(response.ok ? 200 : response.status).json(data);
-  } catch (err) {
-    clearTimeout(timer);
-    console.error('[question-generator] generate error:', err.message);
-    return res.status(503).json({
-      error:
-        err.name === 'AbortError'
-          ? 'Question generation is taking too long. Please try a smaller file.'
-          : 'Question generator service is unavailable. Please try again in a moment.',
-    });
-  }
+  } catch(error) { req.resume();throw error; }
+  let form;
+  try { form=await new Response(Buffer.concat(chunks),{headers:{'Content-Type':type}}).formData(); }
+  catch { throw badRequest('Invalid multipart data'); }
+  for(const key of form.keys()) if(!['file','num_mcq','num_tf','num_essay'].includes(key)||form.getAll(key).length!==1) throw badRequest('Invalid upload field');
+  const file=form.get('file');
+  if(!file || typeof file==='string' || !file.size || !/\.(pdf|docx?|txt|pptx?)$/i.test(file.name)) throw badRequest('Choose a nonempty PDF, Word, text or PowerPoint file');
+  const result=new FormData();result.append('file',file,file.name);
+  let count=0;
+  for(const key of ['num_mcq','num_tf','num_essay']){const amount=integer(form.get(key),key,0,50);count+=amount;result.append(key,String(amount));}
+  if(!count) throw badRequest('Choose at least one question');
+  return result;
+};
+router.post('/generate',aiLimiter,async(req,res)=>{
+  try {
+    const body=await readForm(req);
+    const response=await requestUpstream(req,`${BASE}/generate`,{method:'POST',body},{timeoutMs:170000});
+    res.status(upstreamStatus(response.status)).json(await readJson(response));
+  } catch(error) { sendError(res,error,error.statusCode===413?'Upload exceeds 4 MB':'Question generation is temporarily unavailable'); }
 });
-
-module.exports = router;
+module.exports=router;
+module.exports.readForm=readForm;

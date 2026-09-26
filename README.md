@@ -1,219 +1,118 @@
-# EduFusion AI — Full Stack Platform
+# EduFusion AI
 
-A suite of AI tools for digital education: academic risk prediction (EduPredict), lecture
-transcription (LectureScribe), an academic chatbot, and question generation (QuizForge) —
-behind one account and one dashboard.
+EduFusion brings four education tools into one authenticated dashboard: academic-risk prediction (EduPredict), university chat, YouTube transcription (LectureScribe), and document-based question generation (QuizForge).
 
-## Tech Stack
+The React frontend talks only to an Express gateway. The gateway authenticates users with PostgreSQL/JWT and calls the external AI services. Model training, retrieval, transcription, and question-generation implementations live outside this repository.
 
-**Frontend:** React 18 + Vite + Tailwind CSS + Framer Motion  
-**Backend:** Node.js + Express + PostgreSQL + JWT + bcryptjs  
-**Database:** PostgreSQL (Render)  
-**Chatbot API:** https://final-iug-chat-botv2.onrender.com
+## Development
 
-**LectureScribe API:** https://lecturescribe.app
+Use Node **22.13+** or **24+**. Install from the committed lockfiles:
 
-## Project Structure
-
-```
-edupredict/
-├── backend/
-│   ├── src/
-│   │   ├── index.js          # Express server entry
-│   │   ├── db/
-│   │   │   ├── index.js      # PostgreSQL connection pool
-│   │   │   └── queries.js    # All database queries
-│   │   ├── middleware/
-│   │   │   └── auth.js       # JWT middleware
-│   │   └── routes/
-│   │       ├── auth.js       # Login / logout / me
-│   │       ├── dashboard.js  # Stats, predictions, charts
-│   │       └── chatbot.js    # Proxy to IUG chatbot API
-│   ├── .env
-│   └── package.json
-└── frontend/
-    ├── src/
-    │   ├── App.jsx            # Router
-    │   ├── main.jsx
-    │   ├── index.css          # Global styles + Tailwind
-    │   ├── context/
-    │   │   └── AuthContext.jsx
-    │   ├── services/
-    │   │   └── api.js         # Axios instance + services
-    │   ├── components/
-    │   │   ├── auth/
-    │   │   │   └── ProtectedRoute.jsx
-    │   │   └── layout/
-    │   │       ├── Sidebar.jsx
-    │   │       └── DashboardLayout.jsx
-    │   └── pages/
-    │       ├── Landing.jsx        # Public home page explaining the platform
-    │       ├── Auth.jsx           # Sign in + 2-step student registration
-    │       ├── DashboardHome.jsx
-    │       ├── ChatbotPage.jsx
-    │       ├── Placeholders.jsx
-    │       └── LectureScribePage.jsx # YouTube lecture transcription
-    ├── public/
-    │   ├── edufusion-preview-1.mp4      # Concept film, part 1 (silent, no audio track)
-    │   ├── edufusion-preview-2.mp4      # Concept film, part 2 - crossfades from part 1
-    │   └── edufusion-preview-poster.jpg # Poster frame for the first clip
-    ├── vercel.json            # SPA rewrite — required, see Deployment
-    ├── tailwind.config.js
-    ├── vite.config.js
-    └── package.json
+```sh
+npm run install:all
 ```
 
-## Setup & Run
+Copy `backend/.env.example` to `backend/.env`, and set your PostgreSQL URL and a unique JWT secret of at least 32 characters. Generate one with:
 
-### 1. Backend
-
-```bash
-cd backend
-npm install
-# .env is already configured with your database
-npm run dev        # development
-npm start          # production
+```sh
+node -e "console.log(require('node:crypto').randomBytes(48).toString('hex'))"
 ```
 
-Server runs on: **http://localhost:5000**
+For a local PostgreSQL instance without TLS, set `DB_SSL=false`. Remote connections verify certificates by default. Provide `DB_SSL_CA` when the server uses a private CA; connection-string `sslmode` flags do not override gateway verification policy.
 
-### 2. Frontend
+Apply migrations before starting the backend:
 
-```bash
-cd frontend
-npm install
-npm run dev        # development (http://localhost:3000)
-npm run build      # production build
+```sh
+npm run migrate --prefix backend
 ```
 
-## API Endpoints
+To create a demo course and administrator in a **development** database, set `DEMO_ADMIN_PASSWORD` and run:
 
-### Auth
-- `POST /api/auth/login` — `{ username, password }` → `{ token, user }`
-- `GET  /api/auth/registration-courses` — Course presentations open for registration
-- `POST /api/auth/register-student` — Creates a student + enrollment → `{ token, user, warnings }`
-  (`email` is optional; every other field in `REQUIRED_REGISTRATION_FIELDS` is not)
-- `GET  /api/auth/me` — Returns current user (requires Bearer token)
-- `POST /api/auth/logout` — Clears session
-
-### Dashboard
-- `GET /api/dashboard/stats` — Total students, enrollments, predictions, at-risk count
-- `GET /api/dashboard/predictions/recent?limit=10` — Recent predictions with student info
-- `GET /api/dashboard/risk-distribution` — Risk level breakdown for charts
-- `GET /api/dashboard/course-stats` — Enrollment counts per course module
-
-### Chatbot (Proxies to the current IUG API)
-- `GET  /api/chatbot/health` — Lightweight liveness check against the current chatbot
-- `POST /api/chatbot/chat` — `{ question, session_id }` → `{ answer, session_id, source }`
-- `GET  /api/chatbot/history/:session_id`
-- `DELETE /api/chatbot/history/:session_id`
-
-EduFusion keeps its own authentication boundary and calls the chatbot's stateless
-`/api/chat/guest` endpoint from the backend. The last five completed turns are
-forwarded for follow-up context. The legacy chatbot file proxy was removed; use
-the current chatbot admin portal at
-`https://final-iug-chat-botv2.onrender.com/app/admin.html`.
-
-### LectureScribe
-- `GET  /api/lecture-scribe/health` — Check the transcription service
-- `POST /api/lecture-scribe/jobs` — Submit a YouTube lecture
-- `GET  /api/lecture-scribe/jobs` — List persisted transcription jobs
-- `GET  /api/lecture-scribe/jobs/:jobId` — Poll job progress
-- `GET  /api/lecture-scribe/jobs/:jobId/transcript?kind=cleaned` — Read the result
-
-All LectureScribe endpoints require the EduFusion bearer token. The Express backend
-proxies requests to `LECTURESCRIBE_API_URL`, keeping the external service URL and
-cross-origin behavior out of the browser.
-
-## Deployment
-
-The frontend is a client-routed SPA, so the host **must** serve `index.html` for every
-path — otherwise refreshing (or opening a direct link to) `/dashboard/...` returns a 404
-from the host before React ever loads. `frontend/vercel.json` does this on Vercel:
-
-```json
-{ "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }] }
+```sh
+npm run seed --prefix backend
 ```
 
-It only takes effect when Vercel's **Root Directory** is set to `frontend`. If the project
-is ever built from the repository root instead, move `vercel.json` there too.
+The demo administrator username is `demo-admin`. No default password is committed. The seed does not replace existing users or credentials. It is blocked in production.
 
-Set `VITE_API_URL` in the Vercel project to the deployed backend's `/api` base, and
-`FRONTEND_URL` on the backend so CORS allows the deployed origin.
+Start the services in separate terminals:
 
-### Cold starts
+```sh
+npm run dev:backend
+npm run dev:frontend
+```
 
-`EDUPREDICT_API_URL` and the chatbot both run on free Render instances that sleep
-when idle; a cold start there has been measured at **~80 seconds**. Registration used
-to `await` a seed prediction with no timeout, so signing up inherited that whole delay.
-It now gives that call a budget of `PREDICTION_SEED_TIMEOUT_MS` (default 4000 ms) and
-returns a warning instead of blocking. `backend/scripts/renderKeepAlive.js` pings those
-services to keep them warm.
+Frontend: `http://localhost:3000`; backend: `http://localhost:5000`. Vite proxies `/api` to the backend. The frontend defaults to `/api`; copy `frontend/.env.example` if you need a different gateway URL.
 
-## Optional Render Keep-Alive Checks
+## Checks
 
-The scheduled workflow in `.github/workflows/render-keep-alive.yml` performs three
-small checks every ten minutes:
+```sh
+npm run check
+npm audit --prefix backend
+npm audit --prefix frontend
+```
 
-- `GET https://final-iug-chat-botv2.onrender.com/live`
-- `GET https://edupredict-api-6ob5.onrender.com/health`
-- `SELECT 1` against PostgreSQL
+`check` runs ESLint, backend regression/integration tests, frontend tests, and the production build. Backend integration tests run the actual migrations and queries in an isolated PostgreSQL engine (PGlite); they do not use your configured database or contact external AI services. API providers are mocked for reproducible contract tests.
 
-It is intentionally disabled until the repository variable
-`ENABLE_RENDER_KEEP_ALIVE=true` is added. Also add the PostgreSQL connection string
-as a GitHub Actions secret named `DATABASE_URL`. Optional repository variables
-`CHATBOT_API_URL` and `EDUPREDICT_API_URL` override the default public URLs.
+CI runs these checks on pull requests and on `main`, plus production dependency audits. Production dependencies, development tools and lockfiles are updated together.
 
-Keeping two Render Free web services continuously active can exceed the 750 Free
-instance hours available to one workspace each month. In addition, a ping cannot
-prevent a Free Render PostgreSQL database from expiring after its plan's lifetime.
-Use paid instances for guaranteed uptime and durable PostgreSQL availability; use
-this workflow only when its Free-hour tradeoff is acceptable.
+## Accounts and data boundaries
 
-### PostgreSQL connection resilience
+Administrators and advisors authenticate through `app_users`; students through `students`. Both paths hash credentials with bcryptjs. Legacy plaintext student PINs are upgraded after a successful login using a conditional update. `pin_format` records credential provenance, preserving old character PINs that resemble hash prefixes while rejecting malformed values marked hashed. Longer legacy secrets use a versioned SHA-256 preprocessing format to avoid bcrypt's 72-byte truncation; new PINs are limited to 72 UTF-8 bytes. A recognized stored hash can never be used as a plaintext password. Invalid Unicode credentials are rejected before hashing.
 
-The backend pool enables TCP keep-alive and retries transient connection errors up
-to `DB_QUERY_RETRIES` times (default: `2`). In a Render deployment, configure
-`DATABASE_URL` with the database's **Internal Database URL** when the web service
-and PostgreSQL are in the same Render region. Keep the External Database URL for
-local development only.
+The student prediction page separates **actual academic evidence** from **what-if scenarios**. Saving a scenario never modifies grades, submission dates, VLE events, or the real prediction history. The upstream prediction contract currently accepts only a student/course, not hypothetical features; consequently the page shows projected scenario values and the actual prediction separately. Hypothetical model risk stays unavailable until the external model supports a documented scenario endpoint.
 
-These settings recover from idle sockets, maintenance restarts, and brief network
-interruptions. They cannot revive an expired database or prevent a Free database
-from reaching its expiration date.
+Chat history is persisted in PostgreSQL with 24-hour expiry, per-owner session/message caps, and separate namespaces for student and application accounts. Lecture jobs are accessible only to accounts that created them through EduFusion. Historical jobs from the provider's previously global list are not automatically assigned to a user. Cached job reuse grants access only after a successful authenticated creation request, without overwriting another owner's entitlement.
 
-## Color Palette
-| Variable | Hex |
-|---|---|
-| Primary (page background) | `#F5F5F5` |
-| Secondary (brand teal) | `#76ABAE` |
-| Accent (highlight orange) | `#FF5722` |
-| Light Accent (text) | `#222831` |
+Clock commands require an idempotency key. A request replay cannot move time twice. A prediction-regeneration outage after a clock update is returned as a warning; the committed clock change is not reported as a failed operation.
 
-## Adding Future APIs
+See [the API contracts](docs/api-contracts.md) for payloads, limits, error semantics and provider behavior.
 
-The following pages are scaffolded and ready for API integration:
+## Deployment and upgrade order
 
-1. **AI Tool** (`/dashboard/ai-tool`) → Edit `src/pages/Placeholders.jsx`
-2. **Question Generator** (`/dashboard/question-gen`) → Edit `src/pages/Placeholders.jsx`
-3. **LectureScribe** (`/dashboard/youtube`) → Connected to the external FastAPI service
+1. Back up the shared database and confirm the target database URL. `001_core.sql` bootstraps a fresh development database and retains existing tables; it is not an authoritative replacement for an external EduPredict model's schema. On an existing database, review the consumed columns and added indexes before running migrations.
+2. Set a strong `JWT_SECRET`, `FRONTEND_URL`, provider URLs and `ADMIN_API_KEY` on the backend. Set `DB_SSL=true` for the remote database, and configure a trusted CA when required. Backend startup rejects missing or malformed essential settings. Vercel/Render default to one trusted proxy hop; `TRUST_PROXY` overrides this with an explicit hop count.
+3. Run `npm run migrate --prefix backend`. The migration widens legacy PIN columns to TEXT and creates gateway-owned history, scenarios, job entitlements and clock-command tables. Migrations use one transaction, an advisory lock and a migration ledger. They do not edit existing grades or prediction records.
+4. Run `npm run migrate:pins --prefix backend` to hash remaining legacy PINs before switching application traffic. Login also upgrades an untouched legacy account safely. The bulk command never prints credentials and does not overwrite concurrent resets. Investigate malformed hash-looking values through an explicit credential reset.
+5. Deploy the backend on Node 22.13+ or 24+. `/api/health` checks process liveness; `/api/ready` checks database/migration availability. Direct Express startup has graceful shutdown; Vercel can import the exported app. Hosting must allow up to 80 seconds for prediction/chat and 170 seconds for question generation. If the hosting plan cannot support that, the provider must offer a job API rather than increasing browser timeouts indefinitely.
+6. Set Vercel's frontend **Root Directory** to `frontend` and `VITE_API_URL` to the deployed backend's `/api` URL. `frontend/vercel.json` serves `index.html` for client-side routes.
+7. Verify login for an upgraded student and an administrator, owned job/transcript access, scenario isolation, uploads, and `/api/ready` against the deployed environment. Local mock-provider tests do not prove current provider availability.
+8. Configure daily cleanup using the workflow below, then protect `main` after the `verify` CI check appears. The repository includes `scripts/configure-branch-protection.ps1` for administrators authenticated with `gh`; it requires one approval, an up-to-date passing `verify` check, resolved conversations, and prohibits force pushes and branch deletion.
 
-For each, add the API endpoint to `src/services/api.js` and build the UI component.
+**Rollback:** keep the new gateway tables and wider PIN column. Reverting to an old backend that expects plaintext student PINs will break migrated accounts; roll forward with the compatible verifier. Keep source academic records and newly hashed credentials intact. Do not run a destructive down-migration to recover from a deployment problem.
 
-## Database Tables Used
+## Maintenance
 
-| Table | Purpose |
-|---|---|
-| `app_users` | Authentication (`username`, `password_hash`, `role`, `is_active`) |
-| `students` | Student profiles |
-| `enrollments` | Course enrollments |
-| `predictions` | Risk predictions |
-| `course_presentations` | Course modules |
+```sh
+npm run cleanup --prefix backend
+```
 
-## Security Features
-- JWT tokens (24h expiry)
-- bcryptjs password hashing
-- Rate limiting on login (10 attempts / 15 min)
-- Protected routes (client + server side)
-- SQL injection prevention (parameterized queries)
-- CORS configured for localhost origins
+This removes expired chat rows and clock commands older than 30 days. `.github/workflows/database-maintenance.yml` runs it daily when the repository variable `ENABLE_DATABASE_MAINTENANCE=true` and Actions secret `DATABASE_URL` are configured. It can also be started manually. Actions needs the externally reachable database URL; an internal Render URL works only from the same private network.
+
+The separate Render keep-alive workflow is opt-in through `ENABLE_RENDER_KEEP_ALIVE=true`; it only checks selected services and PostgreSQL. Sleeping free services and hosting time limits remain infrastructure constraints. Enable the optional workflow only after considering the hosting plan's usage budget.
+
+## Database and source layout
+
+```text
+backend/
+  migrations/              Fresh-schema bootstrap and gateway upgrade migrations
+  scripts/                 Migrate, upgrade PINs, seed, cleanup, keep-alive
+  src/app.js               Express app, routes, liveness/readiness
+  src/index.js             Validated startup and graceful shutdown
+  src/db/                  SQL reads, transactions, history, jobs, scenarios, clocks
+  src/lib/                 Credential compatibility, validation, provider requests
+  src/middleware/          Authentication, roles and request limits
+  src/routes/              Gateway API
+  test/                    Regression and isolated PostgreSQL integration tests
+frontend/
+  src/context/             Session bootstrap
+  src/services/api.js      Gateway client and safe clock retries
+  src/pages/               Lazy-loaded tools and role-specific dashboards
+  src/test/                Access and session regression tests
+  public/                  Landing-page video assets
+```
+
+Shared academic tables: `app_users`, `students`, `enrollments`, `course_presentations`, `academic_clocks`, `assessments`, `student_assessments`, `vle_sites`, `student_vle_events`, `predictions`.
+
+Gateway-owned tables: `edufusion_schema_migrations`, `edufusion_chat_history`, `edufusion_lecture_jobs`, `edufusion_student_scenarios`, `edufusion_clock_commands`.
+
+The two MP4 files at repository root are source assets. The web application serves the processed files in `frontend/public`; keep source assets outside the delivery bundle.
