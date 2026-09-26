@@ -97,8 +97,8 @@ export default function DashboardHome() {
         </motion.div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <StatCard icon={BookOpen} label="My Enrollments" value={studentSummary?.totalEnrollments} color="#76ABAE" delay={0.1} />
-          <StatCard icon={TrendingUp} label="My Predictions" value={studentSummary?.predictionCount} color="#FF5722" delay={0.15} />
+          <StatCard icon={BookOpen} label="My Enrollments" value={studentSummary?.totalEnrollments} color="#087F75" delay={0.1} />
+          <StatCard icon={TrendingUp} label="My Predictions" value={studentSummary?.predictionCount} color="#C85140" delay={0.15} />
           <StatCard icon={AlertTriangle} label="At-Risk Courses" value={studentSummary?.atRiskCount} color="#ef4444" delay={0.2} />
         </div>
 
@@ -170,9 +170,9 @@ export default function DashboardHome() {
 
       {/* Stats grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard icon={Users} label="Total Students" value={stats?.totalStudents} color="#76ABAE" delay={0.1} />
-        <StatCard icon={BookOpen} label="Enrollments" value={stats?.totalEnrollments} color="#FF5722" delay={0.15} />
-        <StatCard icon={TrendingUp} label="Current Predictions" value={stats?.recentPredictions} color="#76ABAE" delay={0.2} />
+        <StatCard icon={Users} label="Total Students" value={stats?.totalStudents} color="#087F75" delay={0.1} />
+        <StatCard icon={BookOpen} label="Enrollments" value={stats?.totalEnrollments} color="#C85140" delay={0.15} />
+        <StatCard icon={TrendingUp} label="Current Predictions" value={stats?.recentPredictions} color="#087F75" delay={0.2} />
         <StatCard icon={AlertTriangle} label="Current At-Risk Courses" value={stats?.atRiskStudents} color="#ef4444" delay={0.25} />
       </div>
 
@@ -187,10 +187,10 @@ export default function DashboardHome() {
               <PieChart>
                 <Pie data={riskDist} cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={3} dataKey="value">
                   {riskDist.map((entry, i) => (
-                    <Cell key={i} fill={RISK_COLORS[entry.name] || '#76ABAE'} />
+                    <Cell key={i} fill={RISK_COLORS[entry.name] || '#087F75'} />
                   ))}
                 </Pie>
-                <Tooltip contentStyle={{ background: '#FFFFFF', border: '1px solid #D7E3E4', borderRadius: 8, color: '#222831', fontSize: 12 }} />
+                <Tooltip contentStyle={{ background: '#FFFFFF', border: '1px solid #DDE6DF', borderRadius: 8, color: '#193C37', fontSize: 12 }} />
               </PieChart>
             </ResponsiveContainer>
           ) : (
@@ -213,10 +213,10 @@ export default function DashboardHome() {
           {courseStats.length > 0 ? (
             <ResponsiveContainer width="100%" height={180}>
               <BarChart data={courseStats}>
-                <XAxis dataKey="name" tick={{ fill: '#222831', fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: '#76ABAE', fontSize: 11 }} axisLine={false} tickLine={false} />
-                <Tooltip contentStyle={{ background: '#FFFFFF', border: '1px solid #D7E3E4', borderRadius: 8, color: '#222831', fontSize: 12 }} />
-                <Bar dataKey="enrollments" fill="#76ABAE" radius={[4, 4, 0, 0]} />
+                <XAxis dataKey="name" tick={{ fill: '#193C37', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: '#087F75', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <Tooltip contentStyle={{ background: '#FFFFFF', border: '1px solid #DDE6DF', borderRadius: 8, color: '#193C37', fontSize: 12 }} />
+                <Bar dataKey="enrollments" fill="#087F75" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           ) : (

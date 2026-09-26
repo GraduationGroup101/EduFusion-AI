@@ -56,12 +56,12 @@ export default function App() {
         toastOptions={{
           style: {
             background: '#FFFFFF',
-            color: '#222831',
-            border: '1px solid rgba(118,171,174,0.35)',
+            color: '#193C37',
+            border: '1px solid rgba(8,127,117,0.35)',
             fontFamily: 'DM Sans, sans-serif',
             fontSize: '14px',
           },
-          success: { iconTheme: { primary: '#76ABAE', secondary: '#FFFFFF' } },
+          success: { iconTheme: { primary: '#087F75', secondary: '#FFFFFF' } },
           error: { iconTheme: { primary: '#ef4444', secondary: '#FFFFFF' } },
         }}
       />

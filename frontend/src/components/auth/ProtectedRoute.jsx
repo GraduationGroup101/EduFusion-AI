@@ -11,7 +11,7 @@ export default function ProtectedRoute({ children, allowedRoles }) {
       <div className="min-h-screen bg-primary flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <div className="w-12 h-12 rounded-2xl flex items-center justify-center animate-pulse-glow"
-               style={{ background: '#76ABAE' }}>
+               style={{ background: '#087F75' }}>
             <Brain className="w-6 h-6 text-white" />
           </div>
           <div className="flex gap-1">

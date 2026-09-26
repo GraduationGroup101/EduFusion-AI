@@ -1,3 +1,4 @@
+import { BrandMark } from '../components/Brand';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { chatbotService } from '../services/api';
@@ -219,12 +220,12 @@ export default function ChatbotPage() {
   };
 
   return (
-    <div className="flex flex-col h-screen">
+    <div className="chat-workspace flex flex-col h-full">
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-border/50 flex-shrink-0">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl flex items-center justify-center"
-               style={{ background: '#76ABAE' }}>
+               style={{ background: '#087F75' }}>
             <MessageSquare className="w-5 h-5 text-white" />
           </div>
           <div>
@@ -275,12 +276,13 @@ export default function ChatbotPage() {
               className="flex flex-col items-center justify-center h-full pt-12">
               <div className="text-center">
                 <div className="w-16 h-16 rounded-2xl mx-auto mb-4 flex items-center justify-center"
-                     style={{ background: '#76ABAE' }}>
-                  <Bot className="w-8 h-8 text-white" />
+                     style={{ background: '#E5F3E9' }}>
+                  <BrandMark className="chat-brand-mark" />
                 </div>
                 <h2 className="font-display text-xl font-semibold text-light-accent mb-2">
-                  How can I help?
+                  What would you like to know?
                 </h2>
+                <p className="text-sm text-light-accent/60 max-w-sm mx-auto leading-relaxed">Ask about university programmes, admissions, or student services.</p>
               </div>
             </motion.div>
           )}
@@ -316,8 +318,8 @@ export default function ChatbotPage() {
             className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 transition-all"
             style={{
               background: input.trim() && !loading
-                ? '#76ABAE'
-                : 'rgba(118,171,174,0.18)',
+                ? '#087F75'
+                : 'rgba(8,127,117,0.18)',
             }}
           >
             <Send className={`w-4 h-4 ${input.trim() && !loading ? 'text-white' : 'text-accent/40'}`} />

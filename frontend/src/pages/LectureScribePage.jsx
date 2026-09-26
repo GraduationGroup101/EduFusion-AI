@@ -288,7 +288,7 @@ export default function LectureScribePage() {
                 toast.success('LectureScribe is back online');
               }
             }}
-            className="mt-7 h-11 px-5 bg-accent text-white text-sm font-semibold inline-flex items-center justify-center gap-2"
+            className="mt-7 h-11 px-5 bg-secondary text-white text-sm font-semibold inline-flex items-center justify-center gap-2"
           >
             <RefreshCw className="w-4 h-4" />
             Try again
@@ -351,7 +351,7 @@ export default function LectureScribePage() {
               <button
               type="submit"
                 disabled={submitting || serviceStatus !== 'online' || isActive}
-                className="h-12 px-6 bg-accent text-white text-sm font-semibold inline-flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="h-12 px-6 bg-secondary text-white text-sm font-semibold inline-flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
                 {submitting ? 'Submitting' : 'Create transcript'}

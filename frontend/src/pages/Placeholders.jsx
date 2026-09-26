@@ -72,7 +72,7 @@ export function AIToolPage() {
           placeholder="Presentation (optional)"
           className="bg-surface border border-border rounded-xl px-4 py-3 text-sm text-light-accent focus:outline-none focus:border-accent"
         />
-        <button disabled={loading} className="flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3 text-sm font-medium text-white disabled:opacity-60">
+        <button disabled={loading} className="flex items-center justify-center gap-2 rounded-xl bg-secondary px-4 py-3 text-sm font-medium text-white disabled:opacity-60">
           <Search className="w-4 h-4" />
           {loading ? 'Searching...' : 'Search'}
         </button>
@@ -298,7 +298,7 @@ export function QuestionGeneratorPage() {
             onDrop={handleDrop}
             className="w-full min-h-[220px] rounded-xl border-2 border-dashed border-secondary/35 bg-white/70 hover:border-accent/45 hover:bg-white transition-colors flex flex-col items-center justify-center gap-4 px-5 text-center"
           >
-            <div className="w-14 h-14 rounded-2xl flex items-center justify-center" style={{ background: '#76ABAE' }}>
+            <div className="w-14 h-14 rounded-2xl flex items-center justify-center" style={{ background: '#087F75' }}>
               {file ? <FileText className="w-7 h-7 text-white" /> : <Upload className="w-7 h-7 text-white" />}
             </div>
             <div>
@@ -321,7 +321,7 @@ export function QuestionGeneratorPage() {
             <button
               type="submit"
               disabled={loading || !file || totalQuestions <= 0}
-              className="h-11 flex-1 rounded-xl bg-accent text-white text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+              className="h-11 flex-1 rounded-xl bg-secondary text-white text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileQuestion className="w-4 h-4" />}
               {loading ? 'Generating...' : `Generate ${totalQuestions} Questions`}
