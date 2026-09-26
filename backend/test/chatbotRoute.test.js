@@ -6,6 +6,13 @@ const originalChatbotApiUrl = process.env.CHATBOT_API_URL;
 process.env.CHATBOT_API_URL = 'https://iug-chatbot.onrender.com/';
 
 const originalFetch = global.fetch;
+const storePath = require.resolve('../src/db/appStore');
+const histories = new Map();
+require.cache[storePath] = { id: storePath, filename: storePath, loaded: true, exports: {
+  getHistory: async (user, id) => histories.get(id) || [],
+  appendExchange: async (user, id, question, data) => histories.set(id, [...(histories.get(id) || []), { role: 'user', content: question }, { role: 'assistant', content: data.answer }]),
+  deleteHistory: async (user, id) => histories.delete(id),
+} };
 const upstreamCalls = [];
 let upstreamMode = 'success';
 

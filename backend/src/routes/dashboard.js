@@ -1,5 +1,6 @@
 const express = require('express');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, requireRole } = require('../middleware/auth');
+const { integer } = require('../lib/validation');
 const {
   getCourseStats,
   getDashboardStats,
@@ -10,7 +11,7 @@ const {
 
 const router = express.Router();
 
-router.get('/stats', authenticate, async (req, res) => {
+router.get('/stats', authenticate, requireRole(['admin','advisor']), async (req, res) => {
   try {
     if (req.user.role === 'student') {
       return res.status(403).json({ error: 'Students cannot access aggregate dashboard stats' });
@@ -37,21 +38,21 @@ router.get('/student-summary', authenticate, async (req, res) => {
   }
 });
 
-router.get('/predictions/recent', authenticate, async (req, res) => {
+router.get('/predictions/recent', authenticate, requireRole(['admin','advisor']), async (req, res) => {
   try {
     if (req.user.role === 'student') {
       return res.status(403).json({ error: 'Students cannot access other students predictions' });
     }
-    const limit = parseInt(req.query.limit) || 10;
+    const limit = integer(req.query.limit ?? 10, 'Limit', 1, 1000);
     const predictions = await getRecentPredictions(limit);
     res.json(predictions);
   } catch (err) {
     console.error('Predictions error:', err);
-    res.status(500).json({ error: 'Failed to fetch predictions' });
+    res.status(err.statusCode || 503).json({ error: err.statusCode === 400 ? err.message : 'Failed to fetch predictions' });
   }
 });
 
-router.get('/risk-distribution', authenticate, async (req, res) => {
+router.get('/risk-distribution', authenticate, requireRole(['admin','advisor']), async (req, res) => {
   try {
     if (req.user.role === 'student') {
       return res.status(403).json({ error: 'Students cannot access aggregate risk distribution' });
@@ -64,7 +65,7 @@ router.get('/risk-distribution', authenticate, async (req, res) => {
   }
 });
 
-router.get('/course-stats', authenticate, async (req, res) => {
+router.get('/course-stats', authenticate, requireRole(['admin','advisor']), async (req, res) => {
   try {
     if (req.user.role === 'student') {
       return res.status(403).json({ error: 'Students cannot access aggregate course stats' });

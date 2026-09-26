@@ -2,8 +2,8 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Brain } from 'lucide-react';
 
-export default function ProtectedRoute({ children }) {
-  const { isAuthenticated, loading } = useAuth();
+export default function ProtectedRoute({ children, allowedRoles }) {
+  const { isAuthenticated, loading, user } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -24,6 +24,8 @@ export default function ProtectedRoute({ children }) {
       </div>
     );
   }
+
+  if (isAuthenticated && allowedRoles && !allowedRoles.includes(user?.role)) return <Navigate to="/dashboard" replace />;
 
   // Remember where they were headed so a refresh on a deep link returns there
   // after signing in, instead of always dumping them on the dashboard index.

@@ -52,6 +52,7 @@ const isServiceUnavailable = (error) => [503, 504].includes(error.response?.stat
 export default function LectureScribePage() {
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [mode, setMode] = useState('formatted');
+  const [language, setLanguage] = useState('auto');
   const [serviceStatus, setServiceStatus] = useState('checking');
   const [submitting, setSubmitting] = useState(false);
   const [activeJob, setActiveJob] = useState(null);
@@ -151,36 +152,45 @@ export default function LectureScribePage() {
     if (!activeJob || !['queued', 'running'].includes(activeJob.status)) return undefined;
 
     let cancelled = false;
+    let timer;
+    let controller;
+    let inFlight = false;
     const poll = async () => {
+      if (cancelled || document.hidden || inFlight) return;
+      inFlight = true;
+      controller = new AbortController();
       try {
-        const { data } = await lectureScribeService.getJob(activeJob.job_id);
+        const { data } = await lectureScribeService.getJob(activeJob.job_id, { signal: controller.signal });
         if (cancelled) return;
-        setActiveJob(data);
         if (data.status === 'completed') {
           await loadTranscript(data);
-          loadJobs();
-          toast.success('Transcript is ready');
+          if (cancelled) return;
+          loadJobs(); toast.success('Transcript is ready');
         } else if (data.status === 'failed') {
-          loadJobs();
-          toast.error(data.error || 'Transcription failed');
+          loadJobs(); toast.error(data.error || 'Transcription failed');
         }
+        setActiveJob(data);
       } catch (error) {
-        if (!cancelled && isServiceUnavailable(error)) {
-          setServiceStatus('offline');
-        } else if (!cancelled) {
-          toast.error(errorMessage(error, 'Unable to refresh job status'));
+        if (!cancelled && error.code !== 'ERR_CANCELED') {
+          if (isServiceUnavailable(error)) setServiceStatus('offline');
+          else toast.error(errorMessage(error, 'Unable to refresh job status'));
         }
+      } finally {
+        inFlight = false;
+        if (!cancelled && !document.hidden) timer = setTimeout(poll, 2500);
       }
     };
-
-    const pollTimer = setInterval(poll, 2500);
+    const visibility = () => {
+      clearTimeout(timer);
+      if (document.hidden) controller?.abort();
+      else poll();
+    };
+    document.addEventListener('visibilitychange', visibility);
     const clockTimer = setInterval(() => setClockTick(Date.now()), 1000);
     poll();
-
     return () => {
-      cancelled = true;
-      clearInterval(pollTimer);
-      clearInterval(clockTimer);
+      cancelled = true; controller?.abort(); clearTimeout(timer); clearInterval(clockTimer);
+      document.removeEventListener('visibilitychange', visibility);
     };
   }, [activeJob?.job_id, activeJob?.status, loadJobs, loadTranscript]);
 
@@ -204,6 +214,7 @@ export default function LectureScribePage() {
       const { data } = await lectureScribeService.createJob({
         youtube_url: url,
         clean: mode === 'formatted',
+        language,
       });
       setActiveJob({
         ...data,
@@ -348,6 +359,12 @@ export default function LectureScribePage() {
             </div>
           </div>
 
+          <label className="block text-sm font-semibold">
+            Lecture language
+            <select value={language} onChange={(event) => setLanguage(event.target.value)} className="mt-2 block border border-border rounded-lg p-2">
+              <option value="auto">Detect automatically</option><option value="ar">Arabic</option><option value="en">English</option>
+            </select>
+          </label>
           <fieldset>
             <legend className="text-sm font-semibold text-light-accent mb-3">Processing mode</legend>
             <div className="grid grid-cols-1 md:grid-cols-2 border border-border">

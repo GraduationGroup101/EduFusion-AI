@@ -24,6 +24,7 @@ const adminNavItems = [
   { path: '/dashboard/admin/chatbot-files', icon: Database, label: 'Chatbot Admin' },
   { path: '/dashboard/chatbot', icon: MessageSquare, label: 'AI Chatbot' },
   { path: '/dashboard/ai-tool', icon: Sparkles, label: 'Prediction Tool' },
+  { path: '/dashboard/question-gen', icon: FileQuestion, label: 'Question Generator' },
   { path: '/dashboard/youtube', icon: Youtube, label: 'LectureScribe' },
 ];
 

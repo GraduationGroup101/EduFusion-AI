@@ -26,7 +26,11 @@ const authenticate = async (req, res, next) => {
     if (err.name === 'TokenExpiredError') {
       return res.status(401).json({ error: 'Token expired' });
     }
-    return res.status(401).json({ error: 'Invalid token' });
+    if (['JsonWebTokenError', 'NotBeforeError'].includes(err.name)) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
+    console.error('Authentication lookup failed:', err.code || err.name);
+    return res.status(503).json({ error: 'Account service is temporarily unavailable' });
   }
 };
 

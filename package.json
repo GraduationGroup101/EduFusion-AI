@@ -3,10 +3,21 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "install:all": "cd backend && npm install && cd ../frontend && npm install",
+    "install:all": "npm ci && npm ci --prefix backend && npm ci --prefix frontend",
     "dev:backend": "cd backend && npm run dev",
     "dev:frontend": "cd frontend && npm run dev",
     "build": "cd frontend && npm run build",
-    "start:backend": "cd backend && npm start"
+    "start:backend": "cd backend && npm start",
+    "test": "npm test --prefix backend && npm test --prefix frontend",
+    "lint": "eslint backend frontend/src frontend/vite.config.js",
+    "check": "npm run lint && npm test && npm run build"
+  },
+  "engines": {
+    "node": "^22.13.0 || >=24.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.11.0",
+    "globals": "^17.12.0"
   }
 }

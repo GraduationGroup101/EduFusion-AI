@@ -195,6 +195,8 @@ export function QuestionGeneratorPage() {
 
   const selectFile = (selectedFile) => {
     if (!selectedFile) return;
+    if (selectedFile.size > 4 * 1024 * 1024) { toast.error('Choose a file smaller than 4 MB'); return; }
+    if (!/\.(pdf|docx?|txt|pptx?)$/i.test(selectedFile.name)) { toast.error('Choose a supported document'); return; }
     setFile(selectedFile);
     setResult(null);
   };

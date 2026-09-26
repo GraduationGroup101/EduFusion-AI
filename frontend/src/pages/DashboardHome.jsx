@@ -43,41 +43,46 @@ export default function DashboardHome() {
   const [riskDist, setRiskDist] = useState([]);
   const [courseStats, setCourseStats] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
+    let cancelled = false;
     const load = async () => {
+      setLoading(true); setLoadError('');
       try {
         if (user?.role === 'student') {
-          const summary = await dashboardService.getStudentSummary();
-          setStudentSummary(summary.data);
-          setPredictions(summary.data.predictions || []);
+          const { data } = await dashboardService.getStudentSummary();
+          if (!cancelled) { setStudentSummary(data); setPredictions(data.predictions || []); }
           return;
         }
-
-        const [s, p, r, c] = await Promise.all([
-          dashboardService.getStats(),
-          dashboardService.getRecentPredictions(8),
-          dashboardService.getRiskDistribution(),
-          dashboardService.getCourseStats(),
+        const results = await Promise.allSettled([
+          dashboardService.getStats(), dashboardService.getRecentPredictions(8),
+          dashboardService.getRiskDistribution(), dashboardService.getCourseStats(),
         ]);
-        setStats(s.data);
-        setPredictions(p.data);
-        setRiskDist(r.data.map(d => ({ name: d.risk_level, value: parseInt(d.count) })));
-        setCourseStats(c.data.map(d => ({ name: d.code_module, enrollments: parseInt(d.enrollments), risk: parseFloat(d.avg_risk || 0).toFixed(2) })));
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
+        if (cancelled) return;
+        if (results[0].status === 'fulfilled') setStats(results[0].value.data);
+        if (results[1].status === 'fulfilled') setPredictions(results[1].value.data);
+        if (results[2].status === 'fulfilled') setRiskDist(results[2].value.data.map(d => ({ name: d.risk_level, value: parseInt(d.count) })));
+        if (results[3].status === 'fulfilled') setCourseStats(results[3].value.data.map(d => ({ name: d.code_module, enrollments: parseInt(d.enrollments) })));
+        if (results.some(result => result.status === 'rejected')) setLoadError('Some dashboard data could not be loaded. Previously loaded values may be out of date.');
+      } catch {
+        if (!cancelled) setLoadError('Your academic data could not be loaded. Please try again.');
+      } finally { if (!cancelled) setLoading(false); }
     };
     load();
-  }, [user?.role]);
+    return () => { cancelled = true; };
+  }, [user?.role, reload]);
+  const errorNotice = loadError && <div role="alert" className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm">
+    <p>{loadError}</p><button onClick={() => setReload(value => value + 1)} className="mt-2 underline">Try again</button>
+  </div>;
 
   if (user?.role === 'student') {
     const highestRisk = studentSummary?.highestRisk;
 
     return (
       <div className="p-6 space-y-6">
+        {errorNotice}
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center justify-between">
           <div>
             <h1 className="font-display text-2xl font-bold text-gradient">My Academic Status</h1>
@@ -148,6 +153,7 @@ export default function DashboardHome() {
 
   return (
     <div className="p-6 space-y-6">
+      {errorNotice}
       {/* Header */}
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center justify-between">
         <div>
@@ -166,8 +172,8 @@ export default function DashboardHome() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard icon={Users} label="Total Students" value={stats?.totalStudents} color="#76ABAE" delay={0.1} />
         <StatCard icon={BookOpen} label="Enrollments" value={stats?.totalEnrollments} color="#FF5722" delay={0.15} />
-        <StatCard icon={TrendingUp} label="Predictions (30d)" value={stats?.recentPredictions} color="#76ABAE" delay={0.2} />
-        <StatCard icon={AlertTriangle} label="At-Risk (7d)" value={stats?.atRiskStudents} color="#ef4444" delay={0.25} />
+        <StatCard icon={TrendingUp} label="Current Predictions" value={stats?.recentPredictions} color="#76ABAE" delay={0.2} />
+        <StatCard icon={AlertTriangle} label="Current At-Risk Courses" value={stats?.atRiskStudents} color="#ef4444" delay={0.25} />
       </div>
 
       {/* Charts */}
@@ -247,7 +253,7 @@ export default function DashboardHome() {
                       </span>
                     </td>
                     <td className="py-3 pr-4 text-light-accent/70 font-mono text-xs">
-                      {p.risk_probability ? `${(p.risk_probability * 100).toFixed(1)}%` : '—'}
+                      {p.risk_probability != null ? `${(p.risk_probability * 100).toFixed(1)}%` : '—'}
                     </td>
                     <td className="py-3 pr-4 text-light-accent/50 text-xs max-w-xs truncate">{p.recommended_action || '—'}</td>
                     <td className="py-3 text-light-accent/30 text-xs font-mono">

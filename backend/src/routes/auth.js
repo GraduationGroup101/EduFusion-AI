@@ -2,6 +2,8 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
+const { verifyStudentPin } = require('../lib/studentPin');
+const { registration, validate, text } = require('../lib/validation');
 const {
   findStudentById,
   findUserByUsername,
@@ -13,25 +15,9 @@ const { authenticate } = require('../middleware/auth');
 const router = express.Router();
 const EDUPREDICT_BASE = process.env.EDUPREDICT_API_URL || 'https://edupredict-api-6ob5.onrender.com';
 
-const proxyFetch = async (url, options = {}) => {
-  const fetch = global.fetch || (await import('node-fetch')).default;
-  return fetch(url, options);
-};
-
-// EduPredict is hosted on a free Render instance that sleeps when idle; a cold
-// start there has been measured at ~80s. Registration must never wait that long,
-// so the seed-prediction call gets a hard budget and is treated as best-effort.
+const { requestUpstream } = require('../lib/upstream');
 const PREDICTION_SEED_TIMEOUT_MS = Number(process.env.PREDICTION_SEED_TIMEOUT_MS || 4000);
-
-const fetchWithTimeout = async (url, timeoutMs) => {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await proxyFetch(url, { signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
-};
+const fetchWithTimeout = (url, timeoutMs) => requestUpstream(null, url, {}, { timeoutMs });
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -41,7 +27,8 @@ const loginLimiter = rateLimit({
 
 router.post('/login', loginLimiter, async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const username = text(req.body?.username, 'Username', { max: 100 });
+    const password = text(req.body?.password, 'Password', { max: 100000, trim: false });
 
     if (!username || !password) {
       return res.status(400).json({ error: 'Username and password are required' });
@@ -50,10 +37,10 @@ router.post('/login', loginLimiter, async (req, res) => {
     const cleanUsername = username.trim();
     const user = await findUserByUsername(cleanUsername);
     if (!user) {
-      const numericStudentId = Number.parseInt(cleanUsername, 10);
+      const numericStudentId = /^\d+$/.test(cleanUsername) && Number.isSafeInteger(Number(cleanUsername)) && Number(cleanUsername) > 0 && Number(cleanUsername) <= 2147483647 ? Number(cleanUsername) : NaN;
       if (!Number.isNaN(numericStudentId)) {
         const student = await findStudentById(numericStudentId);
-        if (student && student.pin_hash === password) {
+        if (student && await verifyStudentPin(student, password)) {
           const token = jwt.sign(
             {
               id_student: student.id_student,
@@ -103,8 +90,8 @@ router.post('/login', loginLimiter, async (req, res) => {
     });
   } catch (err) {
     console.error('Login error:', err);
-    res.status(500).json({
-      error: 'Internal server error',
+    res.status(err.statusCode || 503).json({
+      error: err.statusCode === 400 ? err.message : 'Account service is temporarily unavailable',
       detail: process.env.NODE_ENV === 'production' ? undefined : err.message,
     });
   }
@@ -120,43 +107,11 @@ router.get('/registration-courses', async (req, res) => {
   }
 });
 
-// `email` is deliberately absent: it is optional, and an empty value is stored as NULL.
-const REQUIRED_REGISTRATION_FIELDS = [
-  'id_student',
-  'pin',
-  'student_name',
-  'course_presentation_id',
-  'gender',
-  'disability',
-  'age_band',
-  'highest_education',
-  'imd_band',
-  'num_of_prev_attempts',
-  'studied_credits',
-];
-
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-router.post('/register-student', async (req, res) => {
+const registrationLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Too many registration attempts. Please try again later.' } });
+router.post('/register-student', registrationLimiter, validate(registration), async (req, res) => {
   try {
-    const missing = REQUIRED_REGISTRATION_FIELDS.filter(
-      (key) => req.body?.[key] === undefined || req.body?.[key] === ''
-    );
-    if (missing.length > 0) {
-      return res.status(400).json({ error: `Missing required fields: ${missing.join(', ')}` });
-    }
-
-    if (String(req.body.pin).length < 4) {
-      return res.status(400).json({ error: 'PIN must be at least 4 digits' });
-    }
-
-    // Optional email: blank/absent is fine, but a supplied one must be well-formed.
-    const email = typeof req.body.email === 'string' ? req.body.email.trim() : '';
-    if (email && !EMAIL_PATTERN.test(email)) {
-      return res.status(400).json({ error: 'Please enter a valid email address, or leave it empty' });
-    }
-
-    const registered = await registerStudentWithEnrollment({ ...req.body, email: email || null });
+    const registered = await registerStudentWithEnrollment(req.body);
 
     // The account already exists at this point. Seeding a first prediction is a
     // nice-to-have, so it runs on a short budget: if the prediction service is
@@ -180,7 +135,7 @@ router.post('/register-student', async (req, res) => {
       if (err.name === 'AbortError') {
         warnings.push('The prediction service is starting up — your first prediction will appear shortly.');
         // Keep the warm-up going without blocking the response.
-        proxyFetch(predictionUrl).catch(() => {});
+        fetchWithTimeout(predictionUrl, 80000).then((response) => response.body?.cancel?.()).catch(() => {});
       } else {
         warnings.push('Initial prediction could not be generated');
       }
@@ -210,7 +165,7 @@ router.post('/register-student', async (req, res) => {
     });
   } catch (err) {
     console.error('Student registration error:', err);
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to register student' });
+    res.status(err.statusCode || 503).json({ error: err.statusCode ? err.message : 'Registration service is temporarily unavailable' });
   }
 });
 
