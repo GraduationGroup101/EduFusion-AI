@@ -90,6 +90,26 @@ it('restores an unfinished question-generation request after reopening its lectu
   await screen.findByText(/Your quiz request is saved: queued/);
   expect(screen.getByRole('button',{name:'Generate lecture questions'})).toBeDisabled();
 });
+it.each(['chat','quiz'])('loads a completed %s result before stopping its polling request',async(kind)=>{
+  vi.useFakeTimers();
+  let finish;
+  const job={id:'pending-result',kind,status:'running'};
+  service.lecture.mockResolvedValue({data:{lecture:{...lecture(),jobs:[job]}}});
+  service.job.mockResolvedValue({data:{job:{...job,status:'completed',result:{quiz_id:'quiz-a'}}}});
+  const deferred=new Promise(resolve=>{finish=resolve;});
+  if(kind==='chat')service.messages.mockResolvedValueOnce({data:{messages:[]}}).mockImplementationOnce(()=>deferred);
+  else service.quiz.mockImplementationOnce(()=>deferred);
+  let view;
+  try {
+    await act(async()=>{view=render(<LectureWorkspace lectureId="lecture-a" initialTab={kind==='chat'?'chat':'quiz'} onClose={()=>{}}/>);});
+    expect(screen.getByText(new RegExp('Your '+kind+' request is saved: running'))).toBeInTheDocument();
+    await act(async()=>{await vi.advanceTimersByTimeAsync(3000);});
+    await act(async()=>{finish(kind==='chat'?{data:{messages:[{id:'finished-message',question:'Packets?',answer:'Delivered answer',citations:['c0001']}]}}:{data:{quiz}});});
+    expect(screen.queryByText(/Your .* request is saved:/)).not.toBeInTheDocument();
+    if(kind==='chat')expect(screen.getByText('Delivered answer')).toBeInTheDocument();
+    else expect(screen.getByText('1. How do packets travel?')).toBeInTheDocument();
+  } finally {view?.unmount();vi.useRealTimers();}
+});
 it('practice submits answers and links feedback to the lecture conversation',async()=>{
   service.quizzes.mockResolvedValue({data:{quizzes:[{id:'quiz-a',created_at:'2026-09-26T10:00:00Z'}]}});
   service.submit.mockResolvedValue({data:{attempt:{id:'attempt-a',score:1,total:2,

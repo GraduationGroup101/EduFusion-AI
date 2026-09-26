@@ -81,7 +81,6 @@ export default function LectureWorkspace({ lectureId, initialTab='summary', onCl
         if (pending?.id) {
           const {data} = await service.job(pending.id,controller.signal);
           if (stopped) return;
-          setPending(data.job);
           if (data.job.status === 'completed') {
             if (data.job.kind === 'quiz') {
               const loaded = await service.quiz(data.job.result.quiz_id,controller.signal);
@@ -90,7 +89,7 @@ export default function LectureWorkspace({ lectureId, initialTab='summary', onCl
             }
             await refresh(controller.signal);
             if (!stopped) setPending(null);
-          }
+          } else setPending(data.job);
         } else await refresh(controller.signal);
       } catch (error) { if (!stopped && !controller.signal.aborted) setError(message(error)); }
       if (!stopped) timer=setTimeout(poll,5000);

@@ -4,10 +4,11 @@ Scope: `feature/lecture-study-integration`, based on the existing reference-desi
 
 ## Automated verification
 
-- `npm run check`: lint, 45 backend tests, 17 frontend tests and the production build passed.
+- `npm run check`: lint, 45 backend tests, 19 frontend tests and the production build passed.
 - `python -m unittest discover -s services/lecture-study -p test_engine.py`: 11 tests passed.
 - Real SQL integration coverage includes ownership enforcement, private histories and answer keys, shared prepared content across 50 accounts, idempotency, persistent quotas after history removal, lease fencing, preparation checkpoints, account removal, read-only academic recommendations and encrypted recovery.
 - Model regressions found during local testing now reject unsupported language drift, use exact option text to derive MCQ answer indices, and check evidence relevance before producing a chat answer.
+- Browser testing found a completion race: publishing a terminal job status aborted the result fetch. Polling now loads the completed chat/quiz artifact before clearing the pending job. Both deferred-response cases have regression tests.
 
 ## Local environment
 
@@ -19,7 +20,7 @@ The local retrieval mode is explicitly lexical. Semantic E5 embeddings are imple
 
 The final local smoke used `llama3.1:8b-instruct-q4_K_M` with 20 GPU layers. It verified a prepared networking lecture, an Arabic TCP/UDP answer with a valid source citation, one MCQ, one true/false item, one essay, objective grading at 2/2, no conversation history for the second account, rejection of an unsupported weather question, and unchanged synthetic academic predictions. This is a small integration fixture, not a comprehensive model evaluation.
 
-The browser preview was exercised at desktop and 390-pixel mobile widths. A saved quiz was opened and submitted, feedback and source buttons appeared, and “Explain this answer in lecture chat” prefilled and queued a question. The mobile dialog had equal client and scroll widths of 390 pixels; the temporary viewport override was reset. The independent worker was left running for the local demo.
+The browser preview was exercised at desktop and 390-pixel mobile widths. A saved quiz was opened and submitted, feedback and source buttons appeared, and “Explain this answer in lecture chat” prefilled and queued a question. After the polling fix, a further DNS question displayed its generated answer and citation automatically without closing the workspace. The mobile dialog had equal client and scroll widths of 390 pixels; the temporary viewport override was reset. The independent worker was left running for the local demo.
 
 ## Recovery and operational limits
 
