@@ -5,3 +5,8 @@ dist/
 backend/.env
 node_modules/
 dist/
+__pycache__/
+*.pyc
+.venv/
+.lecture-study-runtime/
+.env.lecture-study.local

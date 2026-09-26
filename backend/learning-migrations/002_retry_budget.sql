@@ -1,0 +1,1 @@
+ALTER TABLE study_jobs ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0 CHECK(retry_count>=0);

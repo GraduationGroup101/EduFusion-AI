@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import {
@@ -11,6 +11,8 @@ import {
   Gauge,
   History,
   Loader2,
+  ListChecks,
+  MessageSquare,
   RefreshCw,
   Sparkles,
   WifiOff,
@@ -18,6 +20,8 @@ import {
   Zap,
 } from 'lucide-react';
 import { lectureScribeService } from '../services/api';
+import { lectureStudyService } from '../services/lectureStudy';
+import LectureLibrary, { LectureCourseSelect } from '../components/lectures/LectureLibrary';
 
 const WAITING_NOTES = {
   queued: 'Your lecture is in the queue and will start shortly.',
@@ -50,6 +54,11 @@ const errorMessage = (error, fallback) => {
 const isServiceUnavailable = (error) => [503, 504].includes(error.response?.status);
 
 export default function LectureScribePage() {
+  const [studyEnabled,setStudyEnabled] = useState(false);
+  const [studyEnrollment,setStudyEnrollment] = useState(null);
+  const [studyTitle,setStudyTitle] = useState('');
+  const [focusLecture,setFocusLecture] = useState(null);
+  const studyRequests = useRef(new Map());
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [mode, setMode] = useState('formatted');
   const [language, setLanguage] = useState('auto');
@@ -211,6 +220,18 @@ export default function LectureScribePage() {
     setSubmitting(true);
     setTranscript('');
     try {
+      if (studyEnabled) {
+        const body={youtube_url:url,language,enrollment_id:studyEnrollment,...(studyTitle.trim()?{title:studyTitle.trim()}:{})};
+        const signature=JSON.stringify(body);
+        const key=studyRequests.current.get(signature)||crypto.randomUUID();
+        studyRequests.current.set(signature,key);
+        const {data}=await lectureStudyService.create(body,key);
+        studyRequests.current.delete(signature);
+        setFocusLecture({id:data.lecture.id,tab:'summary'});
+        setStudyTitle('');
+        toast.success('Lecture saved. Preparation continues in the background.');
+        return;
+      }
       const { data } = await lectureScribeService.createJob({
         youtube_url: url,
         clean: mode === 'formatted',
@@ -239,6 +260,18 @@ export default function LectureScribePage() {
     }
   };
 
+  const openStudyTool = async (job,tab) => {
+    if (!studyEnabled) {toast.error('Lecture study tools are awaiting server setup.');return;}
+    const signature='import:'+job.job_id;
+    const key=studyRequests.current.get(signature)||crypto.randomUUID();
+    studyRequests.current.set(signature,key);
+    try {
+      const {data}=await lectureStudyService.import(job.job_id,key);
+      studyRequests.current.delete(signature);
+      setFocusLecture({id:data.lecture.id,tab});
+    } catch(error) {toast.error(errorMessage(error,'Unable to prepare lecture tools'));}
+  };
+
   const copyTranscript = async () => {
     if (!transcript) return;
     await navigator.clipboard.writeText(transcript);
@@ -250,7 +283,8 @@ export default function LectureScribePage() {
 
   if (serviceStatus === 'checking') {
     return (
-      <div className="min-h-full p-4 md:p-8 flex items-center justify-center">
+      <div className="min-h-full p-4 md:p-8 space-y-6">
+        <LectureLibrary focusLecture={focusLecture} onAvailabilityChange={setStudyEnabled}/>
         <div className="text-center">
           <Loader2 className="w-7 h-7 mx-auto text-accent animate-spin" />
           <p className="mt-4 text-sm font-medium text-light-accent">Connecting to LectureScribe</p>
@@ -262,7 +296,8 @@ export default function LectureScribePage() {
 
   if (serviceStatus === 'offline') {
     return (
-      <div className="min-h-full p-4 md:p-8 flex items-center justify-center">
+      <div className="min-h-full p-4 md:p-8 space-y-6">
+        <LectureLibrary focusLecture={focusLecture} onAvailabilityChange={setStudyEnabled}/>
         <motion.section
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
@@ -279,6 +314,15 @@ export default function LectureScribePage() {
             The transcription service is currently offline. Your account and previous work are safe.
             Please try again in a few minutes.
           </p>
+          {studyEnabled && <form onSubmit={submitJob} className="mt-5 space-y-3 text-left">
+            <label className="block text-sm">Save a lecture for background processing
+              <input aria-label="Queued YouTube lecture URL" type="url" required value={youtubeUrl} onChange={(event) => setYoutubeUrl(event.target.value)}
+                placeholder="https://www.youtube.com/watch?v=..." className="w-full mt-2 border border-border p-3"/>
+            </label>
+            <LectureCourseSelect enabled={studyEnabled} value={studyEnrollment} onChange={setStudyEnrollment}/>
+            <label className="block text-sm">Lecture title (optional)<input maxLength={200} value={studyTitle} onChange={event=>setStudyTitle(event.target.value)} className="w-full mt-2 border border-border p-3" placeholder="For example: Networks — Lecture 3"/></label>
+            <button disabled={submitting} className="h-11 px-5 bg-secondary text-white text-sm font-semibold disabled:opacity-50">Save to lecture queue</button>
+          </form>}
           <button
             type="button"
             onClick={async () => {
@@ -330,6 +374,8 @@ export default function LectureScribePage() {
         </div>
       </header>
 
+      <LectureLibrary focusLecture={focusLecture} onAvailabilityChange={setStudyEnabled}/>
+
       <section className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px] gap-5">
         <form onSubmit={submitJob} className="glass glow-border p-5 md:p-6 space-y-6">
           <div>
@@ -350,11 +396,11 @@ export default function LectureScribePage() {
               </div>
               <button
               type="submit"
-                disabled={submitting || serviceStatus !== 'online' || isActive}
+                disabled={submitting || (!studyEnabled && (serviceStatus !== 'online' || isActive))}
                 className="h-12 px-6 bg-secondary text-white text-sm font-semibold inline-flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                {submitting ? 'Submitting' : 'Create transcript'}
+                {submitting ? 'Submitting' : studyEnabled ? 'Save lecture' : 'Create transcript'}
               </button>
             </div>
           </div>
@@ -365,7 +411,9 @@ export default function LectureScribePage() {
               <option value="auto">Detect automatically</option><option value="ar">Arabic</option><option value="en">English</option>
             </select>
           </label>
-          <fieldset>
+          <LectureCourseSelect enabled={studyEnabled} value={studyEnrollment} onChange={setStudyEnrollment}/>
+          {studyEnabled&&<label className="block text-sm font-semibold">Lecture title (optional)<input maxLength={200} value={studyTitle} onChange={event=>setStudyTitle(event.target.value)} className="w-full mt-2 border border-border p-3" placeholder="For example: Networks — Lecture 3"/></label>}
+          {studyEnabled ? <p className="text-sm text-light-accent/60">Saves a formatted transcript, a summary of every section, and lecture tools to your library. Processing continues when the worker is available.</p> : <fieldset>
             <legend className="text-sm font-semibold text-light-accent mb-3">Processing mode</legend>
             <div className="grid grid-cols-1 md:grid-cols-2 border border-border">
               <label className={`cursor-pointer p-4 transition-colors border-b md:border-b-0 md:border-r border-border ${
@@ -422,7 +470,7 @@ export default function LectureScribePage() {
                 </span>
               </label>
             </div>
-          </fieldset>
+          </fieldset>}
         </form>
 
         <aside className="glass glow-border p-5">
@@ -445,12 +493,11 @@ export default function LectureScribePage() {
 
           <div className="space-y-2 max-h-[330px] overflow-y-auto pr-1">
             {jobs.slice(0, 8).map((job) => (
-              <button
+              <article
                 key={job.job_id}
-                type="button"
-                onClick={() => openJob(job.job_id)}
                 className="w-full border border-border bg-white p-3 text-left hover:border-secondary transition-colors"
               >
+                <button type="button" className="w-full text-left" onClick={() => openJob(job.job_id)}>
                 <div className="flex items-start justify-between gap-3">
                   <span className="text-sm font-medium text-light-accent truncate">
                     {job.request?.youtube_url || job.job_id}
@@ -469,7 +516,12 @@ export default function LectureScribePage() {
                   <span>{modeName(job)}</span>
                   <span>{formatDate(job.submitted_at)}</span>
                 </div>
-              </button>
+                </button>
+                {job.status==='completed' && <div className="flex flex-wrap gap-2 mt-3">
+                  <button type="button" disabled={!studyEnabled} onClick={() => openStudyTool(job,'chat')} className="border border-border px-2 py-2 text-xs inline-flex gap-1 items-center disabled:opacity-40"><MessageSquare size={14}/>Ask this lecture</button>
+                  <button type="button" disabled={!studyEnabled} onClick={() => openStudyTool(job,'quiz')} className="border border-border px-2 py-2 text-xs inline-flex gap-1 items-center disabled:opacity-40"><ListChecks size={14}/>Generate questions</button>
+                </div>}
+              </article>
             ))}
 
             {!loadingJobs && jobs.length === 0 && (
@@ -560,6 +612,10 @@ export default function LectureScribePage() {
                   <p className="text-xs text-light-accent/45 mt-1">
                     {transcriptKind === 'cleaned' ? 'Formatted output' : 'Original Whisper output'}
                   </p>
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    <button type="button" disabled={!studyEnabled} onClick={() => openStudyTool(activeJob,'chat')} className="border border-border px-3 py-2 text-sm inline-flex items-center gap-2 disabled:opacity-40"><MessageSquare size={16}/>Ask this lecture</button>
+                    <button type="button" disabled={!studyEnabled} onClick={() => openStudyTool(activeJob,'quiz')} className="border border-border px-3 py-2 text-sm inline-flex items-center gap-2 disabled:opacity-40"><ListChecks size={16}/>Generate questions</button>
+                  </div>
                 </div>
                 <button
                   type="button"

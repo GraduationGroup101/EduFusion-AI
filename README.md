@@ -82,6 +82,8 @@ See [the API contracts](docs/api-contracts.md) for payloads, limits, error seman
 
 ## Maintenance
 
+The lecture page's independent library, lecture-scoped chat/practice, durable local worker, ownership rules and separate database setup are documented in [Lecture study integration](docs/lecture-study-integration.md). Enable it with `LECTURE_STUDY_ENABLED` only after configuring and migrating `LEARNING_DATABASE_URL`. The original chatbot and general question-generator pages retain their current behavior.
+
 ```sh
 npm run cleanup --prefix backend
 ```
