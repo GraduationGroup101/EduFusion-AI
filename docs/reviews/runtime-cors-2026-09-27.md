@@ -54,18 +54,18 @@ Preserve the existing canonical origin setting and support an additional explici
 
 ## 9. Deployment/configuration changes
 
-Vercel changes are scoped to Preview and branch `codex/fix-student-login`:
+Vercel frontend settings are scoped to Preview and branch `codex/fix-student-login`; the public production backend was redeployed with the verified code and explicit origin allowlist:
 
-- Frontend `VITE_API_URL` points to `https://edufusion-backend-git-codex-fix-student-login-nizar9.vercel.app/api`.
-- Backend `FRONTEND_URLS` explicitly allows the corresponding stable frontend branch origin and verified frontend deployment origins used for testing.
+- Frontend `VITE_API_URL` remains `https://edufusion-backend.vercel.app/api`. The backend branch preview initially redirected unauthenticated requests to Vercel login, so it was not used as the public API; deployment protection remains enabled.
+- Production backend `FRONTEND_URLS` explicitly allows the stable frontend branch origin, the known main-branch frontend alias, and verified individual frontend deployment origins used for testing. Canonical `FRONTEND_URL` remains unchanged. The same branch-scoped additional-origin setting exists on the backend preview.
 
-The canonical production environment remains unchanged in this follow-up. No production data changes, new migrations, database resets, Render plan changes or Supabase settings are required. Existing preview database settings were retained; this is not a new isolated database. Future unrelated previews need their own explicitly trusted origins/configuration. Use the stable branch URL for ongoing testing.
+The production backend deployed commit `8eddc9427d5fb88ba153d5410d0ebc4b9d604537` from the requested branch; the production frontend remains unchanged. Merge PR #6 into main to retain these fixes in subsequent main deployments. No production data changes, new migrations, database resets, Render plan changes or Supabase settings are required. Existing preview database settings were retained; this is not a new isolated database. Future unrelated previews need their own explicitly trusted origins/configuration. Use the stable branch URL for ongoing testing.
 
 ## 10. Verification
 
 `npm run check` passed: ESLint, 52 backend tests, 27 frontend tests and production build. This JavaScript repository has no separate typecheck command. Existing auth regressions cover valid/invalid student credentials, absent accounts, admin authentication, session restoration, role protection and logout. New integration coverage verifies course listing before/after authentication and registration producing a usable student token and enrollment. No real production account was created for verification.
 
-Before deployment, browser traces independently confirmed canonical production courses 200 and preview courses/login blocked by CORS. Post-deployment browser and CI results are recorded in the pull request and task report.
+Before deployment, browser traces independently confirmed canonical production courses 200 and preview courses/login blocked by CORS. After production backend deployment, the branch browser loaded courses with HTTP 200 and no CORS errors; its invalid login reached the API and returned the intended 401 with the visible Invalid credentials message. Both canonical and branch origins receive exact CORS permission headers; an untrusted origin receives none. Health/readiness both return 200. An isolated real-browser registration returned 201, loaded the student dashboard, and restored the session on refresh (/auth/me 200). GitHub CI and final preview results are recorded in the PR.
 
 ## 11. Remaining issues
 
