@@ -109,7 +109,7 @@ router.get('/registration-courses', async (req, res) => {
     const courses = await listRegisterableCoursePresentations();
     res.json({ courses });
   } catch (err) {
-    console.error('Registration courses error:', err);
+    logAccountError('registration_courses_lookup', err);
     res.status(500).json({ error: 'Failed to load registration courses' });
   }
 });

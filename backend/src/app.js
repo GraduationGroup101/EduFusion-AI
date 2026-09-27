@@ -2,10 +2,11 @@ const express = require('express');
 const cors = require('cors');
 const { assertDatabaseReady } = require('./db/readiness');
 const { logAccountError } = require('./lib/accountError');
+const { createCorsOptions } = require('./lib/corsOrigins');
 const app = express();
 app.set('trust proxy', Number(process.env.TRUST_PROXY ?? ((process.env.VERCEL || process.env.RENDER) ? 1 : 0)));
 app.disable('x-powered-by');
-app.use(cors({ origin: ['http://localhost:3000','http://localhost:5173',process.env.FRONTEND_URL].filter(Boolean), credentials: true }));
+app.use(cors(createCorsOptions()));
 app.use((req, res, next) => { res.set('X-Content-Type-Options','nosniff'); res.set('Cache-Control','no-store'); next(); });
 app.use(express.json({ limit: '128kb' }));
 for (const [path, file] of Object.entries({ auth:'auth', dashboard:'dashboard', chatbot:'chatbot', admin:'admin', student:'student', 'question-generator':'questionGenerator', 'lecture-scribe':'lectureScribe' })) {
