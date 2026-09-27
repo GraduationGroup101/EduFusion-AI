@@ -10,6 +10,7 @@ app.use(express.json({ limit: '128kb' }));
 for (const [path, file] of Object.entries({ auth:'auth', dashboard:'dashboard', chatbot:'chatbot', admin:'admin', student:'student', 'question-generator':'questionGenerator', 'lecture-scribe':'lectureScribe' })) {
   app.use(`/api/${path}`, require(`./routes/${file}`));
 }
+app.use('/api/lecture-study', require('./routes/lectureStudy'));
 app.get('/api/health', (req,res) => res.json({ status:'ok', timestamp:new Date().toISOString() }));
 app.get('/api/ready', async (req,res) => {
   try {

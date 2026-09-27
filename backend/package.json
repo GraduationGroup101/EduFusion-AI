@@ -5,9 +5,14 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
-    "test": "node --test",
+    "test": "node --test --test-concurrency=1",
     "keep-alive": "node scripts/renderKeepAlive.js",
     "migrate": "node scripts/migrate.js",
+    "migrate:learning": "node scripts/migrateLearning.js",
+    "worker:lectures": "node scripts/lectureStudyWorker.js",
+    "cleanup:learning": "node scripts/cleanupLearning.js",
+    "backup:learning": "node scripts/backupLearning.js backup",
+    "restore:learning": "node scripts/backupLearning.js restore",
     "migrate:pins": "node scripts/migratePins.js",
     "seed": "node scripts/seed.js",
     "cleanup": "node scripts/cleanup.js"
