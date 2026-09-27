@@ -49,7 +49,7 @@
 .toolkit-step span { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid #bed4c7; border-radius: 50%; font-variant-numeric: tabular-nums; }
 .toolkit-step[data-active] span { background: #087f75; border-color: #087f75; color: white; }
 .landing-page .toolkit-current { min-height: 40px; font-size: 12px; font-weight: 600; color: #135c4c; }
-.toolkit-section .tool-card { --card-emphasis: 1; position: relative; }
+.toolkit-section .tool-card { --card-emphasis: 1; --card-face: 1; position: relative; }
 .toolkit-section .tool-card::after { content: ''; position: absolute; inset: 0; pointer-events: none; border: 2px solid #43806a; border-radius: inherit; opacity: var(--card-emphasis); }
 .landing-page .toolkit-section .tool-card:hover { transform: none; }
 .toolkit-section .tool-card:focus-within { outline: 2px solid #087f75; outline-offset: 3px; }
@@ -57,7 +57,7 @@
   .landing-page .toolkit-stage { grid-template-columns: minmax(210px, .65fr) minmax(0, 2fr); align-items: center; gap: clamp(24px, 3vw, 48px); }
   .landing-page .toolkit-context h2 { font-size: clamp(30px, 3vw, 44px); line-height: 1.13; }
   .toolkit-steps { flex-direction: column; gap: 14px; }
-  .landing-page .toolkit-section .tool-grid { gap: 14px; }
+  .landing-page .toolkit-section .tool-grid { position: relative; gap: 14px; isolation: isolate; }
   .landing-page .toolkit-section .tool-card { padding: 18px 20px; border-radius: 16px; }
   .toolkit-section .tool-top { gap: 8px; margin-bottom: 12px; }
   .toolkit-section .tool-top > svg { display: none; }
@@ -70,9 +70,11 @@
   .toolkit-section .tool-card li { font-size: 11px; line-height: 1.65; align-items: flex-start; }
   .toolkit-section .tool-card li svg { flex-shrink: 0; margin-top: 2px; }
   .toolkit-section .tool-link { padding-top: 10px; font-size: 11px; }
-  .toolkit-section[data-toolkit-story] { min-height: calc(var(--toolkit-height) + 704px); padding-block: 24px; }
-  .toolkit-section[data-toolkit-story] .toolkit-stage { position: sticky; top: 108px; }
-  .toolkit-section[data-toolkit-story] .tool-card { transform: translateY(calc((1 - var(--card-emphasis)) * 5px)) scale(calc(.97 + .03 * var(--card-emphasis))); }
+  .toolkit-section[data-toolkit-story] { min-height: calc(var(--toolkit-height) + var(--toolkit-travel) + 64px); padding-block: 24px; }
+  .toolkit-section[data-toolkit-story] .toolkit-stage { position: sticky; top: var(--toolkit-top); }
+  .landing-page .toolkit-section[data-toolkit-story] .tool-card { transition: none; transform-origin: center; box-shadow: 0 12px 28px #193c3710; }
+  .toolkit-section[data-toolkit-story] .tool-card > * { opacity: var(--card-face); }
+  .toolkit-section[data-toolkit-story]:not([data-keyboard]):not([data-toolkit-step="complete"]) .tool-card:not([data-active]) { pointer-events: none; }
 }
 @media (max-width: 1023px) {
   .landing-page .toolkit-section .tool-grid { grid-template-columns: 1fr; }
@@ -92,8 +94,6 @@
 .landing-page .hero-art[data-orbit-ready] .hero-art-heading { top: 20px; left: 32px; right: 32px; }
 .landing-page .hero-art[data-orbit-ready] .art-orbit { inset: 60px max(76px, 15cqw); transform: none; }
 .landing-page .hero-art[data-orbit-ready] .art-caption { bottom: 12px; left: 20px; max-width: 55%; font-size: 8px; }
-.orbit-toggle { display: none; }
-.hero-art[data-orbit-ready] .orbit-toggle { display: inline-flex; align-items: center; position: absolute; bottom: 0; right: 16px; min-height: 44px; padding-inline: 8px; color: #244d42; font-size: 10px; text-decoration: underline; text-underline-offset: 3px; }
 .landing-page .hero-art:not([data-orbit-ready]) { height: auto; padding: 24px 18px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; border-radius: 60px 60px 22px 22px; }
 .landing-page .hero-art:not([data-orbit-ready]) .hero-art-heading { position: static; grid-column: 1 / -1; justify-content: center; gap: 10px; }
 .landing-page .hero-art:not([data-orbit-ready]) .art-core { position: static; grid-column: 1 / -1; transform: none; margin: 8px 0; }
@@ -120,5 +120,32 @@
   .toolkit-section[data-toolkit-story] { min-height: 0; }
   .toolkit-section[data-toolkit-story] .toolkit-stage { position: static; }
   .toolkit-section .tool-card { transform: none !important; }
-  .hero-art[data-orbit-ready] .orbit-toggle { display: none; }
+}
+
+/* Compact navigation and shared section rhythm keep adjacent chapters connected. */
+.brand, .brand img, .brand-mark { background: transparent; border: 0; box-shadow: none; }
+.landing-page .nav-inner { height: 80px; }
+.landing-page .nav-inner .brand { gap: 8px; }
+.landing-page .nav-inner .brand-mark { width: 38px; }
+.landing-page .nav-inner .brand-wordmark { width: clamp(114px, 9vw, 126px); }
+.landing-page :is(#audience, #how, #about) { scroll-margin-top: 96px; }
+.landing-page #audience { padding-block: clamp(48px, 5vw, 68px) 32px; }
+.landing-page .audience-grid { margin-top: 28px; gap: 32px; }
+.landing-page .audience-grid article { padding-top: 20px; padding-bottom: 20px; border-bottom: 1px solid #dce6d9; }
+.landing-page .audience-grid h3 { margin-top: 16px; }
+.landing-page .audience-grid p { line-height: 1.7; }
+.landing-page #how { padding-block: 16px clamp(48px, 5vw, 68px); }
+.landing-page .how-panel { padding: clamp(28px, 3.5vw, 44px); gap: clamp(28px, 4vw, 56px); align-items: center; }
+.landing-page .how-panel ol { gap: 22px; }
+.landing-page #about { padding-top: 16px; }
+@media (max-width: 900px) {
+  .landing-page .nav-inner { height: 68px; }
+  .landing-page .nav-inner .brand-mark { width: 34px; }
+  .landing-page .nav-inner .brand-wordmark { width: 112px; }
+  .landing-page :is(#audience, #how, #about) { scroll-margin-top: 84px; }
+}
+@media (max-width: 767px) {
+  .landing-page .audience-grid { gap: 20px; }
+  .landing-page .audience-grid article { padding-bottom: 0; border-bottom: 0; }
+  .landing-page #audience { padding-bottom: 28px; }
 }

@@ -1,11 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect } from 'react';
 
 /** Upright compositor-only motion; no layout work on animation frames. */
 export default function useHeroOrbit(heroRef) {
-  const [paused, setPaused] = useState(false);
-  const manualPause = useRef(false);
-  const sync = useRef(null);
-  useEffect(() => { manualPause.current = paused; sync.current?.(); }, [paused]);
   useEffect(() => {
     const hero = heroRef.current;
     if (!hero || !window.ResizeObserver || !window.IntersectionObserver || !hero.animate) return;
@@ -16,10 +12,9 @@ export default function useHeroOrbit(heroRef) {
     let visible = false;
     let hovered = false;
     const playback = () => animations.forEach(a => {
-      if (manualPause.current || reduce.matches || !visible || document.hidden || hovered || hero.contains(document.activeElement)) a.pause();
+      if (reduce.matches || !visible || document.hidden || hovered || hero.contains(document.activeElement)) a.pause();
       else a.play();
     });
-    sync.current = playback;
     const configure = () => {
       const time = animations[0]?.currentTime || 0;
       animations.forEach(a => a.cancel()); animations = [];
@@ -53,12 +48,11 @@ export default function useHeroOrbit(heroRef) {
     desktop.addEventListener('change', configure); reduce.addEventListener('change', configure);
     configure();
     return () => {
-      animations.forEach(a => a.cancel()); resize.disconnect(); intersection.disconnect(); sync.current = null;
+      animations.forEach(a => a.cancel()); resize.disconnect(); intersection.disconnect();
       hero.removeEventListener('mouseenter', enter); hero.removeEventListener('mouseleave', leave);
       hero.removeEventListener('focusin', playback); hero.removeEventListener('focusout', focusOut);
       document.removeEventListener('visibilitychange', playback);
       desktop.removeEventListener('change', configure); reduce.removeEventListener('change', configure);
     };
   }, [heroRef]);
-  return { paused, togglePause: () => setPaused(value => !value) };
 }

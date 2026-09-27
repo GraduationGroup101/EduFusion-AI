@@ -1,5 +1,7 @@
 # Viewport, toolkit and orbit verification — 2026-09-27
 
+Historical pass: [the subsequent branding and spotlight refinement](brand-spotlight-2026-09-27.md) removes the logo containers and orbit control, introduces the symbol-only favicon, and changes the toolkit to a single front-card sequence.
+
 Continuation of PR #5, `codex/edufusion-ui-ux-refinement`. This report supersedes the earlier preview-focused motion description. No backend, route, dependency, authorization or provider-contract changes are included.
 
 ## Delivered behavior

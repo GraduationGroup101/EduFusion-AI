@@ -619,8 +619,8 @@ export default function Auth({ mode: initialMode = 'login' }) {
         <div className="grid-pattern pointer-events-none absolute inset-0 opacity-[0.08]" aria-hidden="true" />
 
         <Link to="/" className="relative flex items-center gap-2.5">
-          <span className="auth-logo-full"><Brand light full /></span>
-          <span className="auth-logo-compact"><Brand light /></span>
+          <span className="auth-logo-full"><Brand full /></span>
+          <span className="auth-logo-compact"><Brand /></span>
         </Link>
 
         <div className="auth-marketing relative max-w-md">

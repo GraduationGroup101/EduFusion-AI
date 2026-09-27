@@ -127,11 +127,6 @@ html {
   height: auto;
   aspect-ratio: 973 / 716;
 }
-.brand-light {
-  padding: 12px;
-  border-radius: 13px;
-  background: #eff4eb;
-}
 .brand-dot {
   display: inline-block;
   width: 7px;

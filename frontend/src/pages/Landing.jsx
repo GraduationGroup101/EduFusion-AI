@@ -126,7 +126,7 @@ export default function Landing() {
   const [menuOpen, setMenuOpen] = useState(false);
   const rootRef = useRef(null);
   const heroRef = useRef(null);
-  const orbit = useHeroOrbit(heroRef);
+  useHeroOrbit(heroRef);
   const menuButtonRef = useRef(null);
   useLandingMotion(rootRef);
   useEffect(() => {
@@ -255,9 +255,6 @@ export default function Landing() {
             <div className="art-caption">
               <span className="brand-dot" /> A fresh perspective on education
             </div>
-            <button className="orbit-toggle" type="button" onClick={orbit.togglePause} aria-pressed={orbit.paused}>
-              {orbit.paused ? 'Resume orbit' : 'Pause orbit'}
-            </button>
           </div>
         </section>
         <div className="platform-strip">

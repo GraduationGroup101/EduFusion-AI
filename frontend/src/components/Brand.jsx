@@ -11,10 +11,10 @@ export function BrandMark({ className = "" }) {
   );
 }
 
-export default function Brand({ compact = false, light = false, full = false }) {
+export default function Brand({ compact = false, full = false }) {
   return (
     <span
-      className={`brand ${light ? "brand-light" : ""} ${full ? "brand-full" : ""}`}
+      className={`brand ${full ? "brand-full" : ""}`}
       role="img"
       aria-label={full ? "EduFusion — All Your Learning, In One Place" : "EduFusion"}
     >
