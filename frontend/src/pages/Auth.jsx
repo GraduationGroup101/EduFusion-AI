@@ -234,7 +234,7 @@ export default function Auth({ mode: initialMode = 'login' }) {
         <div className="grid-pattern pointer-events-none absolute inset-0 opacity-[0.08]" aria-hidden="true" />
 
         <Link to="/" className="relative flex items-center gap-2.5">
-          <Brand light />
+          <Brand light full />
         </Link>
 
         <div className="relative my-auto max-w-md py-12">

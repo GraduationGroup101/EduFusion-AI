@@ -465,7 +465,7 @@ export default function Landing() {
       </main>
       <footer className="site-container site-footer">
         <Link to="/" aria-label="EduFusion home">
-          <Brand tagline />
+          <Brand full />
         </Link>
         <p>All your learning, in one place.</p>
         <a href="#main">Back to top ↑</a>

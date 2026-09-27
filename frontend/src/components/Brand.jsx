@@ -1,25 +1,32 @@
-/** The approved artwork is displayed directly, without redrawing the mark. */
+/** Lossless crops of the approved artwork; never recreate its typography in CSS. */
 export function BrandMark({ className = "" }) {
   return (
-    <svg
-      viewBox="440 160 580 470"
+    <img
+      src="/brand/edufusion-mark.webp"
+      width="564"
+      height="466"
       className={`brand-mark ${className}`}
-      aria-hidden="true"
-    >
-      <image href="/brand/edufusion-logo.png" width="1448" height="1086" />
-    </svg>
+      alt=""
+    />
   );
 }
 
-export default function Brand({ compact = false, light = false, tagline = false }) {
+export default function Brand({ compact = false, light = false, full = false }) {
   return (
-    <span className={`brand ${light ? "brand-light" : ""}`}>
-      <BrandMark />
-      {!compact && (
-        <span className="brand-name">
-          Edu<span>Fusion</span>
-          {tagline && <small>ALL YOUR LEARNING, IN ONE PLACE</small>}
-        </span>
+    <span
+      className={`brand ${light ? "brand-light" : ""} ${full ? "brand-full" : ""}`}
+      role="img"
+      aria-label={full ? "EduFusion — All Your Learning, In One Place" : "EduFusion"}
+    >
+      {full ? (
+        <img src="/brand/edufusion-full.webp" width="1000" height="736" alt="" />
+      ) : (
+        <>
+          <BrandMark />
+          {!compact && (
+            <img className="brand-wordmark" src="/brand/edufusion-wordmark.webp" width="996" height="186" alt="" />
+          )}
+        </>
       )}
     </span>
   );

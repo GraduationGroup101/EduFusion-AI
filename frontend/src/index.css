@@ -104,37 +104,34 @@ html {
   display: inline-flex;
   align-items: center;
   gap: 9px;
-  white-space: nowrap;
+  max-width: 100%;
+  vertical-align: middle;
+  background: #fff;
+  border-radius: 6px;
 }
+.brand img, .brand-mark { display: block; object-fit: contain; }
 .brand-mark {
   width: 44px;
-  height: 40px;
+  height: auto;
+  aspect-ratio: 564 / 466;
   flex-shrink: 0;
-  mix-blend-mode: multiply;
 }
-.brand-name {
-  font-size: 23px;
-  font-weight: 750;
-  line-height: 1.1;
-  letter-spacing: -1px;
-  color: #087f75;
+.brand-wordmark {
+  width: clamp(120px, 10vw, 140px);
+  height: auto;
+  aspect-ratio: 996 / 186;
 }
-.brand-name > span {
-  color: #ca5e4b;
+.brand-full {
+  width: 340px;
 }
-.brand-name small {
-  display: block;
-  font-size: 8px;
-  font-weight: 600;
-  letter-spacing: 0.8px;
-  color: #677b73;
-  margin-top: 6px;
+.brand-full > img {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1000 / 736;
 }
 .brand-light {
-  padding: 9px 13px;
-  background: #fafbf7;
+  padding: 12px;
   border-radius: 13px;
-  width: fit-content;
 }
 .brand-dot {
   display: inline-block;
@@ -471,6 +468,9 @@ html {
 .art-core .brand-mark {
   width: 168px;
   height: 145px;
+  padding: 12px;
+  background: #fff;
+  border-radius: 24px;
 }
 .art-core > span {
   font-size: 13px;
@@ -873,15 +873,8 @@ html {
     height: 74px;
     gap: 12px;
   }
-  .brand-name {
-    font-size: 20px;
-  }
   .brand-mark {
     width: 38px;
-    height: 35px;
-  }
-  .brand-name small {
-    display: none;
   }
   .nav-actions {
     margin-left: auto;
