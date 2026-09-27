@@ -1,5 +1,7 @@
 # Final UI quality and transparent branding
 
+Historical pass: the subsequent [viewport and motion refinement](viewport-motion-2026-09-27.md) moves the main scroll story to the toolkit and tightens the transparent assets.
+
 Continuation of the same `codex/edufusion-ui-ux-refinement` branch and PR #5. The original frontend refinement and routes remain intact.
 
 ## Final result

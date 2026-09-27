@@ -1,31 +1,31 @@
-# EduFusion final quality pass
+# EduFusion viewport and motion direction
 
-Continuation of PR #5. Direction comes from the user's final quality-pass brief, with implementation decisions authored within that scope. This is a refinement of the established site, not a replacement page or a Scroll Craft demonstration.
+Continuation of PR #5 on its existing branch. This brief supersedes the previous showcase-focused motion direction in response to the user's latest request.
 
-## Direction and feeling curve
+## Section hierarchy
 
-The requested tone is “intentional”, “refined”, “calm”, “editorial”, and “premium”. Existing logo, palette, typography, tool cards, concept films, page sequence and application workflows stay the foundation. The audience is students, instructors and academic advisors; the next action is to enter the existing workspace or register/sign in.
-
-| Existing section | Intended feeling | Supporting treatment |
+| Section | Purpose | Treatment |
 | --- | --- | --- |
-| Hero | Discovery / possibility | Independent orbit and label planes; stable central brand and readable headline |
-| Toolkit | Clarity / usefulness | Short, grouped card reveals, useful links and restrained hover response |
-| Connected showcase | Connection (the single peak) | Four named tools settle toward a common product preview, with joining strokes and a gentle scale change |
-| Audience | Confidence / relevance | Quiet, readable role descriptions |
-| Next chapter | Momentum | Existing direct CTA and three practical steps |
-| Team | Humanity / trust | Unchanged real names and project story |
-| Ending | Calm completion | Stable official logo and usable back-to-top link |
-
-“It's the site where the four study tools come together around one learning workspace.” This is the intended memorable moment. No blank or silent scroll interval is authored.
+| Hero | One connected learning ecosystem | Four upright tool links move on a quiet 28-second ellipse around the approved mark; pause on hover, focus, manual request and when offscreen |
+| Your toolkit | Main scroll narrative | EduPredict, LectureScribe, Academic Chatbot and Quiz Generator progressively take focus, then settle into the complete toolkit |
+| Concept film | Supporting explanation | Static composition; video starts only on request and stops offscreen |
+| Remaining sections | Relevance, trust and next action | Readable document flow and height-aware spacing |
+| Footer | Deliberate conclusion | Compact transparent mark and wordmark with a separate tagline |
 
 ## Adapted Scroll Craft methodology
 
-Reference: https://github.com/nateherkai/scroll-craft, including its README, actual SKILL.md, taste, feel, hero-depth, devices, approved-collection and verification references. The installed skill and repository SKILL.md hashes match. Chaptered editorial best fits the existing section sequence; continuous-world, filmic and gallery approaches would replace rather than refine it. No copied demo, generated video, new runtime engine or fingerprint-driven structural redesign is appropriate for this continuation.
+Reference: https://github.com/nateherkai/scroll-craft, including its actual SKILL.md and taste, feel, hero-depth, devices, approved-collection and verification references. The installed and repository SKILL.md hashes match. Apply this methodology to the existing product: preserve its page sequence, typography, colors, official artwork, concepts and functional routes.
 
-Desktop receives one bounded sticky moment (360px of progression) only when the complete stage fits below the navigation. Short screens, tablets and phones retain ordinary document flow and a complete connected layout; they never inherit desktop pinning. Reduced motion disables positional effects and shows the final composition. Text and links are visible in the baseline markup; animation is optional enhancement. The existing React SPA still requires JavaScript to render, which is not changed by this task.
+The toolkit uses a contextual left column and a complete, readable two-by-two card composition. Scroll progressively changes card emphasis through restrained translation, scale and border opacity, accompanied by the matching numbered step. A 640px progression covers the four tools and final assembly. Only pin when the whole stage fits beneath the header; short screens, tablets and phones use normal document flow. Never intercept wheel events, snap or conceal card text and links. Reduced motion shows the complete stable composition.
 
-Use event-driven requestAnimationFrame writes, grouped geometry reads, transforms and opacity. Do not continuously loop while idle, hijack scrolling, delay content access or animate application tables/forms. Keep the existing concept media labeled honestly; load video only after a play request, expose pause controls and stop playback offscreen.
+Orbit geometry reserves room for the complete labels, logo and surrounding UI. Animate transforms through the Web Animations API; calculate geometry only on resize. Mobile uses stable tool chips. Toolkit updates use passive scroll listeners and one scheduled animation frame with grouped geometry reads. Neither effect installs a new animation framework.
+
+## Viewport composition
+
+Desktop authentication owns one viewport. Login uses responsive vertical density to keep branding, four features, footer, form and CTA visible at common laptop heights. Registration keeps the branding pane stable while its longer form scrolls independently. Both sections return to normal document flow below the desktop breakpoint, with the form first. Very short desktop windows retain scroll access rather than clipping content.
 
 ## Brand preparation
 
-Use the original supplied PNG, preserve interior artwork RGB, protect the pale book-page regions from background classification, remove canvas and enclosed letter gaps, and unmatte edge pixels. Export real RGBA PNGs at the existing crop dimensions. An image-editor attempt changed proportions and left rough edges; it was rejected and is not shipped. No new logo was adopted. Inspect alpha and composite the original-pixel extraction on both light and dark grounds. UI containers remain separate from the image, including the pale contrast surface for the dark authentication panel.
+Use the original supplied artwork's transparent RGBA derivatives, cropped to their actual nontransparent bounds with a small edge allowance. Preserve all existing artwork pixels. Fresh `-alpha.png` filenames prevent reuse of the earlier opaque URLs by asset caches. Header and footer branding have transparent computed backgrounds. The pale contrast container on the dark authentication panel is authored in CSS, independently of the image.
+
+Verification records are in `viewport-motion-2026-09-27.md`.

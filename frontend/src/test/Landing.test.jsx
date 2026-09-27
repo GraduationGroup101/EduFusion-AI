@@ -16,7 +16,10 @@ test('the complete story and tool links remain available without browser animati
   const links = screen.getByLabelText('Explore the connected tools').querySelectorAll('a');
   expect(links).toHaveLength(4);
   links.forEach(link => expect(link).toHaveAttribute('href', '/login'));
-  expect(document.querySelector('[data-scroll-story]')).toBeNull();
+  const toolkit = screen.getByRole('region', { name: /^Make room for/ });
+  expect(toolkit.querySelectorAll('.tool-card')).toHaveLength(4);
+  toolkit.querySelectorAll('.tool-link').forEach(link => expect(link).toHaveAttribute('href', '/login'));
+  expect(document.querySelector('[data-toolkit-story]')).toBeNull();
 });
 
 test('film media is not requested until the visitor chooses to play', () => {

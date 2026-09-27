@@ -18,6 +18,7 @@ import {
 import { useAuth } from "../context/AuthContext";
 import Brand, { BrandMark } from "../components/Brand";
 import useLandingMotion from "../hooks/useLandingMotion";
+import useHeroOrbit from "../hooks/useHeroOrbit";
 
 const tools = [
   {
@@ -124,6 +125,8 @@ export default function Landing() {
   const { isAuthenticated, user } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const rootRef = useRef(null);
+  const heroRef = useRef(null);
+  const orbit = useHeroOrbit(heroRef);
   const menuButtonRef = useRef(null);
   useLandingMotion(rootRef);
   useEffect(() => {
@@ -190,7 +193,7 @@ export default function Landing() {
       </header>
       <main id="main">
         <section className="site-container hero">
-          <div className="hero-copy" data-reveal>
+          <div className="hero-copy">
             <p className="eyebrow">
               <span className="brand-dot" /> A LITTLE MORE CONNECTED
             </p>
@@ -221,6 +224,7 @@ export default function Landing() {
             </p>
           </div>
           <div
+            ref={heroRef}
             className="hero-art"
             aria-label="Four learning tools connected through EduFusion"
           >
@@ -251,6 +255,9 @@ export default function Landing() {
             <div className="art-caption">
               <span className="brand-dot" /> A fresh perspective on education
             </div>
+            <button className="orbit-toggle" type="button" onClick={orbit.togglePause} aria-pressed={orbit.paused}>
+              {orbit.paused ? 'Resume orbit' : 'Pause orbit'}
+            </button>
           </div>
         </section>
         <div className="platform-strip">
@@ -264,24 +271,28 @@ export default function Landing() {
             ))}
           </div>
         </div>
-        <section id="tools" className="site-container section-space">
-          <div className="section-heading">
+        <section id="tools" className="site-container section-space toolkit-section" aria-labelledby="toolkit-title">
+         <div className="toolkit-stage">
+          <div className="section-heading toolkit-context">
             <div>
               <p className="eyebrow">YOUR EVERYDAY TOOLKIT</p>
-              <h2>
+              <h2 id="toolkit-title">
                 Make room for
                 <br />
                 <em>the way you learn.</em>
               </h2>
             </div>
             <p>
-              Less searching, more understanding.
-              <br />A useful companion for every part of your learning journey.
+              One learning journey. Four connected tools.
             </p>
+            <ol className="toolkit-steps" aria-label="Your toolkit sequence">
+              {tools.map((tool, i) => <li key={tool.name} className="toolkit-step"><span>0{i + 1}</span>{tool.name}</li>)}
+            </ol>
+            <p className="toolkit-current">One learning journey. Four connected tools.</p>
           </div>
           <div className="tool-grid">
             {tools.map((t, i) => (
-              <article key={t.name} className={`tool-card ${t.className}`} data-reveal data-reveal-order={i % 2}>
+              <article key={t.name} className={`tool-card ${t.className}`} data-tool-name={t.name}>
                 <div className="tool-top">
                   <span className="tool-icon">
                     <t.icon size={25} />
@@ -308,6 +319,7 @@ export default function Landing() {
               </article>
             ))}
           </div>
+         </div>
         </section>
         <section id="preview" className="film-section scroll-story" aria-labelledby="story-title">
           <div className="site-container story-stage">
@@ -316,7 +328,7 @@ export default function Landing() {
               <p>From your next question to your next breakthrough. One connected learning space.</p>
             </div>
             <div className="story-tools" aria-label="Explore the connected tools">
-              {tools.map((tool, index) => <Link key={tool.name} to={toolLink(tool.route)} className={`story-tool ${tool.className}`} style={{ '--tool-offset': `${(index - 1.5) * 16}px` }}>
+              {tools.map(tool => <Link key={tool.name} to={toolLink(tool.route)} className={`story-tool ${tool.className}`}>
                 <tool.icon size={18} aria-hidden="true" /><span>{tool.name}</span><ArrowUpRight size={14} aria-hidden="true" />
               </Link>)}
             </div>
@@ -435,9 +447,9 @@ export default function Landing() {
       </main>
       <footer className="site-container site-footer">
         <Link to="/" aria-label="EduFusion home">
-          <Brand full />
+          <Brand />
         </Link>
-        <p>All your learning, in one place.</p>
+        <p>All Your Learning, In One Place.</p>
         <a href="#main">Back to top ↑</a>
       </footer>
     </div>

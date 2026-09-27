@@ -1,71 +1,54 @@
 import { useEffect } from 'react';
 
-/** Optional enhancement: markup is visible before this hook runs or if it fails. */
+/** The toolkit stays readable in document flow without animation support. */
 export default function useLandingMotion(rootRef) {
   useEffect(() => {
     const root = rootRef.current;
-    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const desktop = window.matchMedia('(min-width: 1024px) and (min-height: 700px)');
     if (!root || !window.IntersectionObserver || !window.ResizeObserver) return;
-    const story = root.querySelector('.scroll-story');
-    const stage = root.querySelector('.story-stage');
-    const hero = root.querySelector('.hero-art');
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const desktop = window.matchMedia('(min-width: 1024px) and (min-height: 680px)');
+    const section = root.querySelector('#tools');
+    const stage = root.querySelector('.toolkit-stage');
+    const cards = [...stage.querySelectorAll('.tool-card')];
+    const steps = [...stage.querySelectorAll('.toolkit-step')];
+    const caption = stage.querySelector('.toolkit-current');
+    const names = cards.map(card => card.dataset.toolName);
     let frame = 0;
-    let enabled = false;
-    const animations = new Set();
-    const revealed = new WeakSet();
-    const observer = new IntersectionObserver(entries => {
-      entries.forEach(({ target, isIntersecting }) => {
-        if (!isIntersecting || reduce.matches || revealed.has(target)) return;
-        revealed.add(target);
-        const animation = target.animate(
-          [{ opacity: 0.75, transform: 'translateY(12px)' }, { opacity: 1, transform: 'none' }],
-          { duration: 420, delay: Number(target.dataset.revealOrder || 0) * 45, easing: 'cubic-bezier(.23,1,.32,1)' },
-        );
-        animations.add(animation);
-        animation.onfinish = () => animations.delete(animation);
-      });
-    }, { threshold: 0.12 });
-    root.querySelectorAll('[data-reveal]').forEach(el => observer.observe(el));
+    let pinned = false;
     const update = () => {
       frame = 0;
-      if (reduce.matches) return;
-      // Read geometry together, then update only compositor-friendly transforms.
-      const rect = story.getBoundingClientRect();
-      const heroRect = hero.getBoundingClientRect();
-      const progress = enabled ? Math.max(0, Math.min(1, (108 - rect.top - 32) / 360)) : 1;
-      story.style.setProperty('--story-progress', progress.toFixed(4));
-      story.querySelectorAll('.story-tool').forEach((el, index) => {
-        const phase = enabled ? Math.max(0, Math.min(1, (progress - index * 0.17) / 0.35)) : 1;
-        el.style.setProperty('--tool-progress', phase.toFixed(4));
+      const rect = section.getBoundingClientRect();
+      const cardRects = !pinned ? cards.map(card => card.getBoundingClientRect()) : [];
+      const p = Math.max(0, Math.min(1, (108 - rect.top - 24) / 640));
+      const complete = reduce.matches || (pinned && p >= 0.99);
+      const active = pinned ? Math.min(3, Math.round(p * 4)) : cardRects.reduce((best, r, i) => Math.abs(r.top + r.height / 2 - innerHeight / 2) < Math.abs(cardRects[best].top + cardRects[best].height / 2 - innerHeight / 2) ? i : best, 0);
+      cards.forEach((card, i) => {
+        const emphasis = complete ? 1 : pinned ? Math.max(0, 1 - Math.abs(p * 4 - i), (p - 0.8) / 0.2) : Number(i === active);
+        card.style.setProperty('--card-emphasis', Math.min(1, emphasis).toFixed(4));
+        card.toggleAttribute('data-active', !reduce.matches && i === active && !complete);
+        steps[i].toggleAttribute('data-active', complete || i === active);
+        if (!complete && i === active) steps[i].setAttribute('aria-current', 'step');
+        else steps[i].removeAttribute('aria-current');
       });
-      hero.style.setProperty('--hero-depth', desktop.matches ? `${Math.max(-8, Math.min(8, -heroRect.top * 0.025))}px` : '0px');
+      section.dataset.toolkitStep = complete ? 'complete' : String(active + 1);
+      caption.textContent = complete ? 'One learning journey. Four connected tools.' : `0${active + 1} / ${names[active]}`;
     };
     const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
     const configure = () => {
-      animations.forEach(animation => animation.cancel());
-      animations.clear();
-      enabled = !reduce.matches && desktop.matches && stage.offsetHeight < innerHeight - 136;
-      story.toggleAttribute('data-scroll-story', enabled);
-      story.style.setProperty('--story-height', `${stage.offsetHeight}px`);
-      if (reduce.matches) {
-        story.style.removeProperty('--story-progress');
-        story.querySelectorAll('.story-tool').forEach(el => el.style.removeProperty('--tool-progress'));
-        hero.style.removeProperty('--hero-depth');
-      } else schedule();
+      pinned = !reduce.matches && desktop.matches && stage.offsetHeight <= innerHeight - 136;
+      section.toggleAttribute('data-toolkit-story', pinned);
+      section.style.setProperty('--toolkit-height', `${stage.offsetHeight}px`);
+      schedule();
     };
-    const resize = new ResizeObserver(configure);
-    resize.observe(stage);
+    const observer = new ResizeObserver(configure);
+    observer.observe(stage);
     configure();
     window.addEventListener('scroll', schedule, { passive: true });
     window.addEventListener('resize', configure);
     reduce.addEventListener('change', configure);
     desktop.addEventListener('change', configure);
     return () => {
-      observer.disconnect(); resize.disconnect();
-      cancelAnimationFrame(frame);
-      animations.forEach(animation => animation.cancel());
-      story.removeAttribute('data-scroll-story');
+      observer.disconnect(); cancelAnimationFrame(frame);
       window.removeEventListener('scroll', schedule);
       window.removeEventListener('resize', configure);
       reduce.removeEventListener('change', configure);
