@@ -11,14 +11,14 @@ export function BrandMark({ className = "" }) {
   );
 }
 
-export default function Brand({ compact = false, light = false }) {
+export default function Brand({ compact = false, light = false, tagline = false }) {
   return (
     <span className={`brand ${light ? "brand-light" : ""}`}>
       <BrandMark />
       {!compact && (
         <span className="brand-name">
           Edu<span>Fusion</span>
-          <small>ALL YOUR LEARNING, IN ONE PLACE</small>
+          {tagline && <small>ALL YOUR LEARNING, IN ONE PLACE</small>}
         </span>
       )}
     </span>
