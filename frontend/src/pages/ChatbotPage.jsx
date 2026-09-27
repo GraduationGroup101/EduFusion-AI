@@ -255,7 +255,7 @@ export default function ChatbotPage() {
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               className="chat-empty flex flex-col items-center justify-center">
               <div className="text-center">
-                <div className="w-16 h-16 rounded-2xl mx-auto mb-4 flex items-center justify-center bg-white">
+                <div className="w-16 h-16 rounded-2xl mx-auto mb-4 flex items-center justify-center bg-surface-2">
                   <BrandMark className="chat-brand-mark" />
                 </div>
                 <h2 className="font-display text-xl font-semibold text-light-accent mb-2">

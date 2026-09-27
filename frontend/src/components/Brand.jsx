@@ -1,8 +1,8 @@
-/** Lossless crops of the approved artwork; never recreate its typography in CSS. */
+/** Transparent crops of the approved artwork; never recreate its typography in CSS. */
 export function BrandMark({ className = "" }) {
   return (
     <img
-      src="/brand/edufusion-mark.webp"
+      src="/brand/edufusion-mark.png"
       width="564"
       height="466"
       className={`brand-mark ${className}`}
@@ -19,12 +19,12 @@ export default function Brand({ compact = false, light = false, full = false }) 
       aria-label={full ? "EduFusion — All Your Learning, In One Place" : "EduFusion"}
     >
       {full ? (
-        <img src="/brand/edufusion-full.webp" width="1000" height="736" alt="" />
+        <img src="/brand/edufusion-full.png" width="1000" height="736" alt="" />
       ) : (
         <>
           <BrandMark />
           {!compact && (
-            <img className="brand-wordmark" src="/brand/edufusion-wordmark.webp" width="996" height="186" alt="" />
+            <img className="brand-wordmark" src="/brand/edufusion-wordmark.png" width="996" height="186" alt="" />
           )}
         </>
       )}

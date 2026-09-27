@@ -430,6 +430,7 @@ export default function Auth({ mode: initialMode = 'login' }) {
                           <span className="relative block">
                             <input
                               type={showPass ? 'text' : 'password'}
+                              autoComplete="new-password"
                               className={`${inputClass} pr-11`}
                               placeholder="••••"
                               value={registerForm.pin}
@@ -450,6 +451,7 @@ export default function Auth({ mode: initialMode = 'login' }) {
                           <input
                             className={inputClass}
                             placeholder="Your name"
+                            autoComplete="name"
                             value={registerForm.student_name}
                             onChange={(e) => updateRegister('student_name', e.target.value)}
                           />
@@ -462,6 +464,7 @@ export default function Auth({ mode: initialMode = 'login' }) {
                         >
                           <input
                             type="email"
+                            autoComplete="email"
                             className={inputClass}
                             placeholder="Leave empty if you prefer"
                             value={registerForm.email}

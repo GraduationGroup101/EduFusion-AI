@@ -66,6 +66,8 @@ Client pagination covers only the existing API's loaded results (up to 100), not
 
 ## Official logo follow-up
 
+**Superseded asset format:** the later [final quality pass](final-ui-quality-2026-09-27.md) replaces these opaque WebP crops with transparent PNGs. The following records the earlier commit's validation, not the final transparency implementation.
+
 The supplied `ChatGPT Image Sep 27, 2026, 11_34_15 AM.png` is byte-identical to the previous `public/brand/edufusion-logo.png` (1448×1086; SHA-256 `A0499FB4AF2FD14F18E40839DFCAC1D9EBD7EBB5AC20C0B5BA9AB9400034491D`). The integration now uses its actual wordmark instead of recreating the typography in CSS. The source's colors, shapes and tagline are preserved.
 
 The oversized PNG was replaced by purposeful lossless WebP crops and a symbol-only favicon. Crop coordinates below are relative to that original source; no artwork was redrawn, recolored or generated.
