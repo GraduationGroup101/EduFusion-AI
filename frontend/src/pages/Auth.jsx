@@ -1,10 +1,11 @@
+import Brand from '../components/Brand';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 import {
-  Eye, EyeOff, Brain, Lock, User, ArrowRight, ArrowLeft,
+  Eye, EyeOff, Lock, User, ArrowRight, ArrowLeft,
   Check, Building2, Info, MessageSquare, Youtube, FileQuestion, TrendingUp,
 } from 'lucide-react';
 import { authService } from '../services/api';
@@ -224,26 +225,24 @@ export default function Auth({ mode: initialMode = 'login' }) {
   const submitDisabled = loading || (mode === 'register' && courses.length === 0);
 
   return (
-    <div className="min-h-screen bg-primary lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
+    <div className="auth-page min-h-screen bg-primary lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
       {/* ---------- Brand panel ---------- */}
       <aside
         className="relative hidden overflow-hidden px-12 py-14 lg:flex lg:flex-col"
-        style={{ background: 'linear-gradient(160deg, #222831 0%, #2b3f42 60%, #3d5f60 100%)' }}
+        style={{ background: 'linear-gradient(145deg, #123F37, #176F60)' }}
       >
         <div className="grid-pattern pointer-events-none absolute inset-0 opacity-[0.08]" aria-hidden="true" />
 
         <Link to="/" className="relative flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl" style={{ background: '#76ABAE' }}>
-            <Brain className="h-5 w-5 text-white" />
-          </span>
-          <span className="font-display text-base font-bold text-white">EduFusion AI</span>
+          <Brand light />
         </Link>
 
         <div className="relative my-auto max-w-md py-12">
           <h2 className="font-display text-3xl font-bold leading-tight text-white">
-            Four AI tools for digital education, behind one account.
+            A little clarity. A lot more possibility.
           </h2>
 
+          <p className="mt-5 text-white/75 leading-relaxed">Your lectures, questions, and next steps. Connected in one learning space.</p>
           <ul className="mt-9 space-y-5">
             {BRAND_POINTS.map((point) => (
               <li key={point.label} className="flex items-start gap-3.5">
@@ -268,10 +267,7 @@ export default function Auth({ mode: initialMode = 'login' }) {
       <main className="flex min-h-screen flex-col px-5 py-8 sm:px-8 lg:overflow-y-auto lg:py-12">
         <div className="flex items-center justify-between lg:hidden">
           <Link to="/" className="flex items-center gap-2.5">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl" style={{ background: '#76ABAE' }}>
-              <Brain className="h-5 w-5 text-white" />
-            </span>
-            <span className="font-display text-base font-bold text-light-accent">EduFusion AI</span>
+            <Brand />
           </Link>
           <Link to="/" className="text-xs text-light-accent/50 hover:text-light-accent">
             ← Home
@@ -364,7 +360,7 @@ export default function Auth({ mode: initialMode = 'login' }) {
                     type="submit"
                     disabled={loading}
                     className="inline-flex w-full items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold text-white transition-transform hover:-translate-y-0.5 disabled:translate-y-0 disabled:opacity-60"
-                    style={{ background: '#76ABAE' }}
+                    style={{ background: '#087F75' }}
                   >
                     {loading ? 'Signing in…' : 'Sign in'}
                     {!loading && <ArrowRight className="h-4 w-4" />}
@@ -498,7 +494,7 @@ export default function Auth({ mode: initialMode = 'login' }) {
                         onClick={goToStepTwo}
                         disabled={submitDisabled}
                         className="inline-flex w-full items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold text-white transition-transform hover:-translate-y-0.5 disabled:translate-y-0 disabled:opacity-60"
-                        style={{ background: '#76ABAE' }}
+                        style={{ background: '#087F75' }}
                       >
                         Continue
                         <ArrowRight className="h-4 w-4" />
@@ -623,7 +619,7 @@ export default function Auth({ mode: initialMode = 'login' }) {
                           type="submit"
                           disabled={submitDisabled}
                           className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold text-white transition-transform hover:-translate-y-0.5 disabled:translate-y-0 disabled:opacity-60"
-                          style={{ background: '#76ABAE' }}
+                          style={{ background: '#087F75' }}
                         >
                           {loading ? 'Creating account…' : 'Create account'}
                           {!loading && <ArrowRight className="h-4 w-4" />}

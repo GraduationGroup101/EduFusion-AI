@@ -318,7 +318,7 @@ export default function StudentPredictionPage() {
               )}
             </div>
 
-            <button onClick={saveData} disabled={saving} className="flex items-center gap-2 rounded-xl bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-60">
+            <button onClick={saveData} disabled={saving} className="flex items-center gap-2 rounded-xl bg-secondary px-4 py-2 text-sm font-medium text-white disabled:opacity-60">
               <Save className="w-4 h-4" />
               {saving ? 'Saving...' : 'Save Scenario'}
             </button>

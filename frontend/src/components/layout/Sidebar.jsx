@@ -1,9 +1,10 @@
+import Brand from '../Brand';
 import { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
 import {
-  Brain, MessageSquare, FileQuestion, Youtube,
+  MessageSquare, FileQuestion, Youtube,
   LayoutDashboard, LogOut, ChevronLeft, ChevronRight,
   Sparkles, User, AlertTriangle, Clock, Database, X
 } from 'lucide-react';
@@ -43,27 +44,16 @@ export default function Sidebar({ mobileOpen = false, onMobileClose = () => {} }
 
   return (
     <motion.aside
-      animate={{ width: collapsed ? 72 : 240 }}
+      animate={{ width: collapsed ? 80 : 256 }}
       transition={{ duration: 0.3, ease: 'easeInOut' }}
-      className={`fixed inset-y-0 left-0 z-50 flex h-screen flex-col flex-shrink-0 transition-transform duration-200 md:sticky md:top-0 md:z-auto md:translate-x-0 ${
+      className={`workspace-sidebar fixed inset-y-0 left-0 z-50 flex h-screen flex-col flex-shrink-0 transition-transform duration-200 md:sticky md:top-0 md:z-auto md:translate-x-0 ${
         mobileOpen ? 'translate-x-0' : '-translate-x-full'
       }`}
-      style={{ background: '#FFFFFF', borderRight: '1px solid rgba(118,171,174,0.26)' }}
+
     >
       {/* Logo */}
       <div className="flex items-center gap-3 p-4 mb-2">
-        <div className="w-9 h-9 rounded-xl flex-shrink-0 flex items-center justify-center animate-pulse-glow"
-             style={{ background: '#76ABAE' }}>
-          <Brain className="w-5 h-5 text-white" />
-        </div>
-        <AnimatePresence>
-          {!collapsed && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <span className="font-display font-bold text-light-accent text-sm">EduFusion</span>
-              <span className="block text-accent/60 text-xs font-mono">AI Platform</span>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <Brand compact={collapsed} />
         <button
           type="button"
           onClick={onMobileClose}
@@ -76,11 +66,13 @@ export default function Sidebar({ mobileOpen = false, onMobileClose = () => {} }
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-2 space-y-1">
+      <nav aria-label="Main navigation" className="flex-1 px-3 space-y-1 overflow-y-auto">
         {navItems.map(({ path, icon: Icon, label, exact }) => (
           <NavLink
             key={path}
             to={path}
+            title={label}
+            aria-label={collapsed ? label : undefined}
             end={exact}
             onClick={onMobileClose}
             className={({ isActive }) =>
@@ -90,7 +82,7 @@ export default function Sidebar({ mobileOpen = false, onMobileClose = () => {} }
           >
             {({ isActive }) => (
               <>
-                <Icon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-accent' : 'text-current'}`} />
+                <Icon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-secondary' : 'text-current'}`} />
                 <AnimatePresence>
                   {!collapsed && (
                     <motion.span
@@ -118,7 +110,7 @@ export default function Sidebar({ mobileOpen = false, onMobileClose = () => {} }
       <div className="p-2 space-y-1 border-t border-border/50 mt-2">
         <div className={`flex items-center gap-3 px-3 py-2.5 rounded-xl ${collapsed ? 'justify-center' : ''}`}>
           <div className="w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center text-xs font-bold text-white"
-               style={{ background: '#76ABAE' }}>
+               style={{ background: '#087F75' }}>
             <User className="w-4 h-4" />
           </div>
           <AnimatePresence>
@@ -144,6 +136,7 @@ export default function Sidebar({ mobileOpen = false, onMobileClose = () => {} }
         </button>
 
         <button onClick={() => setCollapsed(p => !p)}
+          aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
           className="hidden md:flex items-center gap-3 w-full px-3 py-2 rounded-xl text-light-accent/45 hover:text-light-accent hover:bg-secondary/10 transition-all duration-200 text-sm">
           {collapsed
             ? <ChevronRight className="w-4 h-4 flex-shrink-0" />

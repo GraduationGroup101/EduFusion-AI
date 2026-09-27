@@ -4,17 +4,17 @@ export default {
   theme: {
     extend: {
       colors: {
-        primary: '#F5F5F5',
-        secondary: '#76ABAE',
-        accent: '#FF5722',
-        'light-accent': '#222831',
+        primary: '#F7F8F4',
+        secondary: '#087F75',
+        accent: '#C85140',
+        'light-accent': '#193C37',
         'surface': '#FFFFFF',
-        'surface-2': '#EEEEEE',
-        'border': '#D7E3E4',
+        'surface-2': '#EFF3EE',
+        'border': '#DDE6DF',
       },
       fontFamily: {
         sans: ['DM Sans', 'system-ui', 'sans-serif'],
-        display: ['Syne', 'system-ui', 'sans-serif'],
+        display: ['DM Sans', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],
       },
       animation: {

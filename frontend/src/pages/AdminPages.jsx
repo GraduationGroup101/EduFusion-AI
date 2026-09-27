@@ -68,7 +68,7 @@ export function AtRiskStudentsPage() {
         <button
           onClick={runBatch}
           disabled={running}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-accent text-white text-sm font-medium disabled:opacity-60"
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-secondary text-white text-sm font-medium disabled:opacity-60"
         >
           {running ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
           Run Demo Batch
@@ -140,7 +140,7 @@ export function ChatbotFilesPage() {
     <div className="p-6">
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass max-w-2xl rounded-2xl p-6 glow-border">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: '#76ABAE' }}>
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: '#087F75' }}>
             <Database className="w-5 h-5 text-white" />
           </div>
           <div>
@@ -154,7 +154,7 @@ export function ChatbotFilesPage() {
           href={CURRENT_CHATBOT_ADMIN_URL}
           target="_blank"
           rel="noreferrer"
-          className="mt-5 inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-medium text-white"
+          className="mt-5 inline-flex items-center gap-2 rounded-xl bg-secondary px-4 py-2.5 text-sm font-medium text-white"
         >
           Open chatbot admin
           <ExternalLink className="w-4 h-4" />
@@ -239,7 +239,7 @@ export function AcademicClockPage() {
           <p className="text-light-accent/55 text-sm mt-1">Control one simulated day shared by all students and course presentations.</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={runPredictions} disabled={running} className="px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium disabled:opacity-60">
+          <button onClick={runPredictions} disabled={running} className="px-4 py-2 rounded-lg bg-secondary text-white text-sm font-medium disabled:opacity-60">
             {running ? 'Updating...' : 'Update Predictions'}
           </button>
           <button onClick={loadClocks} className="px-3 py-2 rounded-lg border border-border text-sm text-light-accent hover:bg-secondary/10">
@@ -271,7 +271,7 @@ export function AcademicClockPage() {
             onChange={(e) => setGlobalDay(e.target.value)}
             className="w-28 bg-surface border border-border rounded-lg px-3 py-2 text-sm text-light-accent focus:outline-none focus:border-accent"
           />
-          <button disabled={running} onClick={() => resetAll(Number(globalDay))} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium disabled:opacity-60">
+          <button disabled={running} onClick={() => resetAll(Number(globalDay))} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary text-white text-sm font-medium disabled:opacity-60">
             <RotateCcw className="w-4 h-4" />
             Set all clocks
           </button>

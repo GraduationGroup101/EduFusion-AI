@@ -1,15 +1,34 @@
-import { useState } from 'react';
-import { Outlet } from 'react-router-dom';
-import { Brain, Menu } from 'lucide-react';
-import Sidebar from './Sidebar';
+import { useState } from "react";
+import { Link, Outlet, useLocation } from "react-router-dom";
+import { Menu, ChevronRight, ShieldCheck } from "lucide-react";
+import Sidebar from "./Sidebar";
+import Brand from "../Brand";
+import { useAuth } from "../../context/AuthContext";
 
+const titles = {
+  "/dashboard": "Overview",
+  "/dashboard/chatbot": "Academic Chatbot",
+  "/dashboard/my-prediction": "EduPredict",
+  "/dashboard/ai-tool": "EduPredict",
+  "/dashboard/question-gen": "QuizForge",
+  "/dashboard/youtube": "LectureScribe",
+  "/dashboard/admin/at-risk": "At-Risk Students",
+  "/dashboard/admin/clock": "Academic Clock",
+  "/dashboard/admin/chatbot-files": "Chatbot Administration",
+};
 export default function DashboardLayout() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-
+  const { pathname } = useLocation();
+  const { user } = useAuth();
   return (
-    <div className="flex h-screen bg-primary overflow-hidden">
-      <Sidebar mobileOpen={mobileNavOpen} onMobileClose={() => setMobileNavOpen(false)} />
-
+    <div className="workspace-shell flex h-dvh overflow-hidden bg-primary">
+      <a href="#workspace-content" className="skip-link">
+        Skip to content
+      </a>
+      <Sidebar
+        mobileOpen={mobileNavOpen}
+        onMobileClose={() => setMobileNavOpen(false)}
+      />
       {mobileNavOpen && (
         <button
           type="button"
@@ -18,28 +37,40 @@ export default function DashboardLayout() {
           aria-label="Close navigation"
         />
       )}
-
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="h-14 flex-shrink-0 border-b border-border bg-white px-4 flex items-center justify-between md:hidden">
+        <header className="workspace-header">
           <button
             type="button"
             onClick={() => setMobileNavOpen(true)}
-            className="w-10 h-10 inline-flex items-center justify-center text-light-accent"
+            className="p-2 md:hidden"
             aria-label="Open navigation"
-            title="Open navigation"
           >
-            <Menu className="w-5 h-5" />
+            <Menu size={21} />
           </button>
-          <div className="flex items-center gap-2">
-            <span className="w-8 h-8 bg-secondary text-white inline-flex items-center justify-center">
-              <Brain className="w-4 h-4" />
-            </span>
-            <span className="font-display text-sm font-bold text-light-accent">EduFusion AI</span>
+          <div className="md:hidden">
+            <Brand compact />
           </div>
-          <span className="w-10" aria-hidden="true" />
+          <div className="hidden items-center gap-3 text-sm md:flex">
+            <Link to="/dashboard" className="text-light-accent/60">
+              Workspace
+            </Link>
+            <ChevronRight size={14} className="text-light-accent/35" />
+            <span>{titles[pathname] || "Overview"}</span>
+          </div>
+          <div className="ml-auto flex items-center gap-2 text-xs text-secondary">
+            <ShieldCheck size={16} />
+            <span className="capitalize">
+              {user?.role === "student"
+                ? "My learning space"
+                : `${user?.role || "Staff"} workspace`}
+            </span>
+          </div>
         </header>
-
-        <main className="min-w-0 flex-1 overflow-y-auto">
+        <main
+          id="workspace-content"
+          className="workspace-content min-w-0 flex-1 overflow-y-auto"
+          tabIndex={-1}
+        >
           <Outlet />
         </main>
       </div>
