@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { reportApiFailure } from './apiDiagnostics';
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api',
@@ -30,6 +31,7 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    reportApiFailure(error);
     // `skipAuthRedirect` lets the caller (session bootstrap, the login form)
     // handle a 401 itself rather than triggering a full-page bounce.
     if (error.response?.status === 401 && !error.config?.skipAuthRedirect) {
