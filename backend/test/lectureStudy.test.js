@@ -50,7 +50,8 @@ before(async () => {
     catch(error){await db.query('ROLLBACK');throw error;}finally{release();}
   };
   await coreMigrate();await migrate();await migrate();
-  await academic.query("INSERT INTO students(id_student,student_name,pin_hash) VALUES(10,'First','hash'),(11,'Second','hash')");
+  await academic.query("INSERT INTO students(id_student,student_name,pin_hash) VALUES(10,'First','hash'),(11,'Second','hash'),(12,'Admin visibility fixture','hash')");
+  await academic.query("INSERT INTO app_users(id,username,password_hash,role) VALUES(1,'Test Admin','hash','admin'),(2,'Test Advisor','hash','advisor')");
   await academic.query("INSERT INTO course_presentations(code_module,code_presentation,module_presentation_length) VALUES('AAA','2026J',200)");
   await academic.query('INSERT INTO academic_clocks(course_presentation_id,current_day,max_day) VALUES(1,30,200)');
   await academic.query('INSERT INTO enrollments(id_student,course_presentation_id) VALUES(10,1),(11,1)');
@@ -78,6 +79,19 @@ test('canonical sources reject arbitrary URLs and alias URL variations',()=>{
   for(const url of ['http://youtube.com/watch?v=abcdefghijk','https://evil.example/abcdefghijk','https://youtube.com.evil.example/watch?v=abcdefghijk','https://youtube.com/watch?v=bad']){
     assert.throws(()=>source({youtube_url:url}),{statusCode:400});
   }
+});
+test('only administrators can read the global lecture catalogue without gaining private student access',async()=>{
+  const created=await newLecture('adminview01','admin-view-source',12);
+  const id=created.body.lecture.id;
+  await store.complete(await store.claimJob('admin-view-worker'),readyResult());
+  const admin=method=>request(server)[method]('/api/lecture-study/admin/lectures').set('Authorization','Bearer '+jwt.sign({id:1},process.env.JWT_SECRET));
+  assert.equal((await call('get','/admin/lectures')).status,403);
+  assert.equal((await request(server).get('/api/lecture-study/admin/lectures').set('Authorization','Bearer '+jwt.sign({id:2},process.env.JWT_SECRET))).status,403);
+  const list=await admin('get');assert.equal(list.status,200);assert.ok(list.body.lectures.some(lecture=>lecture.id===id));
+  const response=await request(server).get('/api/lecture-study/admin/lectures/'+id).set('Authorization','Bearer '+jwt.sign({id:1},process.env.JWT_SECRET));
+  assert.equal(response.status,200);assert.equal(response.body.lecture.summary,readyResult().summary);
+  assert.equal(response.body.lecture.jobs,undefined);assert.equal(response.body.lecture.owner_key,undefined);
+  assert.equal((await request(server).get('/api/lecture-study/lectures/'+id+'/messages').set('Authorization','Bearer '+jwt.sign({id:1},process.env.JWT_SECRET))).status,404);
 });
 test('creation is durable and idempotent; another student gets an independent membership',async()=>{
   const first=await newLecture();assert.equal(first.status,202);
@@ -289,4 +303,23 @@ test('encrypted backup restores learning data atomically and rejects tampering a
   assert.equal((await learning.query('SELECT COUNT(*)::int n FROM study_members')).rows[0].n,before);
   assert.equal((await academic.query('SELECT COUNT(*)::int n FROM students')).rows[0].n,studentCount);
   assert.equal((await learning.query("SELECT COUNT(*)::int n FROM study_jobs WHERE status='running'")).rows[0].n,0);
+});
+
+test('an administrator can explicitly import a provider-only lecture while student imports remain scoped',async()=>{
+  const lecture=(await store.listLectures({id_student:11})).find(item=>item.status==='ready');
+  const saved=require('../src/db/appStore'),originalFetch=global.fetch;let calls=0;
+  const adminToken='Bearer '+jwt.sign({id:1},process.env.JWT_SECRET);
+  const importLecture=()=>request(server).post('/api/lecture-study/import').set('Authorization',adminToken)
+    .set('Idempotency-Key','admin-provider-import').send({job_id:'provider-only-admin-fixture',youtube_url:'https://evil.example/ignored'});
+  global.fetch=async(url)=>{calls++;return new Response(String(url).includes('/transcript?')?'Packets travel on routes.':
+    JSON.stringify({status:'completed',request:{youtube_url:lecture.youtube_url,clean:true}}),{status:200});};
+  try{
+    assert.equal((await call('post','/import',11).set('Idempotency-Key','student-provider-import').send({job_id:'provider-only-admin-fixture'})).status,404);
+    assert.equal(calls,0);
+    const first=await importLecture();assert.equal(first.status,200);assert.equal(first.body.lecture.id,lecture.id);assert.equal(calls,2);
+    assert.equal(await saved.ownsJob({id:1,role:'admin'},'provider-only-admin-fixture'),true);
+    assert.equal((await request(server).get('/api/lecture-study/lectures/'+lecture.id+'/quizzes').set('Authorization',adminToken)).body.quizzes.length,0);
+    global.fetch=async()=>{calls++;throw Error('Provider offline');};
+    const replay=await importLecture();assert.equal(replay.status,200);assert.equal(replay.body.job.id,first.body.job.id);assert.equal(calls,2);
+  }finally{global.fetch=originalFetch;}
 });

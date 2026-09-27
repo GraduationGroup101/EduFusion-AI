@@ -96,6 +96,13 @@ const getLecture = async (user,id) => {
   }
   return { ...lecture, chunks, jobs };
 };
+const listAllLectures = async (offset=0) => (await db.query(
+  'SELECT l.id,l.title,l.youtube_url,l.language,l.status,l.stage,l.updated_at,(SELECT COUNT(*)::int FROM study_members m WHERE m.lecture_id=l.id) AS member_count FROM study_lectures l ORDER BY l.created_at DESC LIMIT 20 OFFSET $1',[offset])).rows;
+const getLectureContent = async (id) => {
+  const lecture=(await db.query('SELECT id,title,youtube_url,language,version,status,stage,raw_transcript,transcript,summary,sections,concepts,created_at,updated_at FROM study_lectures WHERE id=$1',[id])).rows[0];
+  if(!lecture)fail(404,'Lecture not found');
+  return lecture;
+};
 const enqueue = (user,lectureId,kind,key,payload) => db.transaction(async (client) => {
   const owner = ownerKey(user);
   await lockOwner(client,owner);
@@ -295,5 +302,5 @@ const clearMessages = (user,id) => db.transaction(async(client)=>{
   await client.query('DELETE FROM study_messages WHERE owner_key=$1 AND lecture_id=$2',[owner,id]);
   await client.query("DELETE FROM study_jobs WHERE owner_key=$1 AND lecture_id=$2 AND kind='chat'",[owner,id]);
 });
-module.exports = { createLecture,preparationReplay,listLectures,getLecture,enqueue,getJob,messages,quizzes,getQuiz,submitAttempt,attempts,
+module.exports = { createLecture,preparationReplay,listLectures,getLecture,listAllLectures,getLectureContent,enqueue,getJob,messages,quizzes,getQuiz,submitAttempt,attempts,
   removeLecture,clearMessages,retry,claimJob,renewLease,workerContext,checkpoint,preparationProgress,complete,failJob,status };

@@ -35,14 +35,26 @@ router.post('/jobs', aiLimiter, async (req,res) => {
   } catch(error) { sendError(res,error); }
 });
 router.get('/jobs', async(req,res)=>{
-  try { res.json({jobs:await store.listJobs(req.user)}); }
+  try {
+    if(req.user.role!=='admin')return res.json({jobs:await store.listJobs(req.user)});
+    const saved=await store.listAllJobs();
+    try {
+      const response=await requestUpstream(req,`${BASE}/jobs`,{},{timeoutMs:15000,maxBytes:4*1024*1024});
+      if(!response.ok)throw new Error('Provider list unavailable');
+      const data=await readJson(response);
+      if(!Array.isArray(data.jobs))throw new Error('Invalid provider list');
+      const merged=new Map(saved.map(job=>[job.job_id,job]));
+      for(const job of data.jobs)if(typeof job?.job_id==='string'&&job.job_id.length>0&&job.job_id.length<=200)merged.set(job.job_id,job);
+      return res.json({jobs:[...merged.values()].sort((a,b)=>(b.submitted_at||0)-(a.submitted_at||0)),scope:'all'});
+    }catch{return res.json({jobs:saved,scope:'all',warning:'The transcription service could not refresh its list. Previously saved jobs are shown.'});}
+  }
   catch(error) { sendError(res,error,'Unable to load your lecture jobs'); }
 });
-// Fail closed before contacting the provider for status and both transcript kinds.
+// Students need creation entitlement; administrators can inspect all transcripts.
 router.use('/jobs/:jobId',async(req,res,next)=>{
   try {
     const id=text(req.params.jobId,'Job ID',{max:200});
-    if(!await store.ownsJob(req.user,id)) return res.status(404).json({error:'Job not found'});
+    if(req.user.role!=='admin'&&!await store.ownsJob(req.user,id)) return res.status(404).json({error:'Job not found'});
     req.lectureJobId=id;return next();
   } catch(error) { return sendError(res,error); }
 });
@@ -50,7 +62,11 @@ router.get('/jobs/:jobId',async(req,res)=>{
   try {
     const response=await requestUpstream(req,`${BASE}/jobs/${encodeURIComponent(req.lectureJobId)}`,{},{timeoutMs:30000});
     const data=await readJson(response);
-    if(response.ok) await store.refreshJob(req.user,{...data,job_id:req.lectureJobId});
+    if(response.ok) {
+      const job={...data,job_id:req.lectureJobId};
+      if(req.user.role==='admin')await store.refreshAnyJob(job);
+      else await store.refreshJob(req.user,job);
+    }
     res.status(upstreamStatus(response.status)).json(data);
   } catch(error) { sendError(res,error); }
 });

@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { lectureScribeService } from '../services/api';
 import { lectureStudyService } from '../services/lectureStudy';
+import {useAuth} from '../context/AuthContext';
 import LectureLibrary, { LectureCourseSelect } from '../components/lectures/LectureLibrary';
 
 const WAITING_NOTES = {
@@ -56,6 +57,8 @@ const errorMessage = (error, fallback) => {
 const isServiceUnavailable = (error) => [503, 504].includes(error.response?.status);
 
 export default function LectureScribePage() {
+  const {user}=useAuth();
+  const isAdmin=user?.role==='admin';
   const [studyEnabled,setStudyEnabled] = useState(false);
   const [studyEnrollment,setStudyEnrollment] = useState(null);
   const [studyTitle,setStudyTitle] = useState('');
@@ -70,6 +73,10 @@ export default function LectureScribePage() {
   const [transcript, setTranscript] = useState('');
   const [transcriptKind, setTranscriptKind] = useState('cleaned');
   const [jobs, setJobs] = useState([]);
+  const [jobSearch,setJobSearch]=useState(''),[jobFilter,setJobFilter]=useState('all'),[jobPage,setJobPage]=useState(0),[jobWarning,setJobWarning]=useState('');
+  const filteredJobs=useMemo(()=>jobs.filter(job=>(jobFilter==='all'||(jobFilter==='running'?['running','processing'].includes(job.status):job.status===jobFilter))&&
+    (job.job_id+' '+(job.request?.youtube_url||'')).toLowerCase().includes(jobSearch.toLowerCase().trim())),[jobs,jobSearch,jobFilter]);
+  const jobPages=Math.max(1,Math.ceil(filteredJobs.length/8)),currentJobPage=Math.min(jobPage,jobPages-1);
   const [loadingJobs, setLoadingJobs] = useState(false);
   const [clockTick, setClockTick] = useState(Date.now());
 
@@ -93,6 +100,7 @@ export default function LectureScribePage() {
         (a, b) => (b.submitted_at || 0) - (a.submitted_at || 0)
       );
       setJobs(sorted);
+      setJobWarning(data.warning||'');
     } catch (error) {
       if (isServiceUnavailable(error)) {
         setServiceStatus('offline');
@@ -149,8 +157,8 @@ export default function LectureScribePage() {
     let cancelled = false;
 
     const initialize = async () => {
-      const online = await checkService();
-      if (!cancelled && online) loadJobs();
+      await checkService();
+      if (!cancelled) loadJobs();
     };
 
     initialize();
@@ -452,8 +460,8 @@ export default function LectureScribePage() {
         <aside className="glass glow-border p-5">
           <div className="flex items-center justify-between gap-3 mb-4">
             <div>
-              <p className="text-xs font-mono uppercase text-light-accent/45">Recent activity</p>
-              <h2 className="font-display text-lg font-semibold text-light-accent mt-1">Previous jobs</h2>
+              <p className="text-xs font-mono uppercase text-light-accent/45">{isAdmin?'Across all accounts':'Recent activity'}</p>
+              <h2 className="font-display text-lg font-semibold text-light-accent mt-1">{isAdmin?'All lecture transcriptions':'Previous jobs'}</h2>
             </div>
             <button
               type="button"
@@ -467,8 +475,18 @@ export default function LectureScribePage() {
             </button>
           </div>
 
+          {jobWarning&&<p role="status" className="text-sm text-amber-700 mb-3">{jobWarning}</p>}
+          <div className="space-y-2 mb-3">
+            <input aria-label="Search lecture transcriptions" placeholder="Search lecture URL or job" value={jobSearch}
+              onChange={event=>{setJobSearch(event.target.value);setJobPage(0);}} className="w-full rounded-lg border border-border p-2 text-sm"/>
+            <select aria-label="Transcription status" value={jobFilter} onChange={event=>{setJobFilter(event.target.value);setJobPage(0);}}
+              className="w-full rounded-lg border border-border p-2 text-sm">
+              <option value="all">All statuses</option><option value="completed">Completed</option><option value="queued">Queued</option>
+              <option value="running">Running</option><option value="failed">Failed</option>
+            </select>
+          </div>
           <div className="space-y-2 max-h-[330px] overflow-y-auto pr-1">
-            {jobs.slice(0, 8).map((job) => (
+            {filteredJobs.slice(currentJobPage*8,currentJobPage*8+8).map((job) => (
               <article
                 key={job.job_id}
                 className="w-full border border-border bg-white p-3 text-left hover:border-secondary transition-colors"
@@ -493,20 +511,25 @@ export default function LectureScribePage() {
                   <span>{formatDate(job.submitted_at)}</span>
                 </div>
                 </button>
-                {job.status==='completed' && <div className="flex flex-wrap gap-2 mt-3">
+                {job.status==='completed' && studyEnabled && <div className="flex flex-wrap gap-2 mt-3">
                   <button type="button" disabled={!studyEnabled} onClick={() => openStudyTool(job,'chat')} className="border border-border px-2 py-2 text-xs inline-flex gap-1 items-center disabled:opacity-40"><MessageSquare size={14}/>Ask this lecture</button>
                   <button type="button" disabled={!studyEnabled} onClick={() => openStudyTool(job,'quiz')} className="border border-border px-2 py-2 text-xs inline-flex gap-1 items-center disabled:opacity-40"><ListChecks size={14}/>Generate questions</button>
                 </div>}
               </article>
             ))}
 
-            {!loadingJobs && jobs.length === 0 && (
+            {!loadingJobs && filteredJobs.length === 0 && (
               <div className="border border-dashed border-border p-6 text-center">
                 <History className="w-6 h-6 text-light-accent/30 mx-auto" />
-                <p className="text-sm text-light-accent/45 mt-2">No jobs yet</p>
+                <p className="text-sm text-light-accent/45 mt-2">{jobs.length?'No matching lectures':'No jobs yet'}</p>
               </div>
             )}
           </div>
+          {filteredJobs.length>0&&<nav aria-label="Transcription pages" className="flex justify-between items-center gap-2 mt-3 text-sm">
+            <button type="button" disabled={currentJobPage===0} className="btn-secondary" onClick={()=>setJobPage(currentJobPage-1)}>Previous transcriptions</button>
+            <span>{currentJobPage+1}/{jobPages}</span>
+            <button type="button" disabled={currentJobPage===jobPages-1} className="btn-secondary" onClick={()=>setJobPage(currentJobPage+1)}>Next transcriptions</button>
+          </nav>}
         </aside>
       </section>
 

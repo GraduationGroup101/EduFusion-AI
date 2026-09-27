@@ -1,13 +1,12 @@
 import PageHeader from '../components/ui/PageHeader';
 import StatusBadge from '../components/ui/StatusBadge';
 import EmptyState from '../components/ui/EmptyState';
-import { useEffect, useRef, useState } from 'react';
+import { lazy,Suspense,useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import {
   AlertTriangle,
   Clock,
-  Database,
   ExternalLink,
   Play,
   RefreshCw,
@@ -15,6 +14,7 @@ import {
   Search,
 } from 'lucide-react';
 import { adminService } from '../services/api';
+const AcademicChatbot=lazy(()=>import('./ChatbotPage'));
 
 
 export function AtRiskStudentsPage() {
@@ -131,32 +131,15 @@ const CURRENT_CHATBOT_ADMIN_URL = `${
 }/app/admin.html`;
 
 export function ChatbotFilesPage() {
-  return (
-    <div className="p-6">
-      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass max-w-2xl rounded-2xl p-6 glow-border">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: '#087F75' }}>
-            <Database className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h1 className="font-display text-xl font-semibold text-light-accent">Chatbot administration moved</h1>
-            <p className="mt-1 text-sm text-light-accent/55">
-              File management now lives in the current IUG chatbot admin portal. The legacy EduFusion proxy has been removed.
-            </p>
-          </div>
-        </div>
-        <a
-          href={CURRENT_CHATBOT_ADMIN_URL}
-          target="_blank"
-          rel="noreferrer"
-          className="mt-5 inline-flex items-center gap-2 rounded-xl bg-secondary px-4 py-2.5 text-sm font-medium text-white"
-        >
-          Open chatbot admin
-          <ExternalLink className="w-4 h-4" />
-        </a>
-      </motion.div>
+  return <>
+    <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
+      <p className="text-sm text-muted">Academic chatbot administration</p>
+      <a href={CURRENT_CHATBOT_ADMIN_URL} target="_blank" rel="noreferrer" className="btn-secondary inline-flex items-center gap-2">
+        Manage knowledge base <ExternalLink size={16}/>
+      </a>
     </div>
-  );
+    <Suspense fallback={<p role="status">Loading academic chatbot…</p>}><AcademicChatbot/></Suspense>
+  </>;
 }
 
 export function AcademicClockPage() {

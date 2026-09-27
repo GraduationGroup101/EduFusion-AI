@@ -39,9 +39,9 @@ const deleteHistory = (user, sessionId) => transaction((client) => client.query(
   'DELETE FROM edufusion_chat_history WHERE owner_key=$1 AND session_id=$2', [ownerKey(user), sessionId]
 ));
 
-// Store only a job produced by this authenticated create request. A cached
-// upstream ID can have multiple legitimate creation entitlements; never expose
-// the provider's global job list or allow an arbitrary ID to claim ownership.
+// Creation and an explicit admin import grant an account access to a job.
+// A cached upstream ID can have multiple legitimate creation entitlements;
+// student access must never be granted by merely supplying an arbitrary ID.
 const saveJob = (user, job) => transaction(async (client) => {
   await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [ownerKey(user)]);
   const count = await client.query('SELECT COUNT(*)::int AS count FROM edufusion_lecture_jobs WHERE owner_key=$1', [ownerKey(user)]);
@@ -51,6 +51,9 @@ const saveJob = (user, job) => transaction(async (client) => {
 
 const ownsJob = async (user, jobId) => (await readQuery('SELECT 1 FROM edufusion_lecture_jobs WHERE owner_key=$1 AND job_id=$2', [ownerKey(user), jobId])).rowCount > 0;
 const listJobs = async (user) => (await readQuery('SELECT job FROM edufusion_lecture_jobs WHERE owner_key=$1 ORDER BY created_at DESC LIMIT 100', [ownerKey(user)])).rows.map((row) => row.job);
+const listAllJobs = async () => (await readQuery('SELECT DISTINCT ON (job_id) job FROM edufusion_lecture_jobs ORDER BY job_id,created_at DESC')).rows.map(row=>row.job);
+const getAnyJob = async (id) => (await readQuery('SELECT job FROM edufusion_lecture_jobs WHERE job_id=$1 ORDER BY created_at DESC LIMIT 1',[id])).rows[0]?.job;
+const refreshAnyJob = (job) => transaction(client=>client.query('UPDATE edufusion_lecture_jobs SET job=$2 WHERE job_id=$1',[job.job_id,JSON.stringify(job)]));
 const refreshJob = (user, job) => transaction((client) => client.query('UPDATE edufusion_lecture_jobs SET job=$3 WHERE owner_key=$1 AND job_id=$2', [ownerKey(user), job.job_id, JSON.stringify(job)]));
 
-module.exports = { getHistory, appendExchange, deleteHistory, saveJob, ownsJob, listJobs, refreshJob };
+module.exports = { getHistory, appendExchange, deleteHistory, saveJob, ownsJob, listJobs, refreshJob, listAllJobs, getAnyJob, refreshAnyJob };
