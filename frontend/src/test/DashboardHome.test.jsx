@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import DashboardHome from '../pages/DashboardHome';
 import { dashboardService } from '../services/api';
@@ -21,6 +21,7 @@ it('renders real charts and displays a zero probability as 0.0%', async () => {
   const { container } = render(<DashboardHome />);
   await screen.findByText('Zero Risk Student');
   expect(screen.getByText('0.0%')).toBeInTheDocument();
+  expect(within(screen.getByRole('list', { name: 'Risk distribution legend' })).getAllByRole('listitem')).toHaveLength(3);
   await waitFor(() => expect(container.querySelectorAll('.recharts-surface').length).toBe(2));
 });
 it('keeps successful sections visible and can recover a failed request', async () => {

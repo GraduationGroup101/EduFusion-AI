@@ -44,7 +44,7 @@ const BRAND_POINTS = [
   { icon: TrendingUp, label: 'EduPredict', text: 'See your academic risk before the final grade does.' },
   { icon: Youtube, label: 'LectureScribe', text: 'Recorded lectures as clean, readable transcripts.' },
   { icon: MessageSquare, label: 'Academic Chatbot', text: 'University answers in plain language.' },
-  { icon: FileQuestion, label: 'QuizForge', text: 'Practice questions from your own notes.' },
+  { icon: FileQuestion, label: 'Quiz Generator', text: 'Practice questions from your own notes.' },
 ];
 
 const inputClass =
@@ -225,46 +225,9 @@ export default function Auth({ mode: initialMode = 'login' }) {
   const submitDisabled = loading || (mode === 'register' && courses.length === 0);
 
   return (
-    <div className="auth-page min-h-screen bg-primary lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
-      {/* ---------- Brand panel ---------- */}
-      <aside
-        className="relative hidden overflow-hidden px-12 py-14 lg:flex lg:flex-col"
-        style={{ background: 'linear-gradient(145deg, #123F37, #176F60)' }}
-      >
-        <div className="grid-pattern pointer-events-none absolute inset-0 opacity-[0.08]" aria-hidden="true" />
-
-        <Link to="/" className="relative flex items-center gap-2.5">
-          <Brand light />
-        </Link>
-
-        <div className="relative my-auto max-w-md py-12">
-          <h2 className="font-display text-3xl font-bold leading-tight text-white">
-            A little clarity. A lot more possibility.
-          </h2>
-
-          <p className="mt-5 text-white/75 leading-relaxed">Your lectures, questions, and next steps. Connected in one learning space.</p>
-          <ul className="mt-9 space-y-5">
-            {BRAND_POINTS.map((point) => (
-              <li key={point.label} className="flex items-start gap-3.5">
-                <span className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-white/10">
-                  <point.icon className="h-4 w-4 text-white/85" />
-                </span>
-                <div>
-                  <p className="text-sm font-semibold text-white">{point.label}</p>
-                  <p className="mt-0.5 text-sm leading-relaxed text-white/55">{point.text}</p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <p className="relative text-xs leading-relaxed text-white/40">
-          Graduation project · Computer Engineering Department · Islamic University of Gaza
-        </p>
-      </aside>
-
+    <div className={`auth-page auth-${mode} min-h-screen bg-primary lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]`}>
       {/* ---------- Form panel ---------- */}
-      <main className="flex min-h-screen flex-col px-5 py-8 sm:px-8 lg:overflow-y-auto lg:py-12">
+      <main className="auth-form-panel flex min-h-screen flex-col px-5 py-8 sm:px-8" tabIndex={0} aria-label={mode === 'login' ? 'Sign in form' : 'Registration form'}>
         <div className="flex items-center justify-between lg:hidden">
           <Link to="/" className="flex items-center gap-2.5">
             <Brand />
@@ -274,7 +237,7 @@ export default function Auth({ mode: initialMode = 'login' }) {
           </Link>
         </div>
 
-        <div className={`mx-auto w-full py-10 ${mode === 'register' ? 'max-w-2xl' : 'max-w-md'} lg:my-auto`}>
+        <div className={`auth-form-content mx-auto w-full py-10 ${mode === 'register' ? 'max-w-2xl' : 'max-w-md'}`}>
           <div className="hidden justify-end lg:flex">
             <Link to="/" className="text-xs text-light-accent/45 transition-colors hover:text-light-accent">
               ← Back to home
@@ -430,6 +393,7 @@ export default function Auth({ mode: initialMode = 'login' }) {
                           <span className="relative block">
                             <input
                               type={showPass ? 'text' : 'password'}
+                              autoComplete="new-password"
                               className={`${inputClass} pr-11`}
                               placeholder="••••"
                               value={registerForm.pin}
@@ -450,6 +414,7 @@ export default function Auth({ mode: initialMode = 'login' }) {
                           <input
                             className={inputClass}
                             placeholder="Your name"
+                            autoComplete="name"
                             value={registerForm.student_name}
                             onChange={(e) => updateRegister('student_name', e.target.value)}
                           />
@@ -462,6 +427,7 @@ export default function Auth({ mode: initialMode = 'login' }) {
                         >
                           <input
                             type="email"
+                            autoComplete="email"
                             className={inputClass}
                             placeholder="Leave empty if you prefer"
                             value={registerForm.email}
@@ -644,6 +610,44 @@ export default function Auth({ mode: initialMode = 'login' }) {
           </AnimatePresence>
         </div>
       </main>
+
+      {/* ---------- Brand panel ---------- */}
+      <aside
+        className="auth-brand-panel relative hidden lg:flex lg:flex-col"
+        style={{ background: 'linear-gradient(145deg, #123F37, #176F60)' }}
+      >
+        <div className="grid-pattern pointer-events-none absolute inset-0 opacity-[0.08]" aria-hidden="true" />
+
+        <Link to="/" className="relative flex items-center gap-2.5">
+          <span className="auth-logo-full"><Brand full /></span>
+          <span className="auth-logo-compact"><Brand /></span>
+        </Link>
+
+        <div className="auth-marketing relative max-w-md">
+          <h2 className="font-display text-3xl font-bold leading-tight text-white">
+            A little clarity. A lot more possibility.
+          </h2>
+
+          <p className="mt-5 text-white/75 leading-relaxed">Your lectures, questions, and next steps. Connected in one learning space.</p>
+          <ul className="mt-9 space-y-5">
+            {BRAND_POINTS.map((point) => (
+              <li key={point.label} className="flex items-start gap-3.5">
+                <span className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-white/10">
+                  <point.icon className="h-4 w-4 text-white/85" />
+                </span>
+                <div>
+                  <p className="text-sm font-semibold text-white">{point.label}</p>
+                  <p className="mt-0.5 text-sm leading-relaxed text-white/55">{point.text}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <p className="auth-project-note relative text-xs leading-relaxed text-white/40">
+          Graduation project · Computer Engineering Department · Islamic University of Gaza
+        </p>
+      </aside>
     </div>
   );
 }

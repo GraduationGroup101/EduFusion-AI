@@ -17,6 +17,8 @@ import {
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import Brand, { BrandMark } from "../components/Brand";
+import useLandingMotion from "../hooks/useLandingMotion";
+import useHeroOrbit from "../hooks/useHeroOrbit";
 
 const tools = [
   {
@@ -49,22 +51,22 @@ const tools = [
     name: "Academic Chatbot",
     label: "Good questions. Clear answers.",
     icon: MessageSquare,
-    className: "cream",
+    className: "sage",
     description:
       "Ask about university life, programmes and student services in natural language, including Arabic.",
     points: ["Grounded in university knowledge", "Conversations in one place"],
     route: "chatbot",
   },
   {
-    name: "QuizForge",
+    name: "Quiz Generator",
     label: "Turn your notes into know-how",
     icon: FileQuestion,
-    className: "sage",
+    className: "cream",
     description:
       "Upload your course material and create practice questions that help you prepare for what comes next.",
     points: [
       "Multiple choice, true/false and essay",
-      "Copy and download question sets",
+      "Generate and copy question sets",
     ],
     route: "question-gen",
   },
@@ -75,88 +77,45 @@ const nav = [
   ["#about", "Our story"],
 ];
 const team = [
-  "Abdallah Saeed Fsafis",
   "Abdullah Mohammed Shehdada",
-  "Ahmed Noaman Kalloub",
   "Basem Hamdi Daqarem",
   "Nizar Yousef Alqerem",
 ];
 const CLIPS = ['/edufusion-preview-1.mp4', '/edufusion-preview-2.mp4'];
-const CROSSFADE_MS = 700;
-
-/**
- * Ambient concept film: the clips play back to back on an endless loop, with the
- * next one fading in over the tail of the current one so the seam is not visible.
- * The files carry no audio track at all, so there is nothing to mute and no
- * controls are rendered — it is decorative, not a player.
- */
+/** Media is optional; the complete poster and product links work without it. */
 const PreviewFilm = () => {
-  const videoRefs = useRef([]);
+  const videoRef = useRef(null);
+  const containerRef = useRef(null);
   const [active, setActive] = useState(0);
-  const activeRef = useRef(0);
-  const switchingRef = useRef(false);
-
-  const playClip = (index) => {
-    const video = videoRefs.current[index];
-    if (!video) return;
-    video.muted = true;
-    video.currentTime = 0;
-    video.play?.()?.catch(() => {});
-  };
-
+  const [loaded, setLoaded] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  const [failed, setFailed] = useState(false);
   useEffect(() => {
-    playClip(0);
+    if (!window.IntersectionObserver) return;
+    const observer = new IntersectionObserver(entries => {
+      if (!entries[0].isIntersecting) videoRef.current?.pause();
+    });
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
   }, []);
-
-  // Start the next clip while the current one is still on screen, then let the
-  // CSS opacity transition carry the hand-off.
-  const advanceFrom = (index) => {
-    if (switchingRef.current || activeRef.current !== index) return;
-    switchingRef.current = true;
-
-    const next = (index + 1) % CLIPS.length;
-    playClip(next);
-    activeRef.current = next;
-    setActive(next);
-
-    window.setTimeout(() => {
-      const finished = videoRefs.current[index];
-      if (finished) {
-        finished.pause();
-        finished.currentTime = 0;
-      }
-      switchingRef.current = false;
-    }, CROSSFADE_MS);
+  const togglePlayback = () => {
+    if (!loaded) { setLoaded(true); return; }
+    if (playing) videoRef.current?.pause();
+    else videoRef.current?.play()?.catch(() => setFailed(true));
   };
-
-  const handleTimeUpdate = (index) => {
-    const video = videoRefs.current[index];
-    if (!video || !Number.isFinite(video.duration)) return;
-    if (video.duration - video.currentTime <= CROSSFADE_MS / 1000) advanceFrom(index);
-  };
-
   return (
-    <div className="relative overflow-hidden rounded-3xl border border-border bg-light-accent shadow-2xl shadow-light-accent/15">
-      {/* Fixed ratio box so the section does not jump while the first clip loads. */}
-      <div className="relative w-full" style={{ aspectRatio: '16 / 9' }}>
-        {CLIPS.map((src, index) => (
-          <video
-            key={src}
-            ref={(el) => { videoRefs.current[index] = el; }}
-            className="absolute inset-0 h-full w-full object-cover transition-opacity ease-linear"
-            style={{ opacity: active === index ? 1 : 0, transitionDuration: `${CROSSFADE_MS}ms` }}
-            src={src}
-            poster={index === 0 ? '/edufusion-preview-poster.jpg' : undefined}
-            muted
-            playsInline
-            preload="auto"
-            disablePictureInPicture
-            aria-hidden="true"
-            tabIndex={-1}
-            onTimeUpdate={() => handleTimeUpdate(index)}
-            onEnded={() => advanceFrom(index)}
-          />
-        ))}
+    <div className="story-preview" ref={containerRef}>
+      <div className="film-frame">
+        {loaded && !failed ? <video key={active} ref={videoRef} src={CLIPS[active]} muted playsInline autoPlay controls preload="none"
+          aria-label="EduFusion concept film" poster="/edufusion-preview-poster.jpg"
+          onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)}
+          onError={() => { setFailed(true); setPlaying(false); }}
+          onEnded={() => { if (active < CLIPS.length - 1) setActive(active + 1); else setPlaying(false); }}
+        /> : <img src="/edufusion-preview-poster.jpg" width="1920" height="1080" loading="lazy" alt="Concept preview of the EduFusion learning workspace" />}
+      </div>
+      <div className="film-caption">
+        <span>{failed ? 'Film unavailable. Explore the tools above.' : 'Concept film · Explore the working tools above.'}</span>
+        {!failed && <button type="button" onClick={togglePlayback}>{playing ? 'Pause film' : 'Play film'}<ArrowRight size={15} aria-hidden="true" /></button>}
       </div>
     </div>
   );
@@ -165,13 +124,26 @@ const PreviewFilm = () => {
 export default function Landing() {
   const { isAuthenticated, user } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const rootRef = useRef(null);
+  const heroRef = useRef(null);
+  useHeroOrbit(heroRef);
+  const menuButtonRef = useRef(null);
+  useLandingMotion(rootRef);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const dismiss = event => {
+      if (event.key === 'Escape') { setMenuOpen(false); menuButtonRef.current?.focus(); }
+    };
+    window.addEventListener('keydown', dismiss);
+    return () => window.removeEventListener('keydown', dismiss);
+  }, [menuOpen]);
   const cta = isAuthenticated ? "/dashboard" : "/register";
   const toolLink = (route) =>
     isAuthenticated
       ? `/dashboard/${route === "my-prediction" && user?.role !== "student" ? "ai-tool" : route}`
       : "/login";
   return (
-    <div className="landing-page">
+    <div className="landing-page" ref={rootRef}>
       <a href="#main" className="skip-link">
         Skip to content
       </a>
@@ -198,9 +170,11 @@ export default function Landing() {
               Get started <ArrowUpRight size={16} />
             </Link>
             <button
+              ref={menuButtonRef}
               onClick={() => setMenuOpen(!menuOpen)}
               className="mobile-menu"
               aria-expanded={menuOpen}
+              aria-controls={menuOpen ? 'landing-mobile-nav' : undefined}
               aria-label={menuOpen ? "Close menu" : "Open menu"}
             >
               {menuOpen ? <X /> : <Menu />}
@@ -208,7 +182,7 @@ export default function Landing() {
           </div>
         </div>
         {menuOpen && (
-          <nav className="mobile-nav" aria-label="Mobile navigation">
+          <nav id="landing-mobile-nav" className="mobile-nav" aria-label="Mobile navigation">
             {nav.map(([href, label]) => (
               <a href={href} key={href} onClick={() => setMenuOpen(false)}>
                 {label}
@@ -250,6 +224,7 @@ export default function Landing() {
             </p>
           </div>
           <div
+            ref={heroRef}
             className="hero-art"
             aria-label="Four learning tools connected through EduFusion"
           >
@@ -293,24 +268,28 @@ export default function Landing() {
             ))}
           </div>
         </div>
-        <section id="tools" className="site-container section-space">
-          <div className="section-heading">
+        <section id="tools" className="site-container section-space toolkit-section" aria-labelledby="toolkit-title">
+         <div className="toolkit-stage">
+          <div className="section-heading toolkit-context">
             <div>
               <p className="eyebrow">YOUR EVERYDAY TOOLKIT</p>
-              <h2>
+              <h2 id="toolkit-title">
                 Make room for
                 <br />
                 <em>the way you learn.</em>
               </h2>
             </div>
             <p>
-              Less searching, more understanding.
-              <br />A useful companion for every part of your learning journey.
+              One learning journey. Four connected tools.
             </p>
+            <ol className="toolkit-steps" aria-label="Your toolkit sequence">
+              {tools.map((tool, i) => <li key={tool.name} className="toolkit-step"><span>0{i + 1}</span>{tool.name}</li>)}
+            </ol>
+            <p className="toolkit-current">One learning journey. Four connected tools.</p>
           </div>
           <div className="tool-grid">
             {tools.map((t, i) => (
-              <article key={t.name} className={`tool-card ${t.className}`}>
+              <article key={t.name} className={`tool-card ${t.className}`} data-tool-name={t.name}>
                 <div className="tool-top">
                   <span className="tool-icon">
                     <t.icon size={25} />
@@ -337,23 +316,21 @@ export default function Landing() {
               </article>
             ))}
           </div>
+         </div>
         </section>
-        <section id="preview" className="film-section section-space">
-          <div className="site-container">
-            <div className="section-heading">
-              <div>
-                <p className="eyebrow">TAKE A CLOSER LOOK</p>
-                <h2>
-                  See it all <em>come together.</em>
-                </h2>
-              </div>
-              <p>
-                A short concept film of EduFusion.
-                <br />
-                Explore the working tools in your dashboard.
-              </p>
+        <section id="preview" className="film-section scroll-story" aria-labelledby="story-title">
+          <div className="site-container story-stage">
+            <div className="story-heading">
+              <h2 id="story-title">See it all <em>come together.</em></h2>
+              <p>From your next question to your next breakthrough. One connected learning space.</p>
+            </div>
+            <div className="story-tools" aria-label="Explore the connected tools">
+              {tools.map(tool => <Link key={tool.name} to={toolLink(tool.route)} className={`story-tool ${tool.className}`}>
+                <tool.icon size={18} aria-hidden="true" /><span>{tool.name}</span><ArrowUpRight size={14} aria-hidden="true" />
+              </Link>)}
             </div>
             <PreviewFilm />
+            <p className="story-resolution">Four tools. <strong>All your learning, in one place.</strong></p>
           </div>
         </section>
         <section id="audience" className="site-container section-space">
@@ -469,7 +446,7 @@ export default function Landing() {
         <Link to="/" aria-label="EduFusion home">
           <Brand />
         </Link>
-        <p>All your learning, in one place.</p>
+        <p>All Your Learning, In One Place.</p>
         <a href="#main">Back to top ↑</a>
       </footer>
     </div>

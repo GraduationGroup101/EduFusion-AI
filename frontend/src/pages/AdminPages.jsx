@@ -1,4 +1,7 @@
-import { useEffect, useState } from 'react';
+import PageHeader from '../components/ui/PageHeader';
+import StatusBadge from '../components/ui/StatusBadge';
+import EmptyState from '../components/ui/EmptyState';
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import {
@@ -13,31 +16,37 @@ import {
 } from 'lucide-react';
 import { adminService } from '../services/api';
 
-const RiskBadge = ({ level }) => {
-  const cls = level === 'HIGH'
-    ? 'bg-red-500/15 text-red-600 border-red-500/20'
-    : level === 'MEDIUM'
-      ? 'bg-amber-500/15 text-amber-700 border-amber-500/20'
-      : 'bg-green-500/15 text-green-700 border-green-500/20';
-
-  return <span className={`px-2 py-1 rounded-md border text-xs font-medium ${cls}`}>{level}</span>;
-};
 
 export function AtRiskStudentsPage() {
   const [students, setStudents] = useState([]);
+  const [query, setQuery] = useState('');
+  const [course, setCourse] = useState('');
+  const [page, setPage] = useState(1);
+  const [loadError, setLoadError] = useState('');
+  const requestVersion = useRef(0);
+  const pageSize = 15;
+  const filteredStudents = students.filter(row => String(row.id_student).includes(query.trim()) && (!course || row.code_module === course));
+  const pageCount = Math.max(1, Math.ceil(filteredStudents.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const visibleStudents = filteredStudents.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const [riskLevel, setRiskLevel] = useState('HIGH');
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
 
   const loadStudents = async () => {
+    const version = ++requestVersion.current;
     setLoading(true);
+    setLoadError('');
     try {
       const { data } = await adminService.getAtRiskStudents({ risk_level: riskLevel, limit: 100 });
+      if (version !== requestVersion.current) return;
       setStudents(data.students || []);
+      setPage(1);
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Failed to load at-risk students');
+      if (version !== requestVersion.current) return;
+      setLoadError('We could not refresh these results. Try again; previously loaded results may be out of date.');
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     }
   };
 
@@ -60,36 +69,18 @@ export function AtRiskStudentsPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="font-display text-2xl font-bold text-gradient">At-Risk Students</h1>
-          <p className="text-light-accent/55 text-sm mt-1">Monitor students ordered by latest model risk score.</p>
-        </div>
-        <button
-          onClick={runBatch}
-          disabled={running}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-secondary text-white text-sm font-medium disabled:opacity-60"
-        >
-          {running ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-          Run Demo Batch
+      <PageHeader title="At-Risk Students" icon={AlertTriangle} description="Identify students who may benefit from a little more support.">
+        <button onClick={runBatch} disabled={running} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-secondary text-white text-sm font-medium disabled:opacity-60">
+          {running ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />} Run Demo Batch
         </button>
-      </motion.div>
-
-      <div className="glass rounded-2xl p-4 glow-border flex items-center gap-3">
-        <Search className="w-4 h-4 text-accent" />
-        <select
-          value={riskLevel}
-          onChange={(e) => setRiskLevel(e.target.value)}
-          className="bg-surface border border-border rounded-lg px-3 py-2 text-sm text-light-accent focus:outline-none focus:border-accent"
-        >
-          <option value="HIGH">High Risk</option>
-          <option value="MEDIUM">Medium Risk</option>
-          <option value="LOW">Low Risk</option>
-        </select>
-        <button onClick={loadStudents} className="px-3 py-2 rounded-lg border border-border text-sm text-light-accent hover:bg-secondary/10">
-          Refresh
-        </button>
+      </PageHeader>
+      <div className="data-toolbar">
+        <label className="field-label">Search student ID<input value={query} onChange={e => { setQuery(e.target.value); setPage(1); }} placeholder="Enter a student ID" type="search" /></label>
+        <label className="field-label">Risk level<select value={riskLevel} onChange={e => { setRiskLevel(e.target.value); setPage(1); setCourse(''); }}><option value="HIGH">High risk</option><option value="MEDIUM">Medium risk</option><option value="LOW">Low risk</option></select></label>
+        <label className="field-label">Course<select value={course} onChange={e => { setCourse(e.target.value); setPage(1); }}><option value="">All loaded courses</option>{[...new Set(students.map(row => row.code_module))].sort().map(code => <option key={code}>{code}</option>)}</select></label>
+        <button onClick={loadStudents} disabled={loading} className="px-4 py-2 border border-border text-sm">{loading ? 'Refreshing…' : 'Refresh'}</button>
       </div>
+      {loadError && <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-800">{loadError}</p>}
 
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-2xl p-5 glow-border">
         <div className="flex items-center gap-2 mb-4">
@@ -97,11 +88,11 @@ export function AtRiskStudentsPage() {
           <h2 className="font-display font-semibold text-light-accent">Latest Results</h2>
         </div>
         {loading ? (
-          <div className="h-32 flex items-center justify-center text-light-accent/40">Loading...</div>
-        ) : students.length === 0 ? (
-          <div className="h-32 flex items-center justify-center text-light-accent/40">No students found</div>
+          <div role="status" className="h-32 flex items-center justify-center text-light-accent/40">Loading results…</div>
+        ) : filteredStudents.length === 0 ? (
+          <EmptyState icon={Search} title="No matching students" description="Try another student ID, course or risk level." />
         ) : (
-          <div className="overflow-x-auto">
+          <div className="table-scroll" role="region" aria-label="Student risk results" tabIndex={0}>
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left border-b border-border">
@@ -111,14 +102,14 @@ export function AtRiskStudentsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/60">
-                {students.map((row) => (
+                {visibleStudents.map((row) => (
                   <tr key={`${row.enrollment_id}-${row.day_of_course}`} className="hover:bg-secondary/5">
                     <td className="py-3 pr-4 font-medium text-light-accent">{row.id_student}</td>
                     <td className="py-3 pr-4 text-light-accent/70">{row.code_module} / {row.code_presentation}</td>
                     <td className="py-3 pr-4 font-mono text-light-accent/70">{row.day_of_course}</td>
-                    <td className="py-3 pr-4"><RiskBadge level={row.risk_level} /></td>
+                    <td className="py-3 pr-4"><StatusBadge status={row.risk_level} /></td>
                     <td className="py-3 pr-4 font-mono text-light-accent/80">{(row.risk_probability * 100).toFixed(1)}%</td>
-                    <td className="py-3 pr-4 text-light-accent/55 max-w-xs truncate">{row.recommended_action || '-'}</td>
+                    <td className="py-3 pr-4 text-light-accent/55 text-xs table-action">{row.recommended_action || '-'}</td>
                     <td className="py-3 pr-4 text-light-accent/40 font-mono text-xs">{new Date(row.created_at).toLocaleString()}</td>
                   </tr>
                 ))}
@@ -126,6 +117,10 @@ export function AtRiskStudentsPage() {
             </table>
           </div>
         )}
+        {!loading && <div className="table-pagination">
+          <p role="status">{filteredStudents.length ? (currentPage - 1) * pageSize + 1 : 0}–{Math.min(currentPage * pageSize, filteredStudents.length)} of {filteredStudents.length} matching results · Up to 100 loaded</p>
+          <div className="flex items-center gap-3"><button disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Previous</button><span>Page {currentPage} of {pageCount}</span><button disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>Next</button></div>
+        </div>}
       </motion.div>
     </div>
   );
@@ -166,17 +161,19 @@ export function ChatbotFilesPage() {
 
 export function AcademicClockPage() {
   const [clocks, setClocks] = useState([]);
+  const [clockError, setClockError] = useState('');
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
   const [globalDay, setGlobalDay] = useState(60);
 
   const loadClocks = async () => {
     setLoading(true);
+    setClockError('');
     try {
       const { data } = await adminService.getClocks();
       setClocks(data.clocks || []);
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Failed to load academic clocks');
+      setClockError('Academic clocks could not be refreshed. Try again; any displayed days may be out of date.');
     } finally {
       setLoading(false);
     }
@@ -233,60 +230,33 @@ export function AcademicClockPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center justify-between">
-        <div>
-          <h1 className="font-display text-2xl font-bold text-gradient">Academic Clock</h1>
-          <p className="text-light-accent/55 text-sm mt-1">Control one simulated day shared by all students and course presentations.</p>
+      <PageHeader title="Academic Clock" icon={Clock} description="Set the simulated academic day and keep risk predictions in step.">
+        <button onClick={loadClocks} disabled={loading} className="px-4 py-2 border border-border text-sm">{loading ? 'Refreshing…' : 'Refresh'}</button>
+      </PageHeader>
+      {clockError && <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-800">{clockError}</p>}
+      <section className="glass p-5 space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div><p className="text-sm text-muted">Current simulated day</p><p className="text-3xl font-semibold mt-1">{loading ? '…' : !clocks.length ? 'Not available' : new Set(clocks.map(clock => clock.current_day)).size === 1 ? clocks[0].current_day : 'Varies by course'}</p></div>
+          <StatusBadge status="neutral">Applies to all course clocks</StatusBadge>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={runPredictions} disabled={running} className="px-4 py-2 rounded-lg bg-secondary text-white text-sm font-medium disabled:opacity-60">
-            {running ? 'Updating...' : 'Update Predictions'}
-          </button>
-          <button onClick={loadClocks} className="px-3 py-2 rounded-lg border border-border text-sm text-light-accent hover:bg-secondary/10">
-            Refresh
-          </button>
+        <p className="text-sm text-muted">Changing the day automatically recomputes demo predictions. Course-specific progress is shown below.</p>
+        <div className="data-toolbar">
+          <label className="field-label">Set academic day<input type="number" min="0" value={globalDay} onChange={e => setGlobalDay(e.target.value)} className="w-36" /></label>
+          <button disabled={running} onClick={() => resetAll(Number(globalDay))} className="flex items-center gap-2 px-4 py-2 bg-secondary text-white text-sm font-medium"><RotateCcw size={16}/>{running ? 'Updating…' : 'Set all clocks'}</button>
+          <button disabled={running} onClick={() => tickAll(1)} className="px-4 py-2 border border-border text-sm">Advance 1 day</button>
+          <button disabled={running} onClick={() => tickAll(10)} className="px-4 py-2 border border-border text-sm">Advance 10 days</button>
         </div>
-      </motion.div>
-
-      <div className="rounded-2xl border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-800">
-        Changing the academic clock also recomputes demo predictions, so risk levels and student counts refresh for the new day.
-      </div>
-
-      <div className="glass rounded-2xl p-6 glow-border space-y-5">
-        <div className="flex items-center gap-3">
-          <Clock className="w-5 h-5 text-accent" />
-          <div>
-            <h2 className="font-display font-semibold text-light-accent">Unified Clock Control</h2>
-            <p className="text-xs text-light-accent/45">Changes apply to every student because predictions read the course clock before running the model.</p>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <button disabled={running} onClick={() => tickAll(1)} className="px-4 py-2 rounded-lg bg-secondary text-white text-sm font-medium disabled:opacity-60">+1 day for all</button>
-          <button disabled={running} onClick={() => tickAll(10)} className="px-4 py-2 rounded-lg bg-secondary text-white text-sm font-medium disabled:opacity-60">+10 days for all</button>
-          <input
-            type="number"
-            min="0"
-            value={globalDay}
-            onChange={(e) => setGlobalDay(e.target.value)}
-            className="w-28 bg-surface border border-border rounded-lg px-3 py-2 text-sm text-light-accent focus:outline-none focus:border-accent"
-          />
-          <button disabled={running} onClick={() => resetAll(Number(globalDay))} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary text-white text-sm font-medium disabled:opacity-60">
-            <RotateCcw className="w-4 h-4" />
-            Set all clocks
-          </button>
-          <button onClick={runPredictions} disabled={running} className="px-4 py-2 rounded-lg border border-border text-light-accent text-sm font-medium hover:bg-secondary/10 disabled:opacity-60">
-            {running ? 'Recomputing...' : 'Recompute after change'}
-          </button>
-        </div>
-      </div>
+        <div className="flex flex-wrap items-center gap-3 pt-4 border-t border-border"><button onClick={runPredictions} disabled={running} className="px-4 py-2 border border-border text-sm">Update Predictions</button><p className="text-xs text-muted">Refresh predictions without changing the day.</p></div>
+      </section>
 
       <div className="glass rounded-2xl p-5 glow-border">
         <h2 className="font-display font-semibold text-light-accent mb-4">Clock Snapshot</h2>
         {loading ? (
-          <div className="h-24 flex items-center justify-center text-light-accent/40">Loading...</div>
+          <div role="status" className="h-24 flex items-center justify-center text-light-accent/40">Loading clocks…</div>
+        ) : clocks.length === 0 ? (
+          <EmptyState icon={Clock} title="No course clocks available" description="Refresh to check for course clocks before changing the academic day." />
         ) : (
-          <div className="overflow-x-auto">
+          <div className="table-scroll" role="region" aria-label="Course clock snapshot" tabIndex={0}>
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left border-b border-border">
@@ -297,7 +267,7 @@ export function AcademicClockPage() {
               </thead>
               <tbody className="divide-y divide-border/60">
                 {clocks.map((clock) => {
-                  const pct = Math.round((clock.current_day / clock.max_day) * 100);
+                  const pct = clock.max_day > 0 ? Math.min(100, Math.max(0, Math.round((clock.current_day / clock.max_day) * 100))) : 0;
                   return (
                     <tr key={clock.id}>
                       <td className="py-3 pr-4 text-light-accent font-medium">{clock.code_module} / {clock.code_presentation}</td>

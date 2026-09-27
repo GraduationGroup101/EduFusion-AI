@@ -147,17 +147,17 @@ export default function LectureWorkspace({ lectureId, initialTab='summary', onCl
     <button type="button" className="text-xs text-accent underline" key={id} onClick={() => cite(id)}>Source {id}</button>)}</div>;
   return <div className="fixed inset-0 z-50 bg-black/40 flex justify-end" onClick={onClose}>
     <section ref={panel} tabIndex={-1} role="dialog" aria-modal="true" aria-label={lecture?.title || 'Lecture workspace'}
-      onClick={(event) => event.stopPropagation()} className="bg-white w-full md:max-w-4xl h-full flex flex-col shadow-xl outline-none">
-      <header className="p-4 border-b border-border flex items-center justify-between gap-3">
+      onClick={(event) => event.stopPropagation()} className="bg-white w-full min-w-0 md:max-w-4xl h-full flex flex-col shadow-xl outline-none">
+      <header className="p-4 border-b border-border flex shrink-0 items-center justify-between gap-3">
         <div><h2 className="font-display text-lg font-bold">{lecture?.title || 'Loading lecture'}</h2>
           <p className="text-xs text-light-accent/60">This chat and practice use this lecture only.</p></div>
         <button className={button} onClick={onClose} aria-label="Close lecture workspace"><X size={18}/></button>
       </header>
-      <nav className="p-3 flex flex-wrap gap-2 border-b border-border" aria-label="Lecture tools">
+      <nav className="p-3 flex shrink-0 flex-wrap gap-2 border-b border-border" aria-label="Lecture tools">
         {[['summary','Summary',BookOpen],['chat','Lecture chat',MessageSquare],['quiz','Practice questions',ListChecks],['sources','Transcript',BookOpen]].map(([key,label,Icon]) =>
           <button key={key} className={button+(tab===key?' bg-secondary text-white':'')} aria-pressed={tab===key} onClick={() => setTab(key)}><Icon size={16}/>{label}</button>)}
       </nav>
-      <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-5">
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 md:p-6 space-y-5 break-words">
         {error && <p role="alert" className="p-3 bg-red-50 text-red-700">{error}</p>}
         {!lecture && !error && <p><Loader2 className="inline animate-spin" size={16}/> Loading saved lecture...</p>}
         {lecture && !ready && <div className="bg-amber-50 p-4" role="status">
@@ -206,7 +206,7 @@ export default function LectureWorkspace({ lectureId, initialTab='summary', onCl
             <div dir="auto" className="p-3 whitespace-pre-wrap">{item.answer || (item.status==='failed'?'Request failed. Retry from its saved status.':'Waiting for the lecture assistant...')}{references(item.citations)}</div>
           </article>)}
           {ready && !messages.length && <p className="text-sm text-light-accent/60">Ask a question about this lecture. Answers include references to its text.</p>}
-          <form onSubmit={ask} className="flex gap-2">
+          <form onSubmit={ask} className="flex flex-col sm:flex-row gap-2">
             <textarea aria-label="Question about this lecture" dir="auto" className={input} value={question} maxLength={2000} disabled={!ready}
               onChange={(event) => setQuestion(event.target.value)} placeholder="Ask about this lecture"/>
             <button className={button} disabled={!ready||busy||Boolean(pending)||!question.trim()}><Send size={16}/>Send</button>

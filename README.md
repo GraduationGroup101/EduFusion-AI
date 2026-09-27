@@ -1,6 +1,6 @@
 # EduFusion AI
 
-EduFusion brings four education tools into one authenticated dashboard: academic-risk prediction (EduPredict), university chat, YouTube transcription (LectureScribe), and document-based question generation (QuizForge).
+EduFusion brings four education tools into one authenticated dashboard: academic-risk prediction (EduPredict), university chat, YouTube transcription (LectureScribe), and document-based question generation (Quiz Generator).
 
 The React frontend talks only to an Express gateway. The gateway authenticates users with PostgreSQL/JWT and calls the external AI services. Model training, retrieval, transcription, and question-generation implementations live outside this repository.
 

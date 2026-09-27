@@ -1,149 +1,104 @@
 import Brand from '../Brand';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
-import {
-  MessageSquare, FileQuestion, Youtube,
-  LayoutDashboard, LogOut, ChevronLeft, ChevronRight,
-  Sparkles, User, AlertTriangle, Clock, Database, X
-} from 'lucide-react';
+import { MessageSquare, FileQuestion, Youtube, LayoutDashboard, LogOut, ChevronLeft, ChevronRight, TrendingUp, User, AlertTriangle, Clock, Database, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-const studentNavItems = [
-  { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', exact: true },
-  { path: '/dashboard/my-prediction', icon: Sparkles, label: 'Prediction Tool' },
-  { path: '/dashboard/chatbot', icon: MessageSquare, label: 'AI Chatbot' },
-  { path: '/dashboard/question-gen', icon: FileQuestion, label: 'Question Generator' },
+const overview = { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', exact: true };
+const learning = [
+  { path: '/dashboard/chatbot', icon: MessageSquare, label: 'Academic Chatbot' },
+  { path: '/dashboard/question-gen', icon: FileQuestion, label: 'Quiz Generator' },
   { path: '/dashboard/youtube', icon: Youtube, label: 'LectureScribe' },
 ];
-
-const adminNavItems = [
-  { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', exact: true },
+const insights = [
   { path: '/dashboard/admin/at-risk', icon: AlertTriangle, label: 'At-Risk Students' },
   { path: '/dashboard/admin/clock', icon: Clock, label: 'Academic Clock' },
   { path: '/dashboard/admin/chatbot-files', icon: Database, label: 'Chatbot Admin' },
-  { path: '/dashboard/chatbot', icon: MessageSquare, label: 'AI Chatbot' },
-  { path: '/dashboard/ai-tool', icon: Sparkles, label: 'Prediction Tool' },
-  { path: '/dashboard/question-gen', icon: FileQuestion, label: 'Question Generator' },
-  { path: '/dashboard/youtube', icon: Youtube, label: 'LectureScribe' },
 ];
 
-export default function Sidebar({ mobileOpen = false, onMobileClose = () => {} }) {
+export default function Sidebar({ mobileOpen = false, onMobileClose, menuRef }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 767px)').matches);
+  const asideRef = useRef(null);
+  const closeRef = useRef(onMobileClose);
+  closeRef.current = onMobileClose;
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const navItems = user?.role === 'student' ? studentNavItems : adminNavItems;
+  const compact = collapsed && !isMobile;
+  const groups = [
+    { title: 'Overview', items: [overview] },
+    ...(user?.role === 'student' ? [] : [{ title: 'Academic insights', items: insights }]),
+    { title: 'Learning tools', items: [
+      { path: user?.role === 'student' ? '/dashboard/my-prediction' : '/dashboard/ai-tool', icon: TrendingUp, label: 'EduPredict' }, ...learning,
+    ] },
+  ];
+
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 767px)');
+    const update = () => { setIsMobile(query.matches); if (!query.matches) closeRef.current(); };
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
+
+  useEffect(() => {
+    if (!mobileOpen || !isMobile) return;
+    const drawer = asideRef.current;
+    const previous = menuRef?.current;
+    const focusFirst = () => drawer.querySelector('button')?.focus();
+    const frame = requestAnimationFrame(focusFirst);
+    const keepFocus = event => { if (!drawer.contains(event.target)) focusFirst(); };
+    const onKey = (event) => {
+      if (event.key === 'Escape') { event.preventDefault(); closeRef.current(); }
+      if (event.key !== 'Tab') return;
+      const items = [...drawer.querySelectorAll('a[href], button:not([disabled])')].filter(el => el.getClientRects().length);
+      const first = items[0], last = items[items.length - 1];
+      if (!drawer.contains(document.activeElement)) { event.preventDefault(); first?.focus(); }
+      else if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('focusin', keepFocus);
+    return () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('focusin', keepFocus);
+      previous?.focus();
+    };
+  }, [mobileOpen, isMobile, menuRef]);
 
   const handleLogout = () => {
-    logout();
-    toast.success('Signed out successfully');
-    onMobileClose();
-    navigate('/login');
+    logout(); toast.success('Signed out successfully'); onMobileClose(); navigate('/login');
   };
 
-  return (
-    <motion.aside
-      animate={{ width: collapsed ? 80 : 256 }}
-      transition={{ duration: 0.3, ease: 'easeInOut' }}
-      className={`workspace-sidebar fixed inset-y-0 left-0 z-50 flex h-screen flex-col flex-shrink-0 transition-transform duration-200 md:sticky md:top-0 md:z-auto md:translate-x-0 ${
-        mobileOpen ? 'translate-x-0' : '-translate-x-full'
-      }`}
-
-    >
-      {/* Logo */}
-      <div className="flex items-center gap-3 p-4 mb-2">
-        <Brand compact={collapsed} />
-        <button
-          type="button"
-          onClick={onMobileClose}
-          className="ml-auto w-9 h-9 inline-flex items-center justify-center text-light-accent/55 md:hidden"
-          aria-label="Close navigation"
-          title="Close navigation"
-        >
-          <X className="w-5 h-5" />
+  return <aside id="workspace-navigation" ref={asideRef}
+    className={`workspace-sidebar ${compact ? 'is-collapsed' : ''} ${mobileOpen ? 'is-open' : ''}`}
+    role={isMobile && mobileOpen ? 'dialog' : undefined}
+    aria-modal={isMobile && mobileOpen ? true : undefined}
+    aria-label="Workspace navigation" inert={isMobile && !mobileOpen ? '' : undefined}>
+    <div className="sidebar-brand">
+      <Brand compact={compact} />
+      <button type="button" onClick={onMobileClose} className="icon-button md:hidden" aria-label="Close navigation"><X size={20} /></button>
+    </div>
+    <nav aria-label="Main navigation" className="sidebar-links">
+      {groups.map(group => <div key={group.title} className="nav-group">
+        {!compact && <p className="nav-section">{group.title}</p>}
+        {group.items.map(({ path, icon: Icon, label, exact }) => <NavLink key={path} to={path} title={label} aria-label={compact ? label : undefined} end={exact} onClick={onMobileClose}
+          className={({isActive}) => `sidebar-link ${isActive ? 'sidebar-item-active' : ''}`}>
+          <Icon size={19} aria-hidden="true" />{!compact && <span>{label}</span>}
+        </NavLink>)}
+      </div>)}
+    </nav>
+    <div className="sidebar-account">
+      <div className="account-identity"><span className="account-avatar"><User size={17}/></span>
+        {!compact && <div className="min-w-0"><p className="truncate font-semibold">{user?.username}</p><p className="capitalize text-xs text-muted">{user?.role}</p></div>}
+      </div>
+      <div className="account-actions">
+        <button onClick={handleLogout} className="sidebar-link" aria-label="Sign out" title="Sign out"><LogOut size={17}/>{!compact && <span>Sign out</span>}</button>
+        <button onClick={() => setCollapsed(value => !value)} className="icon-button hidden md:inline-flex" aria-label={compact ? 'Expand navigation' : 'Collapse navigation'} title={compact ? 'Expand navigation' : 'Collapse navigation'}>
+          {compact ? <ChevronRight size={18}/> : <ChevronLeft size={18}/>}
         </button>
       </div>
-
-      {/* Nav */}
-      <nav aria-label="Main navigation" className="flex-1 px-3 space-y-1 overflow-y-auto">
-        {navItems.map(({ path, icon: Icon, label, exact }) => (
-          <NavLink
-            key={path}
-            to={path}
-            title={label}
-            aria-label={collapsed ? label : undefined}
-            end={exact}
-            onClick={onMobileClose}
-            className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 group relative overflow-hidden
-               ${isActive ? 'sidebar-item-active text-light-accent' : 'text-light-accent/55 hover:text-light-accent hover:bg-secondary/10'}`
-            }
-          >
-            {({ isActive }) => (
-              <>
-                <Icon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-secondary' : 'text-current'}`} />
-                <AnimatePresence>
-                  {!collapsed && (
-                    <motion.span
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      className="text-sm font-medium truncate"
-                    >
-                      {label}
-                    </motion.span>
-                  )}
-                </AnimatePresence>
-                {collapsed && (
-                  <div className="absolute left-full ml-2 px-2 py-1 bg-surface-2 border border-border rounded-lg text-xs text-light-accent whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
-                    {label}
-                  </div>
-                )}
-              </>
-            )}
-          </NavLink>
-        ))}
-      </nav>
-
-      {/* User & Collapse */}
-      <div className="p-2 space-y-1 border-t border-border/50 mt-2">
-        <div className={`flex items-center gap-3 px-3 py-2.5 rounded-xl ${collapsed ? 'justify-center' : ''}`}>
-          <div className="w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center text-xs font-bold text-white"
-               style={{ background: '#087F75' }}>
-            <User className="w-4 h-4" />
-          </div>
-          <AnimatePresence>
-            {!collapsed && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="overflow-hidden">
-                <p className="text-light-accent text-xs font-medium truncate">{user?.username}</p>
-                <p className="text-accent/60 text-xs font-mono capitalize">{user?.role}</p>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-
-        <button onClick={handleLogout}
-          className="flex items-center gap-3 w-full px-3 py-2 rounded-xl text-light-accent/40 hover:text-red-400 hover:bg-red-400/10 transition-all duration-200 text-sm">
-          <LogOut className="w-4 h-4 flex-shrink-0" />
-          <AnimatePresence>
-            {!collapsed && (
-              <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                Sign Out
-              </motion.span>
-            )}
-          </AnimatePresence>
-        </button>
-
-        <button onClick={() => setCollapsed(p => !p)}
-          aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
-          className="hidden md:flex items-center gap-3 w-full px-3 py-2 rounded-xl text-light-accent/45 hover:text-light-accent hover:bg-secondary/10 transition-all duration-200 text-sm">
-          {collapsed
-            ? <ChevronRight className="w-4 h-4 flex-shrink-0" />
-            : <><ChevronLeft className="w-4 h-4 flex-shrink-0" /><span className="text-xs">Collapse</span></>
-          }
-        </button>
-      </div>
-    </motion.aside>
-  );
+    </div>
+  </aside>;
 }
