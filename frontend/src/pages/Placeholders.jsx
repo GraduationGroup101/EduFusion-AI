@@ -2,8 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import {
-  AlertCircle,
-  CheckCircle2,
   Copy,
   FileQuestion,
   FileText,
@@ -12,10 +10,13 @@ import {
   Plus,
   RotateCcw,
   Search,
-  Sparkles,
+  TrendingUp,
   Upload,
 } from 'lucide-react';
 import { adminService, questionGeneratorService } from '../services/api';
+import PageHeader from '../components/ui/PageHeader';
+import EmptyState from '../components/ui/EmptyState';
+import StatusBadge from '../components/ui/StatusBadge';
 
 export function AIToolPage() {
   const [studentId, setStudentId] = useState('');
@@ -23,6 +24,7 @@ export function AIToolPage() {
   const [codePresentation, setCodePresentation] = useState('');
   const [prediction, setPrediction] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [searchError, setSearchError] = useState('');
 
   const searchStudent = async (e) => {
     e.preventDefault();
@@ -32,6 +34,7 @@ export function AIToolPage() {
     }
 
     setLoading(true);
+    setSearchError('');
     try {
       const params = {};
       if (codeModule.trim()) params.code_module = codeModule.trim().toUpperCase();
@@ -39,6 +42,7 @@ export function AIToolPage() {
       const { data } = await adminService.getStudentPrediction(studentId.trim(), params);
       setPrediction(data);
     } catch (err) {
+      setSearchError('We could not load this prediction. Check the student ID and course details, then try again.');
       toast.error(err.response?.data?.detail || err.response?.data?.error || 'Failed to fetch student prediction');
       setPrediction(null);
     } finally {
@@ -48,35 +52,45 @@ export function AIToolPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-        <h1 className="font-display text-2xl font-bold text-gradient">Prediction Tool</h1>
-        <p className="text-light-accent/55 text-sm mt-1">Search for a student and run the model using the current academic clock.</p>
-      </motion.div>
+      <PageHeader title="EduPredict" icon={TrendingUp} description="Find a student’s academic risk outlook using the current academic day." />
 
-      <form onSubmit={searchStudent} className="glass rounded-2xl p-5 glow-border grid grid-cols-1 md:grid-cols-4 gap-3">
+      <form onSubmit={searchStudent} className="glass rounded-2xl p-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 items-end gap-4">
+        <label className="field-label">Student ID
         <input
+          id="student-search"
           value={studentId}
           onChange={(e) => setStudentId(e.target.value)}
           placeholder="Student ID"
           className="bg-surface border border-border rounded-xl px-4 py-3 text-sm text-light-accent focus:outline-none focus:border-accent"
         />
+        </label>
+        <label className="field-label">Course module (optional)
         <input
           value={codeModule}
           onChange={(e) => setCodeModule(e.target.value)}
           placeholder="Course module (optional)"
           className="bg-surface border border-border rounded-xl px-4 py-3 text-sm text-light-accent focus:outline-none focus:border-accent"
         />
+        </label>
+        <label className="field-label">Presentation (optional)
         <input
           value={codePresentation}
           onChange={(e) => setCodePresentation(e.target.value)}
           placeholder="Presentation (optional)"
           className="bg-surface border border-border rounded-xl px-4 py-3 text-sm text-light-accent focus:outline-none focus:border-accent"
         />
+        </label>
         <button disabled={loading} className="flex items-center justify-center gap-2 rounded-xl bg-secondary px-4 py-3 text-sm font-medium text-white disabled:opacity-60">
           <Search className="w-4 h-4" />
           {loading ? 'Searching...' : 'Search'}
         </button>
       </form>
+
+      {searchError && <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-800">{searchError}</p>}
+      {!prediction && !loading && !searchError && <EmptyState icon={Search} title="A clearer path starts with a student" description="Enter a student ID above. Add a course module and presentation to narrow the search to a specific enrollment.">
+        <button className="text-secondary text-sm font-semibold underline" onClick={() => document.getElementById('student-search')?.focus()}>Find a student</button>
+      </EmptyState>}
+      {loading && <div role="status" className="empty-state"><Loader2 className="animate-spin text-secondary" /><p>Finding the latest academic outlook…</p></div>}
 
       {prediction && (
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-2xl p-6 glow-border space-y-5">
@@ -127,7 +141,7 @@ const QuestionCountControl = ({ label, value, onChange }) => {
   };
 
   return (
-    <div className="rounded-xl border border-border bg-surface/70 px-4 py-3">
+    <div className="question-counter">
       <div className="flex items-center justify-between gap-3">
         <span className="text-sm font-medium text-light-accent">{label}</span>
         <div className="flex items-center gap-2">
@@ -140,6 +154,7 @@ const QuestionCountControl = ({ label, value, onChange }) => {
             <Minus className="w-4 h-4" />
           </button>
           <input
+            aria-label={`${label} questions`}
             type="number"
             min="0"
             max="50"
@@ -260,26 +275,10 @@ export function QuestionGeneratorPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="font-display text-2xl font-bold text-gradient">Question Generator</h1>
-          <p className="text-light-accent/55 text-sm mt-1">Generate assessments from course files.</p>
-        </div>
-        <div className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-mono ${
-          serviceStatus === 'online'
-            ? 'border-green-500/25 bg-green-500/10 text-green-600'
-            : serviceStatus === 'offline'
-              ? 'border-red-500/25 bg-red-500/10 text-red-500'
-              : 'border-border bg-white text-light-accent/50'
-        }`}>
-          {serviceStatus === 'checking'
-            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            : serviceStatus === 'online'
-              ? <CheckCircle2 className="w-3.5 h-3.5" />
-              : <AlertCircle className="w-3.5 h-3.5" />}
-          <span>{serviceStatus === 'checking' ? 'Checking' : serviceStatus === 'online' ? 'Online' : 'Unavailable'}</span>
-        </div>
-      </motion.div>
+      <PageHeader title="Quiz Generator" icon={FileQuestion} tone="cream" description="Turn your course material into purposeful practice.">
+        <div role="status"><StatusBadge status={serviceStatus}>{serviceStatus === 'checking' ? 'Checking quiz service' : serviceStatus === 'online' ? 'Service online' : 'Service unavailable'}</StatusBadge></div>
+      </PageHeader>
+      {serviceStatus === 'offline' && <p className="text-sm text-muted">The quiz service is unavailable. You can prepare your file and question counts, then try generating again.</p>}
 
       <form onSubmit={handleGenerate} className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] gap-5">
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-2xl p-5 glow-border space-y-5">
@@ -296,22 +295,22 @@ export function QuestionGeneratorPage() {
             onClick={() => fileInputRef.current?.click()}
             onDragOver={(e) => e.preventDefault()}
             onDrop={handleDrop}
-            className="w-full min-h-[220px] rounded-xl border-2 border-dashed border-secondary/35 bg-white/70 hover:border-accent/45 hover:bg-white transition-colors flex flex-col items-center justify-center gap-4 px-5 text-center"
+            className="file-upload w-full rounded-xl border-2 border-dashed border-secondary/35 bg-white/70 hover:border-accent/45 hover:bg-white transition-colors flex flex-col items-center justify-center gap-4 px-5 text-center"
           >
             <div className="w-14 h-14 rounded-2xl flex items-center justify-center" style={{ background: '#087F75' }}>
               {file ? <FileText className="w-7 h-7 text-white" /> : <Upload className="w-7 h-7 text-white" />}
             </div>
             <div>
-              <p className="text-base font-semibold text-light-accent">
+              <p className="text-base font-semibold text-light-accent break-all">
                 {file ? file.name : 'Upload course file'}
               </p>
               <p className="text-xs text-light-accent/45 mt-1">
-                {file ? `${(file.size / 1024 / 1024).toFixed(2)} MB` : 'PDF, Word, PowerPoint, or text'}
+                {file ? `${(file.size / 1024 / 1024).toFixed(2)} MB` : 'PDF, Word, PowerPoint, or text · Up to 4 MB'}
               </p>
             </div>
           </button>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="question-counts">
             <QuestionCountControl label="Multiple Choice" value={numMcq} onChange={setNumMcq} />
             <QuestionCountControl label="True / False" value={numTf} onChange={setNumTf} />
             <QuestionCountControl label="Essay" value={numEssay} onChange={setNumEssay} />
@@ -321,7 +320,7 @@ export function QuestionGeneratorPage() {
             <button
               type="submit"
               disabled={loading || !file || totalQuestions <= 0}
-              className="h-11 flex-1 rounded-xl bg-secondary text-white text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+              className="generate-button h-11 flex-1 rounded-xl bg-secondary text-white text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileQuestion className="w-4 h-4" />}
               {loading ? 'Generating...' : `Generate ${totalQuestions} Questions`}

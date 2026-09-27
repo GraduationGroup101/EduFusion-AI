@@ -1,25 +1,20 @@
+import StatusBadge from '../components/ui/StatusBadge';
+import PageHeader from '../components/ui/PageHeader';
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { dashboardService } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { Users, BookOpen, AlertTriangle, TrendingUp, Activity } from 'lucide-react';
+import { Users, BookOpen, AlertTriangle, TrendingUp } from 'lucide-react';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
-const RISK_COLORS = {
-  HIGH: '#ef4444',
-  MEDIUM: '#f59e0b',
-  LOW: '#22c55e',
-  High: '#ef4444',
-  Medium: '#f59e0b',
-  Low: '#22c55e',
-};
+const RISK_COLORS = { HIGH: '#b42332', MEDIUM: '#ad791f', LOW: '#398461' };
 
 const StatCard = ({ icon: Icon, label, value, color, delay }) => (
   <motion.div
     initial={{ opacity: 0, y: 16 }}
     animate={{ opacity: 1, y: 0 }}
     transition={{ delay }}
-    className="glass rounded-2xl p-6 glow-border hover:border-accent/30 transition-colors"
+    className={`glass rounded-2xl p-5 metric-card ${color === "#b42332" ? "is-risk" : ""}`}
   >
     <div className="flex items-start justify-between">
       <div>
@@ -28,7 +23,7 @@ const StatCard = ({ icon: Icon, label, value, color, delay }) => (
           {value?.toLocaleString() ?? '—'}
         </p>
       </div>
-      <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: `${color}20` }}>
+      <div className="metric-icon w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: `${color}20` }}>
         <Icon className="w-5 h-5" style={{ color }} />
       </div>
     </div>
@@ -83,23 +78,12 @@ export default function DashboardHome() {
     return (
       <div className="p-6 space-y-6">
         {errorNotice}
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center justify-between">
-          <div>
-            <h1 className="font-display text-2xl font-bold text-gradient">My Academic Status</h1>
-            <p className="text-light-accent/40 text-sm mt-0.5">
-              Welcome back, <span className="text-accent">{user?.student_name || user?.username}</span>
-            </p>
-          </div>
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-accent/10 border border-accent/20">
-            <Activity className="w-3.5 h-3.5 text-accent" />
-            <span className="text-xs font-mono text-accent">Private</span>
-          </div>
-        </motion.div>
+        <PageHeader title="My Academic Status" description={`Welcome back, ${user?.student_name || user?.username}. Your learning, in perspective.`}><StatusBadge status="neutral">Private workspace</StatusBadge></PageHeader>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <StatCard icon={BookOpen} label="My Enrollments" value={studentSummary?.totalEnrollments} color="#087F75" delay={0.1} />
           <StatCard icon={TrendingUp} label="My Predictions" value={studentSummary?.predictionCount} color="#C85140" delay={0.15} />
-          <StatCard icon={AlertTriangle} label="At-Risk Courses" value={studentSummary?.atRiskCount} color="#ef4444" delay={0.2} />
+          <StatCard icon={AlertTriangle} label="At-Risk Courses" value={studentSummary?.atRiskCount} color="#b42332" delay={0.2} />
         </div>
 
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}
@@ -155,25 +139,14 @@ export default function DashboardHome() {
     <div className="p-6 space-y-6">
       {errorNotice}
       {/* Header */}
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center justify-between">
-        <div>
-          <h1 className="font-display text-2xl font-bold text-gradient">Dashboard</h1>
-          <p className="text-light-accent/40 text-sm mt-0.5">
-            Welcome back, <span className="text-accent">{user?.username}</span>
-          </p>
-        </div>
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-accent/10 border border-accent/20">
-          <Activity className="w-3.5 h-3.5 text-accent" />
-          <span className="text-xs font-mono text-accent">Live</span>
-        </div>
-      </motion.div>
+      <PageHeader title="Dashboard" description={`Welcome back, ${user?.username}. A clearer view of academic progress.`}><StatusBadge status={loading ? "checking" : loadError ? "warning" : "success"}>{loading ? "Refreshing data" : loadError ? "Check connection" : "Up to date"}</StatusBadge></PageHeader>
 
       {/* Stats grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard icon={Users} label="Total Students" value={stats?.totalStudents} color="#087F75" delay={0.1} />
         <StatCard icon={BookOpen} label="Enrollments" value={stats?.totalEnrollments} color="#C85140" delay={0.15} />
         <StatCard icon={TrendingUp} label="Current Predictions" value={stats?.recentPredictions} color="#087F75" delay={0.2} />
-        <StatCard icon={AlertTriangle} label="Current At-Risk Courses" value={stats?.atRiskStudents} color="#ef4444" delay={0.25} />
+        <StatCard icon={AlertTriangle} label="Current At-Risk Courses" value={stats?.atRiskStudents} color="#b42332" delay={0.25} />
       </div>
 
       {/* Charts */}
@@ -185,9 +158,9 @@ export default function DashboardHome() {
           {riskDist.length > 0 ? (
             <ResponsiveContainer width="100%" height={180}>
               <PieChart>
-                <Pie data={riskDist} cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={3} dataKey="value">
+                <Pie isAnimationActive={false} data={riskDist} cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={3} dataKey="value">
                   {riskDist.map((entry, i) => (
-                    <Cell key={i} fill={RISK_COLORS[entry.name] || '#087F75'} />
+                    <Cell key={i} fill={RISK_COLORS[entry.name.toUpperCase()] || '#087F75'} />
                   ))}
                 </Pie>
                 <Tooltip contentStyle={{ background: '#FFFFFF', border: '1px solid #DDE6DF', borderRadius: 8, color: '#193C37', fontSize: 12 }} />
@@ -196,14 +169,14 @@ export default function DashboardHome() {
           ) : (
             <div className="h-40 flex items-center justify-center text-light-accent/30 text-sm">No data</div>
           )}
-          <div className="flex flex-wrap gap-2 mt-2">
+          <ul aria-label="Risk distribution legend" className="flex flex-wrap gap-2 mt-2">
             {Object.entries(RISK_COLORS).map(([k, v]) => (
-              <span key={k} className="flex items-center gap-1 text-xs text-light-accent/60">
+              <li key={k} className="flex items-center gap-1 text-xs text-light-accent/60">
                 <span className="w-2 h-2 rounded-full" style={{ background: v }} />
-                {k}
-              </span>
+                {k[0] + k.slice(1).toLowerCase()}
+              </li>
             ))}
-          </div>
+          </ul>
         </motion.div>
 
         {/* Course Enrollment Bar */}
@@ -216,7 +189,7 @@ export default function DashboardHome() {
                 <XAxis dataKey="name" tick={{ fill: '#193C37', fontSize: 11 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: '#087F75', fontSize: 11 }} axisLine={false} tickLine={false} />
                 <Tooltip contentStyle={{ background: '#FFFFFF', border: '1px solid #DDE6DF', borderRadius: 8, color: '#193C37', fontSize: 12 }} />
-                <Bar dataKey="enrollments" fill="#087F75" radius={[4, 4, 0, 0]} />
+                <Bar isAnimationActive={false} dataKey="enrollments" fill="#087F75" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           ) : (
@@ -230,12 +203,12 @@ export default function DashboardHome() {
         className="glass rounded-2xl p-5 glow-border">
         <h3 className="font-display text-sm font-semibold text-light-accent mb-4">Recent Predictions</h3>
         {predictions.length > 0 ? (
-          <div className="overflow-x-auto">
+          <div className="table-scroll" role="region" aria-label="Recent predictions" tabIndex={0}>
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left border-b border-border">
                   {['Student', 'Course', 'Risk Level', 'Probability', 'Action', 'Date'].map(h => (
-                    <th key={h} className="pb-3 pr-4 text-xs font-mono text-accent/60 uppercase tracking-wider">{h}</th>
+                    <th key={h} className="pb-3 pr-4 text-xs font-mono text-muted uppercase tracking-wider">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -245,17 +218,12 @@ export default function DashboardHome() {
                     <td className="py-3 pr-4 text-light-accent font-medium">{p.student_name || '—'}</td>
                     <td className="py-3 pr-4 text-light-accent/60 font-mono text-xs">{p.code_module}</td>
                     <td className="py-3 pr-4">
-                      <span className={`px-2 py-0.5 rounded-md text-xs font-medium
-                        ${p.risk_level === 'High' ? 'bg-red-500/20 text-red-400' :
-                          p.risk_level === 'Medium' ? 'bg-amber-500/20 text-amber-400' :
-                          'bg-green-500/20 text-green-400'}`}>
-                        {p.risk_level}
-                      </span>
+                      <StatusBadge status={p.risk_level} />
                     </td>
                     <td className="py-3 pr-4 text-light-accent/70 font-mono text-xs">
                       {p.risk_probability != null ? `${(p.risk_probability * 100).toFixed(1)}%` : '—'}
                     </td>
-                    <td className="py-3 pr-4 text-light-accent/50 text-xs max-w-xs truncate">{p.recommended_action || '—'}</td>
+                    <td className="py-3 pr-4 text-light-accent/50 text-xs table-action">{p.recommended_action || '—'}</td>
                     <td className="py-3 text-light-accent/30 text-xs font-mono">
                       {new Date(p.created_at).toLocaleDateString()}
                     </td>

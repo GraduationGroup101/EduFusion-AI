@@ -1,3 +1,4 @@
+import PageHeader from '../components/ui/PageHeader';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
@@ -226,16 +227,9 @@ export default function StudentPredictionPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="font-display text-2xl font-bold text-gradient">My Prediction Tool</h1>
-          <p className="text-light-accent/55 text-sm mt-1">Explore a separate what-if scenario alongside your actual academic prediction.</p>
-        </div>
-        <button onClick={() => runPrediction(selected, true)} disabled={loading || !selected} className="flex items-center gap-2 rounded-xl border border-border px-4 py-2 text-sm text-light-accent hover:bg-secondary/10 disabled:opacity-60">
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Rerun
-        </button>
-      </motion.div>
+      <PageHeader title="EduPredict" icon={BookOpen} description="Explore a separate what-if scenario alongside your actual academic prediction.">
+        <button onClick={() => runPrediction(selected, true)} disabled={loading || !selected} className="flex items-center gap-2 rounded-xl border border-border px-4 py-2 text-sm text-light-accent disabled:opacity-60"><RefreshCw className={loading ? 'animate-spin' : ''} size={16} />Rerun</button>
+      </PageHeader>
 
       <div className="glass rounded-2xl p-5 glow-border space-y-5">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -258,7 +252,7 @@ export default function StudentPredictionPage() {
 
         {selected ? (
           <>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
               {summary.map(([label, value]) => (
                 <SummaryCard key={label} label={label} value={value} />
               ))}
@@ -273,7 +267,7 @@ export default function StudentPredictionPage() {
                 <MousePointerClick className="w-5 h-5 text-accent" />
                 <h2 className="font-display text-sm font-semibold text-light-accent">1. Add Learning Activity</h2>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
                 <NumberInput label="Extra Quiz Activity" value={form.quiz_clicks} max={limits.maxClicks} onChange={(value) => setField('quiz_clicks', value)} hint="interactions" />
                 <NumberInput label="Extra Forum Activity" value={form.forum_clicks} max={limits.maxClicks} onChange={(value) => setField('forum_clicks', value)} hint="interactions" />
                 <NumberInput label="Extra Resource Study" value={form.resource_clicks} max={limits.maxClicks} onChange={(value) => setField('resource_clicks', value)} hint="interactions" />
@@ -286,7 +280,7 @@ export default function StudentPredictionPage() {
                 <BookOpen className="w-5 h-5 text-accent" />
                 <h2 className="font-display text-sm font-semibold text-light-accent">2. Update Latest Grades</h2>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
                 <NumberInput label="TMA Score" value={form.latest_tma_score} max={100} disabled={!selected.latest_tma_id} onChange={(value) => setField('latest_tma_score', value)} />
                 <NumberInput label="TMA Late Days" value={form.tma_delay_days} max={limits.tmaDelayMax} disabled={!selected.latest_tma_id} onChange={(value) => setField('tma_delay_days', value)} />
                 <NumberInput label="CMA Score" value={form.latest_cma_score} max={100} disabled={!selected.latest_cma_id} onChange={(value) => setField('latest_cma_score', value)} />
@@ -334,7 +328,7 @@ export default function StudentPredictionPage() {
         <section className="glass rounded-2xl p-5 space-y-3" aria-label="Saved scenario">
           <h2 className="font-display font-semibold">Saved What-if Scenario</h2>
           <p className="text-sm text-light-accent/65">{scenario.message}</p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
             <SummaryCard label="Projected Clicks" value={scenario.projected.total_clicks} />
             <SummaryCard label="Projected TMA" value={scenario.projected.latest_tma_score ?? '—'} />
             <SummaryCard label="Projected CMA" value={scenario.projected.latest_cma_score ?? '—'} />
@@ -348,7 +342,7 @@ export default function StudentPredictionPage() {
             <Sparkles className="w-5 h-5 text-accent" />
             <h2 className="font-display font-semibold text-light-accent">Actual Academic Prediction</h2>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             <div>
               <p className="text-xs font-mono uppercase text-light-accent/45">Risk Level</p>
               <p className="text-2xl font-display font-bold text-light-accent">{prediction.risk_level}</p>

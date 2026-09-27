@@ -1,3 +1,4 @@
+import StatusBadge from '../components/ui/StatusBadge';
 import { BrandMark } from '../components/Brand';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -72,7 +73,7 @@ const MessageBubble = ({ msg }) => {
     >
       <div className={`w-8 h-8 rounded-xl flex-shrink-0 flex items-center justify-center
         ${isUser
-          ? 'bg-gradient-to-br from-secondary to-accent'
+          ? 'bg-secondary'
           : 'bg-surface-2 border border-border'}`}
       >
         {isUser ? <User className="w-4 h-4 text-white" /> : <Bot className="w-4 h-4 text-accent" />}
@@ -101,7 +102,7 @@ export default function ChatbotPage() {
   const [historyLoading, setHistoryLoading] = useState(true);
   const [serviceStatus, setServiceStatus] = useState('checking');
   const [sessionId] = useState(getOrCreateSessionId);
-  const bottomRef = useRef(null);
+  const messagesRef = useRef(null);
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -148,7 +149,8 @@ export default function ChatbotPage() {
   }, []);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const area = messagesRef.current;
+    area?.scrollTo({ top: area.scrollHeight, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   }, [messages]);
 
   const sendMessage = useCallback(async (text) => {
@@ -229,35 +231,12 @@ export default function ChatbotPage() {
             <MessageSquare className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h1 className="font-display font-semibold text-light-accent">IUG AI Chatbot</h1>
+            <h1 className="font-display font-semibold text-light-accent">Academic Chatbot</h1>
             <p className="text-xs text-accent/60 font-mono">Academic assistant</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border ${
-            serviceStatus === 'online'
-              ? 'bg-green-500/10 border-green-500/20'
-              : serviceStatus === 'offline'
-                ? 'bg-red-500/10 border-red-500/20'
-                : 'bg-amber-500/10 border-amber-500/20'
-          }`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${
-              serviceStatus === 'online'
-                ? 'bg-green-500 animate-pulse'
-                : serviceStatus === 'offline'
-                  ? 'bg-red-500'
-                  : 'bg-amber-500 animate-pulse'
-            }`} />
-            <span className={`text-xs font-mono ${
-              serviceStatus === 'online'
-                ? 'text-green-500'
-                : serviceStatus === 'offline'
-                  ? 'text-red-500'
-                  : 'text-amber-600'
-            }`}>
-              {serviceStatus === 'online' ? 'Online' : serviceStatus === 'offline' ? 'Offline' : 'Checking'}
-            </span>
-          </div>
+          <div role="status"><StatusBadge status={serviceStatus}>{serviceStatus === 'checking' ? 'Checking service' : serviceStatus === 'online' ? 'Online' : 'Offline'}</StatusBadge></div>
           {messages.length > 0 && (
             <button onClick={clearChat}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-light-accent/40 hover:text-red-400 hover:bg-red-400/10 transition-all text-xs">
@@ -269,11 +248,12 @@ export default function ChatbotPage() {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
+      <div ref={messagesRef} className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
+        {historyLoading && <p role="status" className="text-sm text-muted">Loading your conversation…</p>}
         <AnimatePresence>
           {!historyLoading && messages.length === 0 && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="flex flex-col items-center justify-center h-full pt-12">
+              className="chat-empty flex flex-col items-center justify-center">
               <div className="text-center">
                 <div className="w-16 h-16 rounded-2xl mx-auto mb-4 flex items-center justify-center"
                      style={{ background: '#E5F3E9' }}>
@@ -283,20 +263,24 @@ export default function ChatbotPage() {
                   What would you like to know?
                 </h2>
                 <p className="text-sm text-light-accent/60 max-w-sm mx-auto leading-relaxed">Ask about university programmes, admissions, or student services.</p>
+                <div className="prompt-grid">
+                  {['What programmes can I study?', 'How do I apply for admission?', 'What student services are available?', 'Explain the academic registration process.'].map(prompt => <button key={prompt} type="button" onClick={() => { setInput(prompt); inputRef.current?.focus(); }}>{prompt}</button>)}
+                </div>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
 
         {messages.map(msg => <MessageBubble key={msg.id} msg={msg} />)}
-        <div ref={bottomRef} />
       </div>
 
       {/* Input */}
       <div className="px-6 py-4 border-t border-border/50 flex-shrink-0">
+        {serviceStatus === 'offline' && <p role="status" className="max-w-4xl mx-auto mb-3 text-sm text-red-800">The assistant is currently unavailable. Sending a message will retry the connection; your conversation stays here.</p>}
         <div className="flex gap-3 items-end max-w-4xl mx-auto">
           <div className="flex-1 relative">
             <textarea
+              aria-label="Your question"
               ref={inputRef}
               value={input}
               onChange={e => setInput(e.target.value)}
@@ -312,6 +296,7 @@ export default function ChatbotPage() {
             />
           </div>
           <motion.button
+            aria-label="Send question"
             whileTap={{ scale: 0.95 }}
             onClick={() => sendMessage()}
             disabled={!input.trim() || loading}

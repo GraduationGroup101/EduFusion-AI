@@ -1,3 +1,5 @@
+import PageHeader from '../components/ui/PageHeader';
+import StatusBadge from '../components/ui/StatusBadge';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
@@ -283,9 +285,9 @@ export default function LectureScribePage() {
 
   if (serviceStatus === 'checking') {
     return (
-      <div className="min-h-full p-4 md:p-8 space-y-6">
+      <div className="p-4 md:p-8 space-y-6">
         <LectureLibrary focusLecture={focusLecture} onAvailabilityChange={setStudyEnabled}/>
-        <div className="text-center">
+        <div className="empty-state" role="status">
           <Loader2 className="w-7 h-7 mx-auto text-accent animate-spin" />
           <p className="mt-4 text-sm font-medium text-light-accent">Connecting to LectureScribe</p>
           <p className="mt-1 text-xs text-light-accent/45">Checking transcription service availability...</p>
@@ -296,14 +298,14 @@ export default function LectureScribePage() {
 
   if (serviceStatus === 'offline') {
     return (
-      <div className="min-h-full p-4 md:p-8 space-y-6">
+      <div className="p-4 md:p-8 space-y-6">
         <LectureLibrary focusLecture={focusLecture} onAvailabilityChange={setStudyEnabled}/>
         <motion.section
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          className="w-full max-w-2xl text-center py-12 md:py-16"
+          className="w-full max-w-2xl mx-auto text-center py-8 md:py-10"
         >
-          <div className="w-16 h-16 mx-auto bg-red-50 border border-red-200 text-red-500 flex items-center justify-center">
+          <div className="w-14 h-14 rounded-2xl mx-auto bg-red-50 border border-red-200 text-red-500 flex items-center justify-center">
             <WifiOff className="w-7 h-7" />
           </div>
           <p className="mt-6 text-xs font-mono uppercase text-accent">Temporarily unavailable</p>
@@ -311,8 +313,8 @@ export default function LectureScribePage() {
             LectureScribe is taking a short break
           </h1>
           <p className="mt-4 mx-auto max-w-lg text-sm md:text-base leading-7 text-light-accent/55">
-            The transcription service is currently offline. Your account and previous work are safe.
-            Please try again in a few minutes.
+            Transcription is currently offline. Try again in a few minutes.
+            {studyEnabled ? " Your saved lecture tools are available above; new lectures can wait in the queue." : " Saved lecture availability is shown separately above."}
           </p>
           {studyEnabled && <form onSubmit={submitJob} className="mt-5 space-y-3 text-left">
             <label className="block text-sm">Save a lecture for background processing
@@ -344,35 +346,9 @@ export default function LectureScribePage() {
 
   return (
     <div className="p-4 md:p-6 lg:p-8 space-y-6">
-      <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-          <div className="flex items-center gap-2 text-accent text-xs font-mono uppercase">
-            <Youtube className="w-4 h-4" />
-            Lecture intelligence
-          </div>
-          <h1 className="font-display text-3xl font-bold text-light-accent mt-2">LectureScribe</h1>
-          <p className="text-light-accent/55 text-sm mt-1 max-w-2xl">
-            Turn a YouTube lecture into a searchable transcript, then optionally format it for easier reading.
-          </p>
-        </motion.div>
-
-        <div className={`inline-flex self-start items-center gap-2 border px-3 py-2 text-xs font-mono ${
-          serviceStatus === 'online'
-            ? 'border-green-500/25 bg-green-500/10 text-green-700'
-            : serviceStatus === 'offline'
-              ? 'border-red-500/25 bg-red-500/10 text-red-600'
-              : 'border-border bg-white text-light-accent/55'
-        }`}>
-          {serviceStatus === 'checking' ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-          ) : serviceStatus === 'online' ? (
-            <CheckCircle2 className="w-3.5 h-3.5" />
-          ) : (
-            <AlertCircle className="w-3.5 h-3.5" />
-          )}
-          {serviceStatus === 'checking' ? 'Checking service' : serviceStatus === 'online' ? 'Service online' : 'Service offline'}
-        </div>
-      </header>
+      <PageHeader title="LectureScribe" icon={Youtube} tone="peach" description="Turn a YouTube lecture into readable notes, ready to revisit at your own pace.">
+        <StatusBadge status={serviceStatus}>Service online</StatusBadge>
+      </PageHeader>
 
       <LectureLibrary focusLecture={focusLecture} onAvailabilityChange={setStudyEnabled}/>
 
@@ -425,9 +401,9 @@ export default function LectureScribePage() {
                   value="fast"
                   checked={mode === 'fast'}
                   onChange={() => setMode('fast')}
-                  className="sr-only"
+                  className="sr-only peer"
                 />
-                <span className="flex items-start gap-3">
+                <span className="flex items-start gap-3 rounded-lg peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-secondary">
                   <span className="w-9 h-9 bg-amber-100 text-amber-700 flex items-center justify-center flex-shrink-0">
                     <Zap className="w-4 h-4" />
                   </span>
@@ -452,9 +428,9 @@ export default function LectureScribePage() {
                   value="formatted"
                   checked={mode === 'formatted'}
                   onChange={() => setMode('formatted')}
-                  className="sr-only"
+                  className="sr-only peer"
                 />
-                <span className="flex items-start gap-3">
+                <span className="flex items-start gap-3 rounded-lg peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-secondary">
                   <span className="w-9 h-9 bg-teal-100 text-teal-700 flex items-center justify-center flex-shrink-0">
                     <Sparkles className="w-4 h-4" />
                   </span>

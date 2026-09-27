@@ -64,17 +64,17 @@ export default function LectureLibrary({focusLecture,onAvailabilityChange}) {
   },[focusLecture,load]);
   return <section className="glass glow-border p-5 space-y-4" aria-label="Saved lecture library">
     <header className="flex items-center justify-between gap-3">
-      <div><h2 className="font-display text-xl font-semibold">Your saved lectures</h2>
-        <p className="text-sm text-light-accent/60 mt-1">Each lecture has its own chat, practice questions and private progress.</p></div>
+      <div><h2 className="font-display text-xl font-semibold">{status?.enabled ? 'Your saved lectures' : 'Lecture library'}</h2>
+        <p className="text-sm text-light-accent/60 mt-1">{status?.enabled ? "Revisit your notes, ask questions and practise at your own pace." : "Saved lecture access is separate from the transcription service."}</p></div>
       <button type="button" className={button} onClick={load} disabled={busy} aria-label="Refresh saved lectures"><RefreshCw size={16}/></button>
     </header>
     {error && <p role="alert" className="text-red-700 text-sm">{error}</p>}
-    {status?.enabled===false && <p className="text-sm text-light-accent/60">Lecture study tools are awaiting server setup. Existing transcription tools remain available.</p>}
+    {status?.enabled===false && <p className="text-sm text-light-accent/60">Saved lecture tools are not enabled yet. Check transcription availability below.</p>}
     {status?.enabled && !status.worker_online && <p role="status" className="text-sm bg-amber-50 p-3">Local processing is offline. Saved content and completed practice remain available; new AI requests wait in the queue.</p>}
     {status?.storage_warning && <p role="status" className="text-sm text-amber-700">Learning storage is approaching its free capacity.</p>}
-    {status?.enabled && !lectures.length && <p className="text-sm text-light-accent/60">Add a lecture above, or save a completed previous transcript using its chat or questions button.</p>}
-    <div className="grid md:grid-cols-2 gap-3">{lectures.map((lecture) => <article key={lecture.id} className="border border-border p-4">
-      <h3 className="font-semibold truncate">{lecture.title}</h3>
+    {status?.enabled && !lectures.length && <p className="text-sm text-light-accent/60">Add a lecture using the form below, or save a completed transcript using its chat or questions button.</p>}
+    <div className="grid md:grid-cols-2 gap-3">{lectures.map((lecture) => <article key={lecture.id} className="rounded-xl border border-border p-4">
+      <h3 className="font-semibold break-words">{lecture.title}</h3>
       <p className="text-xs text-light-accent/60 mt-1">{lecture.status} · {lecture.stage}</p>
       <div className="flex flex-wrap gap-2 mt-3">
         <button className={button} onClick={() => setOpened({id:lecture.id,tab:'summary'})}><BookOpen size={15}/>Summary</button>
