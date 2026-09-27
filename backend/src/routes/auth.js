@@ -11,6 +11,7 @@ const {
   registerStudentWithEnrollment,
 } = require('../db/queries');
 const { authenticate } = require('../middleware/auth');
+const { logAccountError } = require('../lib/accountError');
 
 const router = express.Router();
 const EDUPREDICT_BASE = process.env.EDUPREDICT_API_URL || 'https://edupredict-api-6ob5.onrender.com';
@@ -26,6 +27,7 @@ const loginLimiter = rateLimit({
 });
 
 router.post('/login', loginLimiter, async (req, res) => {
+  let stage = 'validate_credentials';
   try {
     const username = text(req.body?.username, 'Username', { max: 100 });
     const password = text(req.body?.password, 'Password', { max: 100000, trim: false });
@@ -35,12 +37,16 @@ router.post('/login', loginLimiter, async (req, res) => {
     }
 
     const cleanUsername = username.trim();
+    stage = 'application_account_lookup';
     const user = await findUserByUsername(cleanUsername);
     if (!user) {
       const numericStudentId = /^\d+$/.test(cleanUsername) && Number.isSafeInteger(Number(cleanUsername)) && Number(cleanUsername) > 0 && Number(cleanUsername) <= 2147483647 ? Number(cleanUsername) : NaN;
       if (!Number.isNaN(numericStudentId)) {
+        stage = 'student_account_lookup';
         const student = await findStudentById(numericStudentId);
+        stage = 'student_pin_verification';
         if (student && await verifyStudentPin(student, password)) {
+          stage = 'student_token_creation';
           const token = jwt.sign(
             {
               id_student: student.id_student,
@@ -72,11 +78,13 @@ router.post('/login', loginLimiter, async (req, res) => {
       return res.status(401).json({ error: 'Account is deactivated' });
     }
 
+    stage = 'application_password_verification';
     const isValid = await bcrypt.compare(password, user.password_hash);
     if (!isValid) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
+    stage = 'application_token_creation';
     const token = jwt.sign(
       { id: user.id, username: user.username, role: user.role },
       process.env.JWT_SECRET,
@@ -89,10 +97,9 @@ router.post('/login', loginLimiter, async (req, res) => {
       message: 'Login successful',
     });
   } catch (err) {
-    console.error('Login error:', err);
+    logAccountError(stage, err);
     res.status(err.statusCode || 503).json({
       error: err.statusCode === 400 ? err.message : 'Account service is temporarily unavailable',
-      detail: process.env.NODE_ENV === 'production' ? undefined : err.message,
     });
   }
 });
@@ -102,7 +109,7 @@ router.get('/registration-courses', async (req, res) => {
     const courses = await listRegisterableCoursePresentations();
     res.json({ courses });
   } catch (err) {
-    console.error('Registration courses error:', err);
+    logAccountError('registration_courses_lookup', err);
     res.status(500).json({ error: 'Failed to load registration courses' });
   }
 });

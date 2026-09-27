@@ -1,7 +1,9 @@
 const jwt = require('jsonwebtoken');
 const { getStudentUserById, getUserById } = require('../db/queries');
+const { logAccountError } = require('../lib/accountError');
 
 const authenticate = async (req, res, next) => {
+  let stage = 'token_verification';
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -12,6 +14,7 @@ const authenticate = async (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     const hasStudentId = Object.prototype.hasOwnProperty.call(decoded, 'id_student');
+    stage = hasStudentId ? 'student_session_lookup' : 'application_session_lookup';
     const user = hasStudentId
       ? await getStudentUserById(decoded.id_student)
       : await getUserById(decoded.id);
@@ -29,7 +32,7 @@ const authenticate = async (req, res, next) => {
     if (['JsonWebTokenError', 'NotBeforeError'].includes(err.name)) {
       return res.status(401).json({ error: 'Invalid token' });
     }
-    console.error('Authentication lookup failed:', err.code || err.name);
+    logAccountError(stage, err);
     return res.status(503).json({ error: 'Account service is temporarily unavailable' });
   }
 };

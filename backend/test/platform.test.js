@@ -70,6 +70,26 @@ test('migrations are repeatable and new student PINs are hashes',async()=>{
   const login=await request(server).post('/api/auth/login').send({username:'123',password:'abcd1234'});
   assert.equal(login.status,200);assert.equal(login.body.user.role,'student');
 });
+
+test('registration courses are public and registration creates a usable student session', async () => {
+  for (const token of [null, studentToken(), adminToken()]) {
+    let call = request(server).get('/api/auth/registration-courses');
+    if (token) call = call.set('Authorization', `Bearer ${token}`);
+    const courses = await call;
+    assert.equal(courses.status, 200);
+    assert.equal(courses.body.courses[0].code_module, 'DEMO');
+    assert.ok(courses.body.courses[0].assessment_count > 0);
+  }
+  const registered = await request(server).post('/api/auth/register-student').send(profile(135));
+  assert.equal(registered.status, 201);
+  assert.equal(registered.body.user.role, 'student');
+  const auth = `Bearer ${registered.body.token}`;
+  assert.equal((await request(server).get('/api/auth/me').set('Authorization', auth)).status, 200);
+  const dashboard = await request(server).get('/api/dashboard/student-summary').set('Authorization', auth);
+  assert.equal(dashboard.status, 200);
+  assert.equal(dashboard.body.totalEnrollments, 1);
+  assert.equal((await request(server).post('/api/auth/login').send({ username: '135', password: 'abcd1234' })).status, 200);
+});
 test('registration rolls back the student if enrollment fails',async()=>{
   await database.query('ALTER TABLE enrollments ADD CONSTRAINT injected_failure CHECK(id_student<>999)');
   await assert.rejects(registerStudentWithEnrollment(profile(999)));

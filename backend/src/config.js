@@ -1,5 +1,7 @@
+const { getAllowedOrigins } = require('./lib/corsOrigins');
 const validateEnvironment = (env = process.env) => {
   const issues = [];
+  try { getAllowedOrigins(env); } catch (error) { issues.push(error.message); }
   if (!env.DATABASE_URL) issues.push('DATABASE_URL is required');
   if (!env.JWT_SECRET || env.JWT_SECRET.length < 32 || /^(change[-_ ]?this|replace[-_ ]?with|your[-_ ]|changeme|secret$)/i.test(env.JWT_SECRET)) issues.push('JWT_SECRET must be a unique secret of at least 32 characters');
   for (const key of ['DATABASE_URL','CHATBOT_API_URL','EDUPREDICT_API_URL','LECTURESCRIBE_API_URL','QUESTION_GENERATOR_API_URL']) {
