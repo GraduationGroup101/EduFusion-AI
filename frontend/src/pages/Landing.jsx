@@ -49,22 +49,22 @@ const tools = [
     name: "Academic Chatbot",
     label: "Good questions. Clear answers.",
     icon: MessageSquare,
-    className: "cream",
+    className: "sage",
     description:
       "Ask about university life, programmes and student services in natural language, including Arabic.",
     points: ["Grounded in university knowledge", "Conversations in one place"],
     route: "chatbot",
   },
   {
-    name: "QuizForge",
+    name: "Quiz Generator",
     label: "Turn your notes into know-how",
     icon: FileQuestion,
-    className: "sage",
+    className: "cream",
     description:
       "Upload your course material and create practice questions that help you prepare for what comes next.",
     points: [
       "Multiple choice, true/false and essay",
-      "Copy and download question sets",
+      "Generate and copy question sets",
     ],
     route: "question-gen",
   },
@@ -75,9 +75,7 @@ const nav = [
   ["#about", "Our story"],
 ];
 const team = [
-  "Abdallah Saeed Fsafis",
   "Abdullah Mohammed Shehdada",
-  "Ahmed Noaman Kalloub",
   "Basem Hamdi Daqarem",
   "Nizar Yousef Alqerem",
 ];
@@ -143,7 +141,7 @@ const PreviewFilm = () => {
           <video
             key={src}
             ref={(el) => { videoRefs.current[index] = el; }}
-            className="absolute inset-0 h-full w-full object-cover transition-opacity ease-linear"
+            className="absolute inset-0 h-full w-full object-contain transition-opacity ease-linear"
             style={{ opacity: active === index ? 1 : 0, transitionDuration: `${CROSSFADE_MS}ms` }}
             src={src}
             poster={index === 0 ? '/edufusion-preview-poster.jpg' : undefined}
@@ -467,7 +465,7 @@ export default function Landing() {
       </main>
       <footer className="site-container site-footer">
         <Link to="/" aria-label="EduFusion home">
-          <Brand />
+          <Brand tagline />
         </Link>
         <p>All your learning, in one place.</p>
         <a href="#main">Back to top ↑</a>

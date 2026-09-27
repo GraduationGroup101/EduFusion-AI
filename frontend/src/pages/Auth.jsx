@@ -44,7 +44,7 @@ const BRAND_POINTS = [
   { icon: TrendingUp, label: 'EduPredict', text: 'See your academic risk before the final grade does.' },
   { icon: Youtube, label: 'LectureScribe', text: 'Recorded lectures as clean, readable transcripts.' },
   { icon: MessageSquare, label: 'Academic Chatbot', text: 'University answers in plain language.' },
-  { icon: FileQuestion, label: 'QuizForge', text: 'Practice questions from your own notes.' },
+  { icon: FileQuestion, label: 'Quiz Generator', text: 'Practice questions from your own notes.' },
 ];
 
 const inputClass =
