@@ -54,6 +54,7 @@ before(async () => {
     if(providerMode==='fail') return new Response(JSON.stringify({error:'provider failed'}),{status:503});
     if(providerMode==='unauthorized') return new Response('{}',{status:401});
     if(String(url).endsWith('/jobs') && options.method==='POST') return new Response(JSON.stringify({job_id:'owned-job',status:'queued'}),{status:202});
+    if(String(url).endsWith('/jobs'))return new Response(JSON.stringify({jobs:[{job_id:'provider-only-job',status:'completed',request:{youtube_url:'https://youtu.be/lmnopqrstuv'}}]}));
     if(String(url).includes('/transcript')) return new Response('private transcript');
     if(String(url).includes('/jobs/')) return new Response(JSON.stringify({job_id:'owned-job',status:'completed',submitted_at:1}));
     return new Response(JSON.stringify({answer:'answer',status:'ok',risk_probability:0.3,total_students:1}));
@@ -173,7 +174,14 @@ test('LectureScribe stores creation entitlement and blocks arbitrary jobs and tr
   response=await request(server).get('/api/lecture-scribe/jobs/owned-job/transcript?kind=raw').set('Authorization',token);
   assert.equal(response.status,200);assert.equal(response.text,'private transcript');
   response=await request(server).get('/api/lecture-scribe/jobs').set('Authorization',`Bearer ${adminToken()}`);
-  assert.deepEqual(response.body.jobs,[]);
+  assert.equal(response.body.scope,'all');
+  assert.deepEqual(new Set(response.body.jobs.map(job=>job.job_id)),new Set(['owned-job','provider-only-job']));
+  response=await request(server).get('/api/lecture-scribe/jobs/provider-only-job/transcript?kind=raw').set('Authorization',`Bearer ${adminToken()}`);
+  assert.equal(response.status,200);assert.equal(response.text,'private transcript');
+  providerMode='fail';
+  response=await request(server).get('/api/lecture-scribe/jobs').set('Authorization',`Bearer ${adminToken()}`);
+  assert.equal(response.status,200);assert.equal(response.body.jobs[0].job_id,'owned-job');assert.ok(response.body.warning);
+  providerMode='ok';
 });
 test('clock commands replay safely and keep success when only prediction regeneration fails',async()=>{
   providerMode='fail';

@@ -5,10 +5,12 @@ import LectureLibrary from '../components/lectures/LectureLibrary';
 import LectureScribePage from '../pages/LectureScribePage';
 import {lectureStudyService as service} from '../services/lectureStudy';
 import {lectureScribeService} from '../services/api';
+const auth=vi.hoisted(()=>({user:{role:'student'}}));
+vi.mock('../context/AuthContext',()=>({useAuth:()=>({user:auth.user})}));
 vi.mock('../services/lectureStudy',()=>({lectureStudyService:{
   status:vi.fn(),list:vi.fn(),lecture:vi.fn(),messages:vi.fn(),quizzes:vi.fn(),attempts:vi.fn(),recommendations:vi.fn(),
   ask:vi.fn(),generate:vi.fn(),quiz:vi.fn(),submit:vi.fn(),job:vi.fn(),retry:vi.fn(),clearMessages:vi.fn(),
-  remove:vi.fn(),create:vi.fn(),import:vi.fn(),
+  remove:vi.fn(),create:vi.fn(),import:vi.fn(),adminList:vi.fn(),adminLecture:vi.fn(),
 }}));
 vi.mock('../services/api',()=>({
   lectureScribeService:{health:vi.fn(),listJobs:vi.fn(),getJob:vi.fn(),getTranscript:vi.fn(),createJob:vi.fn()},
@@ -24,6 +26,7 @@ const quiz={id:'quiz-a',questions:[
 ]};
 beforeEach(()=>{
   vi.clearAllMocks();
+  auth.user={role:'student'};
   service.status.mockResolvedValue({data:{enabled:true,worker_online:false}});
   service.list.mockResolvedValue({data:{lectures:[lecture()]}});
   service.lecture.mockImplementation(async(id)=>({data:{lecture:lecture(id)}}));
@@ -36,6 +39,37 @@ beforeEach(()=>{
   service.generate.mockResolvedValue({data:{job:{id:'job-quiz',kind:'quiz',status:'queued'}}});
   lectureScribeService.health.mockResolvedValue({data:{status:'ok'}});
   lectureScribeService.listJobs.mockResolvedValue({data:{jobs:[]}});
+});
+it('does not show an unusable lecture library when its tools are disabled',async()=>{
+  service.status.mockResolvedValue({data:{enabled:false}});
+  render(<LectureScribePage/>);
+  await screen.findByRole('button',{name:'Create transcript'});
+  expect(screen.queryByRole('region',{name:'Saved lecture library'})).not.toBeInTheDocument();
+  expect(service.list).not.toHaveBeenCalled();
+});
+it('lets administrators inspect all lecture content without loading student conversations',async()=>{
+  auth.user={role:'admin'};
+  service.adminList.mockResolvedValue({data:{lectures:[lecture('foreign-lecture')]}});
+  service.adminLecture.mockResolvedValue({data:{lecture:{...lecture('foreign-lecture'),transcript:'A transcript from another account'}}});
+  render(<LectureLibrary/>);
+  fireEvent.click(await screen.findByRole('button',{name:'View transcript and summary'}));
+  await screen.findByText('A transcript from another account');
+  expect(service.adminLecture).toHaveBeenCalledWith('foreign-lecture',expect.any(AbortSignal));
+  expect(service.messages).not.toHaveBeenCalled();
+  expect(screen.queryByRole('button',{name:/Remove .* from library/})).not.toBeInTheDocument();
+});
+it('makes every returned transcription accessible beyond the first eight jobs',async()=>{
+  auth.user={role:'admin'};
+  service.status.mockResolvedValue({data:{enabled:false}});
+  lectureScribeService.listJobs.mockResolvedValue({data:{jobs:Array.from({length:10},(_,i)=>({job_id:'job-'+i,submitted_at:i,status:'completed',request:{youtube_url:'https://youtu.be/video'+i}}))}});
+  render(<LectureScribePage/>);
+  await screen.findByText('https://youtu.be/video9');
+  expect(screen.queryByText('https://youtu.be/video0')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button',{name:'Next transcriptions'}));
+  expect(screen.getByText('https://youtu.be/video0')).toBeInTheDocument();
+  fireEvent.change(screen.getByRole('textbox',{name:'Search lecture transcriptions'}),{target:{value:'video9'}});
+  expect(screen.getByText('https://youtu.be/video9')).toBeInTheDocument();
+  expect(screen.getByRole('button',{name:'Next transcriptions'})).toBeDisabled();
 });
 it('keeps saved lecture chat available when the transcription service is offline',async()=>{
   lectureScribeService.health.mockRejectedValue(new Error('Offline'));

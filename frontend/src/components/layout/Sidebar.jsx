@@ -2,7 +2,7 @@ import Brand from '../Brand';
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { MessageSquare, FileQuestion, Youtube, LayoutDashboard, LogOut, ChevronLeft, ChevronRight, TrendingUp, User, AlertTriangle, Clock, Database, X } from 'lucide-react';
+import { MessageSquare, FileQuestion, Youtube, LayoutDashboard, LogOut, ChevronLeft, ChevronRight, TrendingUp, User, AlertTriangle, Clock, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const overview = { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', exact: true };
@@ -14,7 +14,7 @@ const learning = [
 const insights = [
   { path: '/dashboard/admin/at-risk', icon: AlertTriangle, label: 'At-Risk Students' },
   { path: '/dashboard/admin/clock', icon: Clock, label: 'Academic Clock' },
-  { path: '/dashboard/admin/chatbot-files', icon: Database, label: 'Chatbot Admin' },
+  { path: '/dashboard/admin/chatbot-files', icon: MessageSquare, label: 'Academic Chatbot' },
 ];
 
 export default function Sidebar({ mobileOpen = false, onMobileClose, menuRef }) {
@@ -30,7 +30,8 @@ export default function Sidebar({ mobileOpen = false, onMobileClose, menuRef }) 
     { title: 'Overview', items: [overview] },
     ...(user?.role === 'student' ? [] : [{ title: 'Academic insights', items: insights }]),
     { title: 'Learning tools', items: [
-      { path: user?.role === 'student' ? '/dashboard/my-prediction' : '/dashboard/ai-tool', icon: TrendingUp, label: 'EduPredict' }, ...learning,
+      { path: user?.role === 'student' ? '/dashboard/my-prediction' : '/dashboard/ai-tool', icon: TrendingUp, label: 'EduPredict' },
+      ...learning.filter(item=>user?.role==='student'||item.path!=='/dashboard/chatbot'),
     ] },
   ];
 

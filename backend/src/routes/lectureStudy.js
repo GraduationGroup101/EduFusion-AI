@@ -1,11 +1,11 @@
 const express = require('express');
-const { authenticate } = require('../middleware/auth');
+const { authenticate,requireRole } = require('../middleware/auth');
 const { aiLimiter } = require('../middleware/limits');
 const { text, integer, object } = require('../lib/validation');
 const { readQuery } = require('../db');
 const { getCurrentStudentPrediction } = require('../db/queries');
 const legacy = require('../db/appStore');
-const { requestUpstream } = require('../lib/upstream');
+const { requestUpstream,readJson } = require('../lib/upstream');
 const db = require('../lectureStudy/database');
 const store = require('../lectureStudy/store');
 const validate = require('../lectureStudy/validation');
@@ -42,6 +42,13 @@ router.get('/lectures',wrap(async (req,res) => {
   const offset = integer(req.query.offset ?? 0,'Offset',0,100000);
   res.json({lectures:await store.listLectures(req.user,offset),offset});
 }));
+router.get('/admin/lectures',requireRole(['admin']),wrap(async(req,res)=>{
+  const offset=integer(req.query.offset??0,'Offset',0,100000);
+  res.json({lectures:await store.listAllLectures(offset),offset});
+}));
+router.get('/admin/lectures/:id',requireRole(['admin']),wrap(async(req,res)=>{
+  res.json({lecture:await store.getLectureContent(validate.id(req.params.id))});
+}));
 router.post('/lectures',aiLimiter,wrap(async (req,res) => {
   const source = validate.source(req.body);
   await enrollment(req.user,source.enrollment_id);
@@ -52,17 +59,27 @@ router.post('/import',aiLimiter,wrap(async (req,res) => {
   object(req.body);
   const jobId = text(req.body.job_id,'Job ID',{max:200});
   const key = validate.requestKey(req);
-  if (!await legacy.ownsJob(req.user,jobId)) return res.status(404).json({error:'Job not found'});
-  const job = (await legacy.listJobs(req.user)).find((job) => job.job_id === jobId);
+  const own=await legacy.ownsJob(req.user,jobId);
+  if (!own&&req.user.role!=='admin') return res.status(404).json({error:'Job not found'});
+  const base = String(process.env.LECTURESCRIBE_API_URL || 'https://lecturescribe.app').replace(/\/+$/,'');
+  let job=own?(await legacy.listJobs(req.user)).find(job=>job.job_id===jobId):await legacy.getAnyJob(jobId);
+  let providerStatus;
+  if(!job&&req.user.role==='admin'){
+    providerStatus=await requestUpstream(req,base+'/jobs/'+encodeURIComponent(jobId),{},{timeoutMs:30000});
+    if(!providerStatus.ok)return res.status(404).json({error:'Job not found'});
+    job=await readJson(providerStatus);
+  }
+  if(!own&&job?.request?.youtube_url)await legacy.saveJob(req.user,{...job,job_id:jobId});
   if (!job?.request?.youtube_url) return res.status(409).json({error:'This job has no saved source; add its YouTube URL again'});
   const source = validate.source({...job.request,enrollment_id:req.body.enrollment_id});
   await enrollment(req.user,source.enrollment_id);
   const previous=await store.preparationReplay(req.user,source,key);
   if(previous)return res.status(previous.lecture.status==='ready'?200:202).json({...previous,job:jobView(previous.job)});
   // Never accept transcript text or a provider URL supplied by the browser.
-  const base = String(process.env.LECTURESCRIBE_API_URL || 'https://lecturescribe.app').replace(/\/+$/,'');
-  const statusResponse = await requestUpstream(req,base + '/jobs/' + encodeURIComponent(jobId),{}, {timeoutMs:30000});
-  if (!statusResponse.ok || (await statusResponse.json()).status !== 'completed') return res.status(409).json({error:'The original transcript is not ready or its service is offline'});
+  const statusResponse = providerStatus||await requestUpstream(req,base + '/jobs/' + encodeURIComponent(jobId),{}, {timeoutMs:30000});
+  if (!statusResponse.ok) return res.status(409).json({error:'The original transcript is not ready or its service is offline'});
+  const providerJob=providerStatus?job:await readJson(statusResponse);
+  if (providerJob.status !== 'completed') return res.status(409).json({error:'The original transcript is not ready or its service is offline'});
   let response = await requestUpstream(req,base + '/jobs/' + encodeURIComponent(jobId) + '/transcript?kind=cleaned',{}, {timeoutMs:30000,maxBytes:1024*1024});
   if (!response.ok) response = await requestUpstream(req,base + '/jobs/' + encodeURIComponent(jobId) + '/transcript?kind=raw',{}, {timeoutMs:30000,maxBytes:1024*1024});
   if (!response.ok) throw new Error('Transcript download failed');

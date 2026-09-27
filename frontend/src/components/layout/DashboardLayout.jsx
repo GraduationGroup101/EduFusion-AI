@@ -14,7 +14,7 @@ const titles = {
   "/dashboard/youtube": "LectureScribe",
   "/dashboard/admin/at-risk": "At-Risk Students",
   "/dashboard/admin/clock": "Academic Clock",
-  "/dashboard/admin/chatbot-files": "Chatbot Administration",
+  "/dashboard/admin/chatbot-files": "Academic Chatbot",
 };
 export default function DashboardLayout() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);

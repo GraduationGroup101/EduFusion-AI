@@ -4,6 +4,8 @@ const write = (path,body,key) => api.post(prefix + path,body,{headers:{'Idempote
 export const lectureStudyService = {
   status: () => api.get(prefix + '/status'),
   list: (offset=0) => api.get(prefix + '/lectures',{params:{offset}}),
+  adminList: (offset=0) => api.get(prefix+'/admin/lectures',{params:{offset}}),
+  adminLecture: (id,signal) => api.get(prefix+'/admin/lectures/'+id,{signal}),
   create: (body,key) => write('/lectures',body,key),
   import: (job_id,key) => write('/import',{job_id},key),
   lecture: (id,signal) => api.get(prefix + '/lectures/' + id,{signal}),
