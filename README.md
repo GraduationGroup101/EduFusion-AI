@@ -80,6 +80,8 @@ See [the API contracts](docs/api-contracts.md) for payloads, limits, error seman
 
 **Rollback:** keep the new gateway tables and wider PIN column. Reverting to an old backend that expects plaintext student PINs will break migrated accounts; roll forward with the compatible verifier. Keep source academic records and newly hashed credentials intact. Do not run a destructive down-migration to recover from a deployment problem.
 
+**Student login returns 503 while admin login works:** check backend logs for `42703` and `student_account_lookup`. The student query requires `students.pin_format` from `004_pin_format.sql`; admins use `app_users` and do not need that column. Back up and confirm the deployed database, then apply the existing migration command above. Do not remove the column from the query or fall back to unmarked plaintext credentials. Gate releases on `/api/ready`, which checks every bundled migration and the actual student credential columns; `/api/health` is only a process check. See [the September 2026 investigation](docs/reviews/student-login-2026-09-27.md).
+
 ## Maintenance
 
 The lecture page's independent library, lecture-scoped chat/practice, durable local worker, ownership rules and separate database setup are documented in [Lecture study integration](docs/lecture-study-integration.md). Enable it with `LECTURE_STUDY_ENABLED` only after configuring and migrating `LEARNING_DATABASE_URL`. The original chatbot and general question-generator pages retain their current behavior.
