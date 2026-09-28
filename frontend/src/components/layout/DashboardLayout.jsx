@@ -12,6 +12,7 @@ const titles = {
   "/dashboard/ai-tool": "EduPredict",
   "/dashboard/question-gen": "Quiz Generator",
   "/dashboard/youtube": "LectureScribe",
+  "/dashboard/oral-exam": "Oral Exam",
   "/dashboard/admin/at-risk": "At-Risk Students",
   "/dashboard/admin/clock": "Academic Clock",
   "/dashboard/admin/chatbot-files": "Academic Chatbot",

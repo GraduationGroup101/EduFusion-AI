@@ -1,6 +1,6 @@
 # EduFusion AI
 
-EduFusion brings four education tools into one authenticated dashboard: academic-risk prediction (EduPredict), university chat, YouTube transcription (LectureScribe), and document-based question generation (Quiz Generator).
+EduFusion brings education tools into one authenticated dashboard: academic-risk prediction (EduPredict), university chat, YouTube transcription (LectureScribe), document-based question generation (Quiz Generator), and adaptive voice practice (Oral Exam).
 
 The React frontend talks only to an Express gateway. The gateway authenticates users with PostgreSQL/JWT and calls the external AI services. Model training, retrieval, transcription, and question-generation implementations live outside this repository.
 
@@ -85,6 +85,8 @@ See [the API contracts](docs/api-contracts.md) for payloads, limits, error seman
 **Login and registration courses both fail only in a browser preview:** compare the browser origin, built `VITE_API_URL`, and API CORS headers. `FRONTEND_URL` retains the canonical frontend origin; optional `FRONTEND_URLS` adds a comma-separated list of exact trusted origins. Do not allow all Vercel domains. For a branch preview, point its `VITE_API_URL` to the intended browser-accessible gateway `/api` URL and allow its stable frontend branch origin on that gateway. A Vercel-protected backend preview is not a public API: keep deployment protection enabled and use the public gateway with explicit trusted origins. If using an individual deployment URL, add that exact trusted origin too. Environment changes require rebuilding the frontend or redeploying the backend. Preview databases/credentials are separately configured; changing the API URL alone does not isolate the database. See [the runtime/CORS investigation](docs/reviews/runtime-cors-2026-09-27.md).
 
 ## Maintenance
+
+The [Oral Exam integration](docs/oral-exam.md) documents source selection, the fixed ten-minute session, private transcripts and feedback, voice-provider configuration, and deployment to the existing Render backend. Enable it only after applying its migration and configuring the provider group; the browser never receives provider credentials.
 
 The lecture page's independent library, lecture-scoped chat/practice, durable local worker, ownership rules and separate database setup are documented in [Lecture study integration](docs/lecture-study-integration.md). Enable it with `LECTURE_STUDY_ENABLED` only after configuring and migrating `LEARNING_DATABASE_URL`. The original chatbot and general question-generator pages retain their current behavior.
 

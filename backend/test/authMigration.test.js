@@ -57,7 +57,7 @@ test('unmigrated database reproduces student 503 while admin succeeds; migration
   await migrate();
   await migrate();
   assert.equal((await request(app).get('/api/ready')).status, 200);
-  assert.equal((await database.query('SELECT count(*)::int AS count FROM edufusion_schema_migrations')).rows[0].count, 4);
+  assert.equal((await database.query('SELECT count(*)::int AS count FROM edufusion_schema_migrations')).rows[0].count, 5);
   assert.equal((await database.query('SELECT pin_hash FROM students WHERE id_student=101')).rows[0].pin_hash, 'student-test-pin');
 
   assert.equal((await login('101', 'wrong-password')).status, 401);

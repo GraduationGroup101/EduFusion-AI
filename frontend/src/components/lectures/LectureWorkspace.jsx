@@ -34,7 +34,7 @@ export default function LectureWorkspace({ lectureId, initialTab='summary', onCl
     const keydown = (event) => {
       if (event.key === 'Escape') onClose();
       if (event.key !== 'Tab') return;
-      const elements = [...panel.current.querySelectorAll('button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),[tabindex="0"]')];
+      const elements = [...panel.current.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),[tabindex="0"]')];
       const first=elements[0],last=elements.at(-1);
       if (event.shiftKey && (document.activeElement === first || document.activeElement === panel.current)) { event.preventDefault();last?.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault();first?.focus(); }
@@ -154,6 +154,7 @@ export default function LectureWorkspace({ lectureId, initialTab='summary', onCl
         <button className={button} onClick={onClose} aria-label="Close lecture workspace"><X size={18}/></button>
       </header>
       <nav className="p-3 flex shrink-0 flex-wrap gap-2 border-b border-border" aria-label="Lecture tools">
+        {ready && <a className={button} href={`/dashboard/oral-exam?lecture=${lectureId}`} onClick={onClose}>Start Oral Exam</a>}
         {[['summary','Summary',BookOpen],['chat','Lecture chat',MessageSquare],['quiz','Practice questions',ListChecks],['sources','Transcript',BookOpen]].map(([key,label,Icon]) =>
           <button key={key} className={button+(tab===key?' bg-secondary text-white':'')} aria-pressed={tab===key} onClick={() => setTab(key)}><Icon size={16}/>{label}</button>)}
       </nav>
