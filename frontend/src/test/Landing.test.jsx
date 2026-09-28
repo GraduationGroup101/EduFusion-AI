@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import Landing from '../pages/Landing';
 
@@ -7,7 +7,7 @@ vi.mock('../context/AuthContext', () => ({ useAuth: () => ({ isAuthenticated: fa
 beforeEach(() => {
   vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 const showLanding = () => render(<MemoryRouter><Landing /></MemoryRouter>);
 
 test('the complete story and tool links remain available without browser animation APIs', () => {
@@ -39,6 +39,36 @@ test('the concept film autoplays and repeats both existing clips without caption
   expect(document.querySelector('.story-resolution')).toBeNull();
   fireEvent.ended(film());
   expect(film()).toHaveAttribute('src', '/edufusion-preview-2.mp4');
+  fireEvent.ended(film());
+  expect(film()).toHaveAttribute('src', '/edufusion-preview-1.mp4');
+});
+
+test('the concept film pauses offscreen, resumes in view, and keeps cycling', () => {
+  let onIntersection;
+  vi.stubGlobal('IntersectionObserver', class {
+    constructor(callback) { onIntersection = callback; }
+    observe() {}
+    disconnect() {}
+  });
+  const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+  const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+  showLanding();
+  const film = () => screen.getByLabelText('EduFusion concept film');
+  expect(film()).not.toHaveAttribute('autoplay');
+  expect(play).not.toHaveBeenCalled();
+
+  act(() => onIntersection([{ isIntersecting: true }]));
+  expect(play).toHaveBeenCalledTimes(1);
+  act(() => onIntersection([{ isIntersecting: false }]));
+  expect(pause).toHaveBeenCalledTimes(1);
+  act(() => onIntersection([{ isIntersecting: true }]));
+  expect(play).toHaveBeenCalledTimes(2);
+
+  fireEvent.ended(film());
+  expect(film()).toHaveAttribute('src', '/edufusion-preview-2.mp4');
+  expect(play).toHaveBeenCalledTimes(2);
+  act(() => onIntersection([{ isIntersecting: true }]));
+  expect(play).toHaveBeenCalledTimes(3);
   fireEvent.ended(film());
   expect(film()).toHaveAttribute('src', '/edufusion-preview-1.mp4');
 });
