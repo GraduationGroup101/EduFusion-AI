@@ -84,38 +84,16 @@ const team = [
 const CLIPS = ['/edufusion-preview-1.mp4', '/edufusion-preview-2.mp4'];
 /** Media is optional; the complete poster and product links work without it. */
 const PreviewFilm = () => {
-  const videoRef = useRef(null);
-  const containerRef = useRef(null);
   const [active, setActive] = useState(0);
-  const [loaded, setLoaded] = useState(false);
-  const [playing, setPlaying] = useState(false);
   const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    if (!window.IntersectionObserver) return;
-    const observer = new IntersectionObserver(entries => {
-      if (!entries[0].isIntersecting) videoRef.current?.pause();
-    });
-    observer.observe(containerRef.current);
-    return () => observer.disconnect();
-  }, []);
-  const togglePlayback = () => {
-    if (!loaded) { setLoaded(true); return; }
-    if (playing) videoRef.current?.pause();
-    else videoRef.current?.play()?.catch(() => setFailed(true));
-  };
   return (
-    <div className="story-preview" ref={containerRef}>
+    <div className="story-preview">
       <div className="film-frame">
-        {loaded && !failed ? <video key={active} ref={videoRef} src={CLIPS[active]} muted playsInline autoPlay controls preload="none"
+        {!failed ? <video key={active} src={CLIPS[active]} muted playsInline autoPlay controls preload="metadata"
           aria-label="EduFusion concept film" poster="/edufusion-preview-poster.jpg"
-          onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)}
-          onError={() => { setFailed(true); setPlaying(false); }}
-          onEnded={() => { if (active < CLIPS.length - 1) setActive(active + 1); else setPlaying(false); }}
+          onError={() => setFailed(true)}
+          onEnded={() => setActive(current => (current + 1) % CLIPS.length)}
         /> : <img src="/edufusion-preview-poster.jpg" width="1920" height="1080" loading="lazy" alt="Concept preview of the EduFusion learning workspace" />}
-      </div>
-      <div className="film-caption">
-        <span>{failed ? 'Film unavailable. Explore the tools above.' : 'Concept film · Explore the working tools above.'}</span>
-        {!failed && <button type="button" onClick={togglePlayback}>{playing ? 'Pause film' : 'Play film'}<ArrowRight size={15} aria-hidden="true" /></button>}
       </div>
     </div>
   );
@@ -228,11 +206,6 @@ export default function Landing() {
             className="hero-art"
             aria-label="Four learning tools connected through EduFusion"
           >
-            <div className="hero-art-heading">
-              <span>THE CONNECTED LEARNING SPACE</span>
-              <span>01 — 04</span>
-            </div>
-            <div className="art-orbit" />
             <div className="art-core">
               <BrandMark />
               <span>
@@ -330,7 +303,6 @@ export default function Landing() {
               </Link>)}
             </div>
             <PreviewFilm />
-            <p className="story-resolution">Four tools. <strong>All your learning, in one place.</strong></p>
           </div>
         </section>
         <section id="audience" className="site-container section-space">

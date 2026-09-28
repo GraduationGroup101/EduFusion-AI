@@ -12,6 +12,11 @@ const showLanding = () => render(<MemoryRouter><Landing /></MemoryRouter>);
 
 test('the complete story and tool links remain available without browser animation APIs', () => {
   showLanding();
+  const hero = screen.getByLabelText('Four learning tools connected through EduFusion');
+  expect(hero.querySelector('.art-core')).toBeInTheDocument();
+  expect(hero.querySelectorAll('.orbit-card')).toHaveLength(4);
+  expect(hero.querySelector('.art-orbit')).toBeNull();
+  expect(hero.querySelector('.hero-art-heading')).toBeNull();
   expect(screen.getByRole('heading', { name: 'See it all come together.' })).toBeVisible();
   const links = screen.getByLabelText('Explore the connected tools').querySelectorAll('a');
   expect(links).toHaveLength(4);
@@ -22,20 +27,25 @@ test('the complete story and tool links remain available without browser animati
   expect(document.querySelector('[data-toolkit-story]')).toBeNull();
 });
 
-test('film media is not requested until the visitor chooses to play', () => {
+test('the concept film autoplays and repeats both existing clips without captions', () => {
   showLanding();
-  expect(document.querySelector('video')).toBeNull();
-  expect(screen.getByAltText('Concept preview of the EduFusion learning workspace')).toBeVisible();
-  fireEvent.click(screen.getByRole('button', { name: 'Play film' }));
-  expect(screen.getByLabelText('EduFusion concept film')).toHaveAttribute('src', '/edufusion-preview-1.mp4');
-  expect(screen.getByLabelText('EduFusion concept film')).toHaveAttribute('controls');
+  const film = () => screen.getByLabelText('EduFusion concept film');
+  expect(film()).toHaveAttribute('src', '/edufusion-preview-1.mp4');
+  expect(film()).toHaveAttribute('autoplay');
+  expect(film().muted).toBe(true);
+  expect(film()).toHaveAttribute('playsinline');
+  expect(film()).toHaveAttribute('controls');
+  expect(document.querySelector('.film-caption')).toBeNull();
+  expect(document.querySelector('.story-resolution')).toBeNull();
+  fireEvent.ended(film());
+  expect(film()).toHaveAttribute('src', '/edufusion-preview-2.mp4');
+  fireEvent.ended(film());
+  expect(film()).toHaveAttribute('src', '/edufusion-preview-1.mp4');
 });
 
 test('media failure returns to the poster and leaves the real tools reachable', () => {
   showLanding();
-  fireEvent.click(screen.getByRole('button', { name: 'Play film' }));
   fireEvent.error(screen.getByLabelText('EduFusion concept film'));
-  expect(screen.getByText('Film unavailable. Explore the tools above.')).toBeVisible();
   expect(screen.getByAltText('Concept preview of the EduFusion learning workspace')).toBeVisible();
   expect(screen.getByLabelText('Explore the connected tools').querySelectorAll('a')).toHaveLength(4);
 });

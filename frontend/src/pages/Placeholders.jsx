@@ -274,7 +274,7 @@ export function QuestionGeneratorPage() {
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="question-generator-page p-6 space-y-6">
       <PageHeader title="Quiz Generator" icon={FileQuestion} tone="cream" description="Turn your course material into purposeful practice.">
         <div role="status"><StatusBadge status={serviceStatus}>{serviceStatus === 'checking' ? 'Checking quiz service' : serviceStatus === 'online' ? 'Service online' : 'Service unavailable'}</StatusBadge></div>
       </PageHeader>
@@ -285,6 +285,7 @@ export function QuestionGeneratorPage() {
           <input
             ref={fileInputRef}
             type="file"
+            hidden
             className="hidden"
             accept=".pdf,.doc,.docx,.txt,.ppt,.pptx"
             onChange={(e) => selectFile(e.target.files?.[0])}
