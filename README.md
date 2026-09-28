@@ -86,7 +86,7 @@ See [the API contracts](docs/api-contracts.md) for payloads, limits, error seman
 
 ## Maintenance
 
-The [Oral Exam integration](docs/oral-exam.md) documents source selection, the fixed ten-minute session, private transcripts and feedback, voice-provider configuration, and deployment to the existing Render backend. Enable it only after applying its migration and configuring the provider group; the browser never receives provider credentials.
+The [Oral Exam integration](docs/oral-exam.md) documents source selection, the fixed ten-minute session, private transcripts and feedback, voice-provider configuration, and the live PR #10 Render deployment. The replacement Render PostgreSQL database has been restored and migrated through 005; provider credentials remain server-side and never reach the browser. PR #10 remains unmerged, and physical microphone browser verification remains manual.
 
 The lecture page's independent library, lecture-scoped chat/practice, durable local worker, ownership rules and separate database setup are documented in [Lecture study integration](docs/lecture-study-integration.md). Enable it with `LECTURE_STUDY_ENABLED` only after configuring and migrating `LEARNING_DATABASE_URL`. The original chatbot and general question-generator pages retain their current behavior.
 
