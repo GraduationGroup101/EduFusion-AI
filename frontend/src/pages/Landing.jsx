@@ -84,12 +84,25 @@ const team = [
 const CLIPS = ['/edufusion-preview-1.mp4', '/edufusion-preview-2.mp4'];
 /** Media is optional; the complete poster and product links work without it. */
 const PreviewFilm = () => {
+  const containerRef = useRef(null);
+  const videoRef = useRef(null);
   const [active, setActive] = useState(0);
   const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    if (failed) return;
+    const video = videoRef.current;
+    if (!window.IntersectionObserver) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) video.play()?.catch(() => {});
+      else video.pause();
+    });
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [active, failed]);
   return (
-    <div className="story-preview">
+    <div className="story-preview" ref={containerRef}>
       <div className="film-frame">
-        {!failed ? <video key={active} src={CLIPS[active]} muted playsInline autoPlay controls preload="metadata"
+        {!failed ? <video key={active} ref={videoRef} src={CLIPS[active]} muted playsInline autoPlay={!window.IntersectionObserver} controls preload="metadata"
           aria-label="EduFusion concept film" poster="/edufusion-preview-poster.jpg"
           onError={() => setFailed(true)}
           onEnded={() => setActive(current => (current + 1) % CLIPS.length)}
