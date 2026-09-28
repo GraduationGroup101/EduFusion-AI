@@ -2,11 +2,12 @@ import Brand from '../Brand';
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { MessageSquare, FileQuestion, Youtube, LayoutDashboard, LogOut, ChevronLeft, ChevronRight, TrendingUp, User, AlertTriangle, Clock, X } from 'lucide-react';
+import { Mic, MessageSquare, FileQuestion, Youtube, LayoutDashboard, LogOut, ChevronLeft, ChevronRight, TrendingUp, User, AlertTriangle, Clock, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const overview = { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', exact: true };
 const learning = [
+  { path: '/dashboard/oral-exam', icon: Mic, label: 'Oral Exam' },
   { path: '/dashboard/chatbot', icon: MessageSquare, label: 'Academic Chatbot' },
   { path: '/dashboard/question-gen', icon: FileQuestion, label: 'Quiz Generator' },
   { path: '/dashboard/youtube', icon: Youtube, label: 'LectureScribe' },

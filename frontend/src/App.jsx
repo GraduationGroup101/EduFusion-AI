@@ -10,6 +10,7 @@ const DashboardHome = lazy(() => import('./pages/DashboardHome'));
 const ChatbotPage = lazy(() => import('./pages/ChatbotPage'));
 const StudentPredictionPage = lazy(() => import('./pages/StudentPredictionPage'));
 const LectureScribePage = lazy(() => import('./pages/LectureScribePage'));
+const OralExamPage = lazy(() => import('./pages/OralExamPage'));
 const namedPage = (loader, name) => lazy(() => loader().then((module) => ({ default: module[name] })));
 const AcademicClockPage = namedPage(() => import('./pages/AdminPages'), 'AcademicClockPage');
 const AtRiskStudentsPage = namedPage(() => import('./pages/AdminPages'), 'AtRiskStudentsPage');
@@ -44,6 +45,7 @@ export default function App() {
             <Route path="ai-tool" element={adminPage(<AIToolPage />)} />
             <Route path="question-gen" element={<QuestionGeneratorPage />} />
             <Route path="youtube" element={<LectureScribePage />} />
+            <Route path="oral-exam" element={<OralExamPage />} />
           </Route>
 
           {/* Unknown paths land on the public home rather than a hard 404 */}
