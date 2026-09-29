@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { beforeEach, expect, it, vi } from 'vitest';
 import StudentPredictionPage from '../pages/StudentPredictionPage';
 import { studentService } from '../services/api';
+import toast from 'react-hot-toast';
 
 vi.mock('../services/api', () => ({ studentService: {
   getPredictionData: vi.fn(), getPrediction: vi.fn(), getScenario: vi.fn(), saveScenario: vi.fn(),
@@ -47,4 +48,10 @@ it('ignores late predictions and scenarios after switching courses', async () =>
   expect(screen.queryByText('Wrong course risk')).not.toBeInTheDocument();
   expect(screen.queryByText('Wrong course scenario')).not.toBeInTheDocument();
   expect(studentService.getPrediction.mock.calls[0][1].signal.aborted).toBe(true);
+});
+
+it('shows the safe prediction error returned by the gateway', async () => {
+  studentService.getPrediction.mockRejectedValueOnce({ response: { data: { error: 'Prediction service is temporarily unavailable. Please try again.' } } });
+  render(<StudentPredictionPage />);
+  await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Prediction service is temporarily unavailable. Please try again.'));
 });
