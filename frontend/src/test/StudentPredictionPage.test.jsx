@@ -76,6 +76,19 @@ it('ignores late predictions and scenarios after switching courses', async () =>
   expect(studentService.getPrediction.mock.calls[0][1].signal.aborted).toBe(true);
 });
 
+it('ignores a late hypothetical result after switching courses', async () => {
+  let resolveFirst;
+  studentService.getScenario.mockResolvedValue({ data: { scenario: { data: scenario('Saved') } } });
+  studentService.getScenarioPrediction.mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve; }));
+  render(<StudentPredictionPage />);
+  await waitFor(() => expect(studentService.getScenarioPrediction).toHaveBeenCalledTimes(1));
+  fireEvent.change(screen.getByLabelText('Course'), { target: { value: '2' } });
+  await screen.findByText('10.0%');
+  await act(async () => resolveFirst({ data: { risk_level: 'HIGH', risk_probability: 0.9, based_on_day: 60, explanation: [] } }));
+  expect(screen.queryByText('90.0%')).not.toBeInTheDocument();
+  expect(studentService.getScenarioPrediction.mock.calls[0][1].signal.aborted).toBe(true);
+});
+
 it('shows the safe prediction error returned by the gateway', async () => {
   studentService.getPrediction.mockRejectedValueOnce({ response: { data: { error: 'Prediction service is temporarily unavailable. Please try again.' } } });
   render(<StudentPredictionPage />);
