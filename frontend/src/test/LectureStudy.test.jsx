@@ -16,6 +16,7 @@ vi.mock('../services/api',()=>({
   lectureScribeService:{health:vi.fn(),listJobs:vi.fn(),getJob:vi.fn(),getTranscript:vi.fn(),createJob:vi.fn()},
   studentService:{getPredictionData:vi.fn()},
 }));
+vi.mock('../services/lectureTools',()=>({lectureToolsService:{status:vi.fn().mockResolvedValue({data:{enabled:false}})}}));
 vi.mock('react-hot-toast',()=>({default:{success:vi.fn(),error:vi.fn()}}));
 const lecture=(id='lecture-a')=>({id,title:'Lecture '+id,status:'ready',stage:'ready',summary:'A saved networking summary',
   sections:[{id:'s001',title:'Packets',summary:'Packets follow routes.',citations:['c0001']}],

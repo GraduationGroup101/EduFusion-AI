@@ -96,7 +96,9 @@ async function saveEvaluation(id,evaluation) {
 const evaluationFailed=id=>db.query(`UPDATE ${TABLE} SET evaluation_status='failed' WHERE id=$1 AND evaluation_status<>'ready'`,[id]);
 function publicView(row) {
   const {id,material_title,language,status,started_at,expires_at,ended_at,termination_reason,evaluation,evaluation_status,server_now}=row;
-  return {id,material_title,language,status,started_at,expires_at,ended_at,termination_reason,evaluation,evaluation_status,server_now:server_now||new Date(),
+  // Only the material reference is exposed (never pasted text) so results can link back to lecture tools.
+  const source=row.source&&row.source.kind!=='text'?{kind:row.source.kind,id:row.source.id}:undefined;
+  return {id,material_title,language,status,started_at,expires_at,ended_at,termination_reason,evaluation,evaluation_status,server_now:server_now||new Date(),source,
     turns:row.turns?.map(({id,sequence,question,concept,transcript,assessment})=>({id,sequence,question,concept,transcript,feedback:assessment?.feedback}))||[]};
 }
 module.exports={create,get,list,start,claim,renew,release,recordAnswer,commit,finish,expire,saveEvaluation,evaluationFailed,publicView};

@@ -72,11 +72,11 @@ const upstream = async (url,options = {}) => {
 };
 const prepareTranscript = async (job,context,isStopping = () => false) => {
   if (context.lecture.transcript) return;
-  const base = String(process.env.LECTURESCRIBE_API_URL || 'https://lecturescribe.app').replace(/\/+$/,'');
+  const { LECTURESCRIBE_BASE: base, gatewayHeaders } = require('../src/lib/lectureScribe');
   let providerId = context.lecture.provider_job_id;
   if (!providerId) {
     const created = await readJson(await upstream(base + '/jobs', {
-      method:'POST',headers:{'Content-Type':'application/json'},
+      method:'POST',headers:{'Content-Type':'application/json',...gatewayHeaders()},
       body:JSON.stringify({youtube_url:context.lecture.youtube_url,clean:true,use_cached_outputs:true,skip_audio_cache:false,
         ...(context.lecture.language !== 'auto' ? {language:context.lecture.language} : {})}),
     }));

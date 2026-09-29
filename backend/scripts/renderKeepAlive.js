@@ -2,6 +2,7 @@ const { Pool } = require('pg');
 
 const DEFAULT_CHATBOT_URL = 'https://final-iug-chat-botv2.onrender.com';
 const DEFAULT_EDUPREDICT_URL = 'https://edupredict-api-6ob5.onrender.com';
+const { LECTURESCRIBE_BASE } = require('../src/lib/lectureScribe');
 const REQUEST_TIMEOUT_MS = Number(process.env.KEEP_ALIVE_TIMEOUT_MS || 90000);
 
 const healthUrl = (explicitUrl, baseUrl, path) => {
@@ -25,6 +26,10 @@ const endpoints = [
       process.env.EDUPREDICT_API_URL || DEFAULT_EDUPREDICT_URL,
       '/health'
     ),
+  },
+  {
+    name: 'lecturescribe',
+    url: healthUrl(process.env.LECTURESCRIBE_HEALTH_URL, LECTURESCRIBE_BASE, '/health'),
   },
 ];
 

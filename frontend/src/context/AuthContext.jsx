@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import api, { authService, clearSession } from '../services/api';
+import { warmServices } from '../services/warmup';
 
 const AuthContext = createContext(null);
 
@@ -66,6 +67,12 @@ export const AuthProvider = ({ children }) => {
     bootstrap();
     return () => { cancelled = true; };
   }, []);
+
+  // Any established session (sign-in, registration, or a verified stored token)
+  // wakes the sleeping AI services once per page load.
+  useEffect(() => {
+    if (user) warmServices();
+  }, [user]);
 
   const login = async (username, password) => {
     const { data } = await api.post(

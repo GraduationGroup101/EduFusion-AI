@@ -23,8 +23,11 @@ import {
 } from 'lucide-react';
 import { lectureScribeService } from '../services/api';
 import { lectureStudyService } from '../services/lectureStudy';
+import { lectureToolsService } from '../services/lectureTools';
 import {useAuth} from '../context/AuthContext';
 import LectureLibrary, { LectureCourseSelect } from '../components/lectures/LectureLibrary';
+import LectureToolsPanel from '../components/lectures/LectureToolsPanel';
+import { Mic } from 'lucide-react';
 
 const WAITING_NOTES = {
   queued: 'Your lecture is in the queue and will start shortly.',
@@ -60,9 +63,13 @@ export default function LectureScribePage() {
   const {user}=useAuth();
   const isAdmin=user?.role==='admin';
   const [studyEnabled,setStudyEnabled] = useState(false);
+  const [toolsEnabled,setToolsEnabled] = useState(false);
+  const [toolsJob,setToolsJob] = useState(null);
   const [studyEnrollment,setStudyEnrollment] = useState(null);
   const [studyTitle,setStudyTitle] = useState('');
   const [focusLecture,setFocusLecture] = useState(null);
+  // Deep links from other tools (Oral Exam results, chat) open a job directly.
+  const deepLink = useRef(new URLSearchParams(window.location.search));
   const studyRequests = useRef(new Map());
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [mode, setMode] = useState('formatted');
@@ -159,13 +166,21 @@ export default function LectureScribePage() {
     const initialize = async () => {
       await checkService();
       if (!cancelled) loadJobs();
+      const jobId = deepLink.current.get('job');
+      if (jobId && !cancelled) {
+        deepLink.current.delete('job');
+        await openJob(jobId);
+        const tool = deepLink.current.get('tool');
+        if (!cancelled && ['chat','quiz'].includes(tool)) setToolsJob({job:{job_id:jobId},tab:tool});
+      }
     };
 
     initialize();
+    lectureToolsService.status().then(({data}) => { if (!cancelled) setToolsEnabled(Boolean(data.enabled)); }).catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, [checkService, loadJobs]);
+  }, [checkService, loadJobs, openJob]);
 
   useEffect(() => {
     if (!activeJob || !['queued', 'running'].includes(activeJob.status)) return undefined;
@@ -247,6 +262,14 @@ export default function LectureScribePage() {
         clean: mode === 'formatted',
         language,
       });
+      if (data.cached && data.status === 'completed') {
+        // Someone already transcribed this lecture: the saved copy is ready now.
+        setActiveJob(data);
+        await loadTranscript(data);
+        toast.success('This lecture was already transcribed — loaded instantly');
+        loadJobs();
+        return;
+      }
       setActiveJob({
         ...data,
         status: 'queued',
@@ -270,8 +293,12 @@ export default function LectureScribePage() {
     }
   };
 
+  const lectureToolsReady = studyEnabled || toolsEnabled;
   const openStudyTool = async (job,tab) => {
-    if (!studyEnabled) {toast.error('Lecture study tools are awaiting server setup.');return;}
+    if (!studyEnabled) {
+      if (toolsEnabled) { setToolsJob({job,tab}); return; }
+      toast.error('Lecture study tools are awaiting server setup.');return;
+    }
     const signature='import:'+job.job_id;
     const key=studyRequests.current.get(signature)||crypto.randomUUID();
     studyRequests.current.set(signature,key);
@@ -511,9 +538,10 @@ export default function LectureScribePage() {
                   <span>{formatDate(job.submitted_at)}</span>
                 </div>
                 </button>
-                {job.status==='completed' && studyEnabled && <div className="flex flex-wrap gap-2 mt-3">
-                  <button type="button" disabled={!studyEnabled} onClick={() => openStudyTool(job,'chat')} className="border border-border px-2 py-2 text-xs inline-flex gap-1 items-center disabled:opacity-40"><MessageSquare size={14}/>Ask this lecture</button>
-                  <button type="button" disabled={!studyEnabled} onClick={() => openStudyTool(job,'quiz')} className="border border-border px-2 py-2 text-xs inline-flex gap-1 items-center disabled:opacity-40"><ListChecks size={14}/>Generate questions</button>
+                {job.status==='completed' && lectureToolsReady && <div className="flex flex-wrap gap-2 mt-3">
+                  <button type="button" onClick={() => openStudyTool(job,'chat')} className="border border-border px-2 py-2 text-xs inline-flex gap-1 items-center disabled:opacity-40"><MessageSquare size={14}/>Ask this lecture</button>
+                  <button type="button" onClick={() => openStudyTool(job,'quiz')} className="border border-border px-2 py-2 text-xs inline-flex gap-1 items-center disabled:opacity-40"><ListChecks size={14}/>Generate questions</button>
+                  <a href={`/dashboard/oral-exam?transcript=${encodeURIComponent(job.job_id)}`} className="border border-border px-2 py-2 text-xs inline-flex gap-1 items-center"><Mic size={14}/>Oral exam</a>
                 </div>}
               </article>
             ))}
@@ -612,8 +640,9 @@ export default function LectureScribePage() {
                     {transcriptKind === 'cleaned' ? 'Formatted output' : 'Original Whisper output'}
                   </p>
                   <div className="flex flex-wrap gap-2 mt-3">
-                    <button type="button" disabled={!studyEnabled} onClick={() => openStudyTool(activeJob,'chat')} className="border border-border px-3 py-2 text-sm inline-flex items-center gap-2 disabled:opacity-40"><MessageSquare size={16}/>Ask this lecture</button>
-                    <button type="button" disabled={!studyEnabled} onClick={() => openStudyTool(activeJob,'quiz')} className="border border-border px-3 py-2 text-sm inline-flex items-center gap-2 disabled:opacity-40"><ListChecks size={16}/>Generate questions</button>
+                    <button type="button" disabled={!lectureToolsReady} onClick={() => openStudyTool(activeJob,'chat')} className="border border-border px-3 py-2 text-sm inline-flex items-center gap-2 disabled:opacity-40"><MessageSquare size={16}/>Ask this lecture</button>
+                    <button type="button" disabled={!lectureToolsReady} onClick={() => openStudyTool(activeJob,'quiz')} className="border border-border px-3 py-2 text-sm inline-flex items-center gap-2 disabled:opacity-40"><ListChecks size={16}/>Generate questions</button>
+                    <a href={`/dashboard/oral-exam?transcript=${encodeURIComponent(activeJob.job_id)}`} className="border border-border px-3 py-2 text-sm inline-flex items-center gap-2"><Mic size={16}/>Oral exam on this lecture</a>
                   </div>
                 </div>
                 <button
@@ -642,6 +671,7 @@ export default function LectureScribePage() {
           )}
         </motion.section>
       )}
+      {toolsJob && <LectureToolsPanel job={toolsJob.job} initialTab={toolsJob.tab} onClose={() => setToolsJob(null)}/>}
     </div>
   );
 }
