@@ -63,7 +63,7 @@ const saveScenario = async (idStudent, enrollmentId, input) => {
     );
     if (!enrollment.rowCount) throw Object.assign(new Error('Course data changed. Reload and try again.'), { statusCode: 409 });
     const data = { inputs: values, activity: additions, projected, based_on_day: day, prediction: null,
-      prediction_available: false, message: 'Scenario saved separately. Hypothetical risk requires a prediction service that accepts scenario features.' };
+      prediction_available: false, message: 'Scenario saved separately from academic records. Its hypothetical risk is evaluated independently.' };
     await client.query(
       `INSERT INTO edufusion_student_scenarios (id_student,enrollment_id,data) VALUES ($1,$2,$3)
        ON CONFLICT(id_student,enrollment_id) DO UPDATE SET data=EXCLUDED.data, updated_at=NOW()`, [idStudent, id, JSON.stringify(data)]

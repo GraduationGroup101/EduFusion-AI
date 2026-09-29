@@ -98,10 +98,13 @@ export default function StudentPredictionPage() {
   const [form, setForm] = useState({});
   const [prediction, setPrediction] = useState(null);
   const [scenario, setScenario] = useState(null);
+  const [scenarioPrediction, setScenarioPrediction] = useState(null);
+  const [scenarioError, setScenarioError] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const predictionRequest = useRef(null);
   const scenarioRequest = useRef(null);
+  const scenarioPredictionRequest = useRef(null);
 
   const selected = useMemo(
     () => enrollments.find((item) => String(item.enrollment_id) === String(selectedId)),
@@ -156,9 +159,27 @@ export default function StudentPredictionPage() {
     }
   };
 
+  const evaluateScenario = async (enrollmentId) => {
+    scenarioPredictionRequest.current?.abort();
+    const controller = new AbortController();
+    scenarioPredictionRequest.current = controller;
+    setScenarioPrediction(null);
+    setScenarioError('');
+    try {
+      const { data } = await studentService.getScenarioPrediction(enrollmentId, { signal: controller.signal });
+      if (!controller.signal.aborted) setScenarioPrediction(data);
+    } catch (err) {
+      if (!controller.signal.aborted) setScenarioError(err.response?.data?.error || 'Hypothetical risk could not be evaluated. Try again.');
+    }
+  };
+
   const saveData = async () => {
     if (!selected) return;
     scenarioRequest.current?.abort();
+    scenarioPredictionRequest.current?.abort();
+    setScenarioPrediction(null);
+    setScenarioError('');
+    const enrollmentId = selected.enrollment_id;
     setSaving(true);
     try {
       const payload = {
@@ -184,6 +205,7 @@ export default function StudentPredictionPage() {
       const { data } = await studentService.saveScenario(selected.enrollment_id, payload);
       setScenario(data.scenario);
       toast.success('Scenario saved. Your academic records are unchanged.');
+      await evaluateScenario(enrollmentId);
     } catch (err) {
       toast.error(err.response?.data?.error || err.response?.data?.detail || err.message || 'Failed to save your data');
     } finally {
@@ -204,14 +226,19 @@ export default function StudentPredictionPage() {
       setForm(resetSimulationForm(selected));
       setPrediction(null);
       setScenario(null);
+      setScenarioPrediction(null);
+      setScenarioError('');
       runPrediction(selected);
       studentService.getScenario(selected.enrollment_id, { signal: controller.signal }).then(({ data }) => {
-        if (!controller.signal.aborted) setScenario(data.scenario?.data || null);
+        if (!controller.signal.aborted) {
+          setScenario(data.scenario?.data || null);
+          if (data.scenario?.data) evaluateScenario(selected.enrollment_id);
+        }
       }).catch((error) => {
         if (!controller.signal.aborted) toast.error(error.response?.data?.error || 'Saved scenario could not be loaded');
       });
     }
-    return () => { controller.abort(); predictionRequest.current?.abort(); };
+    return () => { controller.abort(); predictionRequest.current?.abort(); scenarioPredictionRequest.current?.abort(); };
   }, [selected]);
 
   const summary = selected ? [
@@ -228,7 +255,7 @@ export default function StudentPredictionPage() {
   return (
     <div className="p-6 space-y-6">
       <PageHeader title="EduPredict" icon={BookOpen} description="Explore a separate what-if scenario alongside your actual academic prediction.">
-        <button onClick={() => runPrediction(selected, true)} disabled={loading || !selected} className="flex items-center gap-2 rounded-xl border border-border px-4 py-2 text-sm text-light-accent disabled:opacity-60"><RefreshCw className={loading ? 'animate-spin' : ''} size={16} />Rerun</button>
+        <button onClick={() => runPrediction(selected, true)} disabled={loading || !selected} className="flex items-center gap-2 rounded-xl border border-border px-4 py-2 text-sm text-light-accent disabled:opacity-60"><RefreshCw className={loading ? 'animate-spin' : ''} size={16} />Rerun actual prediction</button>
       </PageHeader>
 
       <div className="glass rounded-2xl p-5 glow-border space-y-5">
@@ -314,7 +341,7 @@ export default function StudentPredictionPage() {
 
             <button onClick={saveData} disabled={saving} className="flex items-center gap-2 rounded-xl bg-secondary px-4 py-2 text-sm font-medium text-white disabled:opacity-60">
               <Save className="w-4 h-4" />
-              {saving ? 'Saving...' : 'Save Scenario'}
+              {saving ? 'Saving...' : 'Save & evaluate scenario'}
             </button>
           </>
         ) : (
@@ -334,6 +361,19 @@ export default function StudentPredictionPage() {
             <SummaryCard label="Projected CMA" value={scenario.projected.latest_cma_score ?? '—'} />
             <SummaryCard label="Based on Day" value={scenario.based_on_day} />
           </div>
+        </section>
+      )}
+      {scenarioError && <p role="alert" className="text-sm text-amber-700">{scenarioError}</p>}
+      {scenarioPrediction && (
+        <section className="glass rounded-2xl p-6 glow-border space-y-4" aria-label="Hypothetical scenario prediction">
+          <h2 className="font-display font-semibold text-light-accent">Hypothetical Scenario Prediction</h2>
+          <p className="text-sm text-light-accent/65">Based on your saved what-if inputs for day {scenarioPrediction.based_on_day}. Your actual prediction and academic records are unchanged.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <SummaryCard label="Hypothetical Risk Level" value={scenarioPrediction.risk_level} />
+            <SummaryCard label="Hypothetical Probability" value={`${(scenarioPrediction.risk_probability * 100).toFixed(1)}%`} />
+            <SummaryCard label="Hypothetical At Risk" value={scenarioPrediction.at_risk ? 'Yes' : 'No'} />
+          </div>
+          <ul className="space-y-2">{(scenarioPrediction.explanation || []).map((item, index) => <li key={index} className="rounded-xl border border-border bg-surface/70 px-4 py-3 text-sm text-light-accent/75">{item}</li>)}</ul>
         </section>
       )}
       {prediction && (

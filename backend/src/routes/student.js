@@ -46,6 +46,29 @@ router.get('/scenarios/:enrollment_id', async (req, res) => {
   } catch (error) { sendError(res, error, 'Unable to read the scenario'); }
 });
 
+router.get('/scenarios/:enrollment_id/prediction', aiLimiter, async (req, res) => {
+  try {
+    const id = integer(req.params.enrollment_id, 'Enrollment ID', 1);
+    const rows = await getStudentBehaviorData(req.user.id_student);
+    const course = rows.find((row) => Number(row.enrollment_id) === id);
+    if (!course) return res.status(404).json({ error: 'Enrollment not found' });
+    const saved = await getScenario(req.user.id_student, id);
+    if (!saved) return res.status(404).json({ error: 'Save a scenario before evaluating it.' });
+    const { based_on_day, inputs, activity } = saved.data;
+    if (Number(based_on_day) !== Number(course.current_day)) {
+      return res.status(409).json({ error: 'Course day changed. Save the scenario again.' });
+    }
+    const params = new URLSearchParams({ code_module: course.code_module, code_presentation: course.code_presentation });
+    const response = await requestUpstream(req, `${EDUPREDICT_BASE}/students/${req.user.id_student}/scenario-prediction?${params}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ based_on_day, inputs, activity }),
+    });
+    if (response.status === 422) return res.status(409).json({ error: 'Scenario evidence changed. Save the scenario again.' });
+    if (!response.ok) return res.status(503).json({ error: 'Scenario prediction service is temporarily unavailable. Please try again.' });
+    return res.json({ ...await readJson(response), hypothetical: true, based_on_day });
+  } catch (error) { return sendError(res, error, 'Scenario prediction service is temporarily unavailable. Please try again.'); }
+});
+
 router.get('/prediction', aiLimiter, async (req, res) => {
   const requestId = randomUUID();
   res.set('X-Request-Id', requestId);
