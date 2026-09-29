@@ -42,6 +42,15 @@ it('shows disabled and recoverable feedback failure states without invented scor
   api.get.mockResolvedValue({data:{session:{...session,status:'timed_out',evaluation_status:'failed'}}});
   open('/dashboard/oral-exam?session=exam-1');await screen.findByText(/Your answers are saved/);expect(screen.queryByText('out of 100')).not.toBeInTheDocument();expect(screen.getByRole('button',{name:'Retry feedback'})).toBeEnabled();
 });
+it('preselects a transcript from LectureScribe and links results back to its lecture tools',async()=>{
+  api.materials.mockResolvedValue({data:{materials:[{kind:'transcript',id:'job-9',title:'Routing lecture'}]}});
+  open('/dashboard/oral-exam?transcript=job-9');
+  await waitFor(()=>expect(screen.getByLabelText('Saved lecture')).toHaveValue('transcript:job-9'));
+  api.get.mockResolvedValue({data:{session:{...session,status:'completed',evaluation_status:'ready',source:{kind:'transcript',id:'job-9'},evaluation:{score:70,understanding:70,accuracy:70,completeness:70,communication:70,strengths:[],areasForImprovement:['Subnetting'],topicsCovered:['Routing'],summary:'Solid basics.'}}}});
+  open('/dashboard/oral-exam?session=exam-1');
+  expect(await screen.findByRole('link',{name:/Ask this lecture/})).toHaveAttribute('href','/dashboard/youtube?job=job-9&tool=chat');
+  expect(screen.getByRole('link',{name:/Practice questions/})).toHaveAttribute('href','/dashboard/youtube?job=job-9&tool=quiz');
+});
 it('rejects unsupported uploads and leaves the existing tools available',async()=>{
   open();const input=await screen.findByLabelText(/Upload notes/);fireEvent.change(input,{target:{files:[new File(['binary'],'notes.pdf',{type:'application/pdf'})]}});
   await screen.findByRole('alert');expect(screen.getByRole('alert')).toHaveTextContent('UTF-8 .txt');expect(api.create).not.toHaveBeenCalled();
