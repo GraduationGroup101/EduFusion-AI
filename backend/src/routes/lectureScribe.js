@@ -6,7 +6,7 @@ const cache = require('../db/lectureCache');
 const tools = require('../lectureTools');
 const { text, badRequest, object, choice } = require('../lib/validation');
 const { requestUpstream, readJson, upstreamStatus, sendError } = require('../lib/upstream');
-const { LECTURESCRIBE_BASE: BASE, videoId } = require('../lib/lectureScribe');
+const { LECTURESCRIBE_BASE: BASE, videoId, gatewayHeaders } = require('../lib/lectureScribe');
 const router = express.Router();
 router.use(authenticate);
 const validateJob = (body) => {
@@ -59,7 +59,7 @@ router.post('/jobs', aiLimiter, async (req,res) => {
       await store.saveJob(req.user,job);
       return res.status(200).json(job);
     }
-    const response=await requestUpstream(req,`${BASE}/jobs`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)},{timeoutMs:30000});
+    const response=await requestUpstream(req,`${BASE}/jobs`,{method:'POST',headers:{'Content-Type':'application/json',...gatewayHeaders()},body:JSON.stringify(body)},{timeoutMs:30000});
     const data=await readJson(response);
     if(response.ok) {
       if(typeof data.job_id !== 'string' || !data.job_id || data.job_id.length > 200) throw Object.assign(new Error('Invalid job response'), {statusCode:502});

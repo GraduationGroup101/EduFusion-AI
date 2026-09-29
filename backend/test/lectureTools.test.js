@@ -120,6 +120,19 @@ test('practice questions validate counts, drop malformed items and are stored pr
   assert.throws(() => tools.validateQuiz({ questions: [{ type: 'mcq', prompt: 'x'.repeat(6), choices: [], answer_index: null, answer: '', explanation: '' }] }, { mcq: 1, tf: 0, essay: 0 }), { statusCode: 502 });
 });
 
+test('job creation identifies this gateway to the provider only when a key is configured', async () => {
+  const { gatewayHeaders } = require('../src/lib/lectureScribe');
+  assert.deepEqual(gatewayHeaders({}), {});
+  assert.deepEqual(gatewayHeaders({ LECTURESCRIBE_GATEWAY_KEY: 'shared' }), { 'X-Gateway-Key': 'shared' });
+  process.env.LECTURESCRIBE_GATEWAY_KEY = 'shared';
+  try {
+    assert.equal((await request(server).post('/api/lecture-scribe/jobs').set('Authorization', auth(702)).send({ youtube_url: 'https://youtu.be/qqqqqqqqqqq' })).status, 202);
+    assert.equal(calls.at(-1).options.headers['X-Gateway-Key'], 'shared');
+  } finally { delete process.env.LECTURESCRIBE_GATEWAY_KEY; }
+  assert.equal((await request(server).post('/api/lecture-scribe/jobs').set('Authorization', auth(702)).send({ youtube_url: 'https://youtu.be/rrrrrrrrrrr' })).status, 202);
+  assert.equal(calls.at(-1).options.headers['X-Gateway-Key'], undefined);
+});
+
 test('transcription keeps working on a database that has not applied the cache migration yet', async () => {
   await database.query('ALTER TABLE edufusion_lecture_transcripts RENAME TO hidden_transcripts');
   try {

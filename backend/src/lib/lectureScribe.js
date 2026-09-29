@@ -20,4 +20,8 @@ const videoId = (value) => {
   return match ? valid(match[1]) : null;
 };
 
-module.exports = { CURRENT_LECTURESCRIBE_BASE, LECTURESCRIBE_BASE, resolveLectureScribeBase, videoId };
+// The provider limits public callers per IP; a shared key identifies this
+// gateway (which submits for every student from one address) as trusted.
+const gatewayHeaders = (env = process.env) => (env.LECTURESCRIBE_GATEWAY_KEY ? { 'X-Gateway-Key': env.LECTURESCRIBE_GATEWAY_KEY } : {});
+
+module.exports = { CURRENT_LECTURESCRIBE_BASE, LECTURESCRIBE_BASE, resolveLectureScribeBase, videoId, gatewayHeaders };
