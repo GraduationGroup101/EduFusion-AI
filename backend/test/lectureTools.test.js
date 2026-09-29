@@ -120,6 +120,16 @@ test('practice questions validate counts, drop malformed items and are stored pr
   assert.throws(() => tools.validateQuiz({ questions: [{ type: 'mcq', prompt: 'x'.repeat(6), choices: [], answer_index: null, answer: '', explanation: '' }] }, { mcq: 1, tf: 0, essay: 0 }), { statusCode: 502 });
 });
 
+test('transcription keeps working on a database that has not applied the cache migration yet', async () => {
+  await database.query('ALTER TABLE edufusion_lecture_transcripts RENAME TO hidden_transcripts');
+  try {
+    const created = await request(server).post('/api/lecture-scribe/jobs').set('Authorization', auth(701)).send({ youtube_url: 'https://youtu.be/zyxwvutsrqp' });
+    assert.equal(created.status, 202); assert.equal(created.body.cached, undefined);
+    const transcript = await request(server).get('/api/lecture-scribe/jobs/job-fresh/transcript?kind=raw').set('Authorization', auth());
+    assert.equal(transcript.status, 200); assert.equal(transcript.text, 'raw words');
+  } finally { await database.query('ALTER TABLE hidden_transcripts RENAME TO edufusion_lecture_transcripts'); }
+});
+
 test('long transcripts are excerpted around the question within the model budget', () => {
   const long = 'filler sentence about nothing in particular. '.repeat(3000) + 'The quicksort pivot partitions the array. ' + 'more filler. '.repeat(2000);
   const context = tools.excerpt(long, 'How does the quicksort pivot work?');
