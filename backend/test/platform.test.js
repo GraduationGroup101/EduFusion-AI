@@ -51,6 +51,17 @@ before(async () => {
   await database.query('INSERT INTO student_vle_events(enrollment_id,id_site,date,sum_click) VALUES(1,2000000001,1,5)');
   global.fetch = async (url, options={}) => {
     providerCalls.push({url:String(url),options});
+    if (String(url).includes('/students/') && String(url).includes('/prediction?')) {
+      if (providerMode === 'prediction-timeout') throw Object.assign(new Error('timed out'), { name: 'AbortError' });
+      if (providerMode === 'prediction-error') return new Response(JSON.stringify({ detail: 'private database diagnostic' }), { status: 500 });
+      if (providerMode === 'prediction-dns') return new Response(JSON.stringify({ detail: '[Errno -2] Name or service not known' }), { status: 500 });
+      if (providerMode === 'prediction-invalid') return new Response('invalid json');
+      if (providerMode === 'prediction-unauthorized') return new Response(JSON.stringify({ detail: 'private auth diagnostic' }), { status: 401 });
+      if (providerMode === 'prediction-forbidden') return new Response(JSON.stringify({ detail: 'private auth diagnostic' }), { status: 403 });
+      return new Response(JSON.stringify({ risk_probability: 0.3, risk_level: 'LOW', at_risk: 0, threshold_used: 0.41,
+        explanation: [], recommended_action: 'No action needed', model_confidence: { day_of_course: 60 },
+        data_completeness: { completeness_pct: 50 } }));
+    }
     if(providerMode==='fail') return new Response(JSON.stringify({error:'provider failed'}),{status:503});
     if(providerMode==='unauthorized') return new Response('{}',{status:401});
     if(String(url).endsWith('/jobs') && options.method==='POST') return new Response(JSON.stringify({job_id:'owned-job',status:'queued'}),{status:202});
@@ -171,6 +182,52 @@ test('isolated scenarios conserve clicks and never modify academic evidence',asy
   const legacy=await request(server).put('/api/student/prediction-data/1').set('Authorization',`Bearer ${studentToken()}`).send({latest_score:100,activity_clicks:50});
   assert.equal(legacy.status,400);
   assert.deepEqual(await getStudentBehaviorData(123),before);
+});
+test('student prediction validates enrollment, uses the current cache, and forces an upstream refresh', async () => {
+  const path = '/api/student/prediction?code_module=DEMO&code_presentation=2026';
+  const auth = `Bearer ${studentToken()}`;
+  providerCalls = [];
+  assert.equal((await request(server).get('/api/student/prediction?code_module=UNKNOWN&code_presentation=2026').set('Authorization', auth)).status, 404);
+  assert.equal(providerCalls.length, 0);
+  const fresh = await request(server).get(path).set('Authorization', auth);
+  assert.equal(fresh.status, 200);
+  assert.equal(fresh.body.risk_probability, 0.3);
+  assert.equal(providerCalls.length, 1);
+  assert.match(providerCalls[0].url, /code_module=DEMO&code_presentation=2026/);
+  await database.query(`INSERT INTO predictions(enrollment_id,day_of_course,risk_probability,risk_level,at_risk,threshold_used)
+    VALUES(1,60,0.2,'LOW',false,0.41)`);
+  const cached = await request(server).get(path).set('Authorization', auth);
+  assert.equal(cached.status, 200);
+  assert.equal(cached.body.cached, true);
+  assert.equal(cached.body.risk_probability, 0.2);
+  assert.equal(providerCalls.length, 1);
+  const forced = await request(server).get(`${path}&force=1`).set('Authorization', auth);
+  assert.equal(forced.status, 200);
+  assert.equal(forced.body.risk_probability, 0.3);
+  assert.equal(providerCalls.length, 2);
+});
+test('student prediction reports upstream failures safely and logs correlation context', async () => {
+  const path = '/api/student/prediction?code_module=DEMO&code_presentation=2026&force=1';
+  const auth = `Bearer ${studentToken()}`;
+  const logs = [];
+  const originalError = console.error;
+  console.error = (...args) => logs.push(args);
+  try {
+    for (const [mode, status] of [['prediction-error', 503], ['prediction-dns', 503], ['prediction-timeout', 504],
+      ['prediction-invalid', 502], ['prediction-unauthorized', 502], ['prediction-forbidden', 502]]) {
+      providerMode = mode;
+      const response = await request(server).get(path).set('Authorization', auth);
+      assert.equal(response.status, status, mode);
+      assert.match(response.headers['x-request-id'], /^[0-9a-f-]{36}$/);
+      assert.match(response.body.error, /Prediction service is temporarily unavailable/);
+      assert.doesNotMatch(JSON.stringify(response.body), /private|database|auth diagnostic/);
+    }
+    assert.equal(logs.length, 6);
+    assert.deepEqual(logs.map((entry) => entry[1].category), ['upstream_http', 'database_dns', 'timeout', 'invalid_response', 'upstream_auth', 'upstream_auth']);
+    assert.ok(logs.every((entry) => entry[1].code_module === 'DEMO' && entry[1].code_presentation === '2026'));
+    assert.ok(logs.every((entry) => entry[1].request_id && entry[1].endpoint && entry[1].upstream));
+    assert.doesNotMatch(JSON.stringify(logs), /private database diagnostic|private auth diagnostic/);
+  } finally { providerMode = 'ok'; console.error = originalError; }
 });
 test('chat history persists in PostgreSQL, expires, and isolates account types',async()=>{
   await store.appendExchange({id_student:123},'persistent','hi',{answer:'hello'});
