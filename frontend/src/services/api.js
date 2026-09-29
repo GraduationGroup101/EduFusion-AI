@@ -129,6 +129,7 @@ export const studentService = {
   getPredictionData: (options = {}) => api.get('/student/prediction-data', options),
   saveScenario: (enrollmentId, data) => api.put(`/student/scenarios/${enrollmentId}`, data),
   getScenario: (enrollmentId, options = {}) => api.get(`/student/scenarios/${enrollmentId}`, options),
+  getScenarioPrediction: (enrollmentId, options = {}) => api.get(`/student/scenarios/${enrollmentId}/prediction`, options),
   getPrediction: (params = {}, options = {}) => api.get('/student/prediction', { ...options, params }),
 };
 

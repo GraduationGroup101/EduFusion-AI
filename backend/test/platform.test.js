@@ -51,6 +51,12 @@ before(async () => {
   await database.query('INSERT INTO student_vle_events(enrollment_id,id_site,date,sum_click) VALUES(1,2000000001,1,5)');
   global.fetch = async (url, options={}) => {
     providerCalls.push({url:String(url),options});
+    if (String(url).includes('/scenario-prediction?')) {
+      if (providerMode === 'scenario-invalid') return new Response(JSON.stringify({ detail: 'invalid evidence' }), { status: 422 });
+      const evidence = JSON.parse(options.body);
+      return new Response(JSON.stringify({ risk_probability: evidence.inputs.latest_tma_score >= 80 ? 0.1 : 0.7,
+        risk_level: 'LOW', at_risk: 0, explanation: [], model_confidence: { day_of_course: 60 } }));
+    }
     if (String(url).includes('/students/') && String(url).includes('/prediction?')) {
       if (providerMode === 'prediction-timeout') throw Object.assign(new Error('timed out'), { name: 'AbortError' });
       if (providerMode === 'prediction-error') return new Response(JSON.stringify({ detail: 'private database diagnostic' }), { status: 500 });
@@ -182,6 +188,36 @@ test('isolated scenarios conserve clicks and never modify academic evidence',asy
   const legacy=await request(server).put('/api/student/prediction-data/1').set('Authorization',`Bearer ${studentToken()}`).send({latest_score:100,activity_clicks:50});
   assert.equal(legacy.status,400);
   assert.deepEqual(await getStudentBehaviorData(123),before);
+});
+test('saved scenario reaches a distinct model call without changing academic evidence or actual prediction cache', async () => {
+  const auth = `Bearer ${studentToken()}`;
+  const before = await getStudentBehaviorData(123);
+  const actualBefore = (await database.query('SELECT * FROM predictions WHERE enrollment_id=1')).rows;
+  providerCalls = [];
+  const saved = await request(server).put('/api/student/scenarios/1').set('Authorization',auth)
+    .send({quiz_clicks:9,activity_days:3,latest_tma_score:95});
+  assert.equal(saved.status,200);
+  const result = await request(server).get('/api/student/scenarios/1/prediction').set('Authorization',auth);
+  assert.equal(result.status,200);
+  assert.equal(result.body.hypothetical,true);
+  assert.equal(result.body.risk_probability,0.1);
+  assert.equal(result.body.based_on_day,60);
+  assert.equal(providerCalls.length,1);
+  assert.equal(providerCalls[0].options.method,'POST');
+  assert.deepEqual(JSON.parse(providerCalls[0].options.body), {
+    based_on_day:saved.body.scenario.based_on_day,
+    inputs:saved.body.scenario.inputs,
+    activity:saved.body.scenario.activity,
+  });
+  assert.deepEqual(await getStudentBehaviorData(123),before);
+  assert.deepEqual((await database.query('SELECT * FROM predictions WHERE enrollment_id=1')).rows,actualBefore);
+  assert.equal((await request(server).get('/api/student/scenarios/999/prediction').set('Authorization',auth)).status,404);
+  providerMode = 'scenario-invalid';
+  try {
+    const invalid = await request(server).get('/api/student/scenarios/1/prediction').set('Authorization',auth);
+    assert.equal(invalid.status,409);
+    assert.doesNotMatch(JSON.stringify(invalid.body),/invalid evidence/);
+  } finally {providerMode='ok';}
 });
 test('student prediction validates enrollment, uses the current cache, and forces an upstream refresh', async () => {
   const path = '/api/student/prediction?code_module=DEMO&code_presentation=2026';
