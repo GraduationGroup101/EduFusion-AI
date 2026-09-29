@@ -90,6 +90,8 @@ The [Oral Exam integration](docs/oral-exam.md) documents source selection, the f
 
 The lecture page's independent library, lecture-scoped chat/practice, durable local worker, ownership rules and separate database setup are documented in [Lecture study integration](docs/lecture-study-integration.md). Enable it with `LECTURE_STUDY_ENABLED` only after configuring and migrating `LEARNING_DATABASE_URL`. The original chatbot and general question-generator pages retain their current behavior.
 
+**Hosted lecture tools.** Without the local library, a completed transcript still offers "Ask this lecture", "Generate questions" and "Oral exam on this lecture" on any backend that has `GROQ_API_KEY` (the Render backend in production; set `VITE_LECTURE_TOOLS_API_URL` or reuse `VITE_ORAL_EXAM_API_URL` so the browser reaches it). Transcription uses `LECTURESCRIBE_API_URL` (`https://lecturescribe-ai.onrender.com`). Completed transcripts are cached in the shared database (`006_lecture_tools.sql`): a student who submits a lecture someone already transcribed receives it instantly, each student sees only their own lectures, and administrators see all of them. Signing in wakes the sleeping transcription, chatbot, question-generator and prediction services. See [the API contracts](docs/api-contracts.md).
+
 ```sh
 npm run cleanup --prefix backend
 ```
@@ -121,6 +123,6 @@ frontend/
 
 Shared academic tables: `app_users`, `students`, `enrollments`, `course_presentations`, `academic_clocks`, `assessments`, `student_assessments`, `vle_sites`, `student_vle_events`, `predictions`.
 
-Gateway-owned tables: `edufusion_schema_migrations`, `edufusion_chat_history`, `edufusion_lecture_jobs`, `edufusion_student_scenarios`, `edufusion_clock_commands`.
+Gateway-owned tables: `edufusion_schema_migrations`, `edufusion_chat_history`, `edufusion_lecture_jobs`, `edufusion_lecture_transcripts`, `edufusion_lecture_quizzes`, `edufusion_student_scenarios`, `edufusion_clock_commands`, `edufusion_oral_exam_sessions`, `edufusion_oral_exam_turns`.
 
 The two MP4 files at repository root are source assets. The web application serves the processed files in `frontend/public`; keep source assets outside the delivery bundle.

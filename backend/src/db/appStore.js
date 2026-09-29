@@ -53,7 +53,9 @@ const ownsJob = async (user, jobId) => (await readQuery('SELECT 1 FROM edufusion
 const listJobs = async (user) => (await readQuery('SELECT job FROM edufusion_lecture_jobs WHERE owner_key=$1 ORDER BY created_at DESC LIMIT 100', [ownerKey(user)])).rows.map((row) => row.job);
 const listAllJobs = async () => (await readQuery('SELECT DISTINCT ON (job_id) job FROM edufusion_lecture_jobs ORDER BY job_id,created_at DESC')).rows.map(row=>row.job);
 const getAnyJob = async (id) => (await readQuery('SELECT job FROM edufusion_lecture_jobs WHERE job_id=$1 ORDER BY created_at DESC LIMIT 1',[id])).rows[0]?.job;
-const refreshAnyJob = (job) => transaction(client=>client.query('UPDATE edufusion_lecture_jobs SET job=$2 WHERE job_id=$1',[job.job_id,JSON.stringify(job)]));
-const refreshJob = (user, job) => transaction((client) => client.query('UPDATE edufusion_lecture_jobs SET job=$3 WHERE owner_key=$1 AND job_id=$2', [ownerKey(user), job.job_id, JSON.stringify(job)]));
+// Merge provider status over the stored copy so locally known fields (the
+// original request, cache provenance) survive a provider response that omits them.
+const refreshAnyJob = (job) => transaction(client=>client.query('UPDATE edufusion_lecture_jobs SET job=job||$2::jsonb WHERE job_id=$1',[job.job_id,JSON.stringify(job)]));
+const refreshJob = (user, job) => transaction((client) => client.query('UPDATE edufusion_lecture_jobs SET job=job||$3::jsonb WHERE owner_key=$1 AND job_id=$2', [ownerKey(user), job.job_id, JSON.stringify(job)]));
 
 module.exports = { getHistory, appendExchange, deleteHistory, saveJob, ownsJob, listJobs, refreshJob, listAllJobs, getAnyJob, refreshAnyJob };

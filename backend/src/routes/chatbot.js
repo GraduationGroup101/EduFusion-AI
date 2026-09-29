@@ -151,3 +151,4 @@ router.delete('/history/:session_id', authenticate, async (req, res) => {
 });
 
 module.exports = router;
+module.exports.CHATBOT_BASE = CHATBOT_BASE;

@@ -27,6 +27,26 @@ All protected endpoints require `Authorization: Bearer <EduFusion JWT>`. A provi
 - `GET /jobs` lists the last 100 jobs created by this account from local metadata. Status metadata is refreshed when an owned job is opened or polled.
 - `/jobs/:id` and `/jobs/:id/transcript?kind=raw|cleaned` require local creation entitlement **before** calling the provider. Unknown and foreign IDs both return `404`. Historical globally visible jobs are not automatically assigned to an owner.
 - Jobs can continue running after the submitting user leaves the page. The browser polls without overlapping requests, pauses while hidden, and cancels its current status request when leaving.
+- The provider is `LECTURESCRIBE_API_URL` (default `https://lecturescribe-ai.onrender.com`). The retired `lecturescribe.app` value is ignored if it lingers in a hosting environment.
+- **Transcript cache.** A completed transcript is stored in `edufusion_lecture_transcripts` the first time it is read, keyed by the canonical YouTube video ID. `POST /jobs` for a video that already has a stored transcript returns `200` with the finished job and `cached:true`, grants this account entitlement to that job, and never contacts the provider. `GET /jobs/:id` and `/transcript` serve the stored copy when present, so cached lectures survive provider restarts. Administrators see every stored job.
+
+## Lecture tools
+
+Grounded chat and practice questions over a saved transcript. Available on any backend with `GROQ_API_KEY`; the frontend routes these calls to `VITE_LECTURE_TOOLS_API_URL`, then `VITE_ORAL_EXAM_API_URL`, then `VITE_API_URL`.
+
+- `GET /api/lecture-scribe/tools/status` returns `{enabled}`. Every other tool route returns `503` when disabled and `404` for jobs the account does not own.
+- `POST /api/lecture-scribe/jobs/:id/chat`: `{question: 1–2000 chars}` → `{answer, sources: [verbatim quotes], covered}`. History is kept in `edufusion_chat_history` under session `lecture:<job_id>` with the same 24-hour expiry; `GET` returns `{messages}` and `DELETE` clears it.
+- `POST /api/lecture-scribe/jobs/:id/quizzes`: `{num_mcq?, num_tf?, num_essay?: 0–10 each (at least one > 0), language?: 'auto'|'ar'|'en'}` → `201 {quiz: {id, language, questions, created_at}}`. Questions carry `type`, `prompt`, `choices`, `answer_index` (`null` for essays), `answer` and `explanation`; answers are checked in the browser for self-study. `GET` lists this account's last 20 sets for the job.
+- A transcript shorter than 100 characters or not yet completed returns `409`. Model output is validated against a strict schema; malformed items are dropped and an empty result is `502`.
+
+## Service warm-up
+
+- `GET /api/services/warm-up` (authenticated) returns `{targets:[{name,url}], started:[names]}` for the transcription, chatbot, question-generator and prediction health endpoints, and pings each from the server at most once per minute without waiting for the response. The browser also pings every `https` target with `no-cors` after any session is established, so sleeping free-tier services wake as soon as a student signs in.
+
+## Oral Exam material
+
+- `GET /api/oral-exam/materials` lists ready study lectures and this account's completed transcripts. A transcript source is read from the transcript cache first, then the provider.
+- Session views include `source: {kind, id}` for lecture and transcript material (never pasted text) so results can link back to that lecture's chat and practice questions. `/dashboard/oral-exam?transcript=<job_id>` preselects a transcript.
 
 ## Question generation
 

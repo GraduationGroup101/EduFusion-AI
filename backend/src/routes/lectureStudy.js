@@ -6,6 +6,7 @@ const { readQuery } = require('../db');
 const { getCurrentStudentPrediction } = require('../db/queries');
 const legacy = require('../db/appStore');
 const { requestUpstream,readJson } = require('../lib/upstream');
+const { LECTURESCRIBE_BASE } = require('../lib/lectureScribe');
 const db = require('../lectureStudy/database');
 const store = require('../lectureStudy/store');
 const validate = require('../lectureStudy/validation');
@@ -61,7 +62,7 @@ router.post('/import',aiLimiter,wrap(async (req,res) => {
   const key = validate.requestKey(req);
   const own=await legacy.ownsJob(req.user,jobId);
   if (!own&&req.user.role!=='admin') return res.status(404).json({error:'Job not found'});
-  const base = String(process.env.LECTURESCRIBE_API_URL || 'https://lecturescribe.app').replace(/\/+$/,'');
+  const base = LECTURESCRIBE_BASE;
   let job=own?(await legacy.listJobs(req.user)).find(job=>job.job_id===jobId):await legacy.getAnyJob(jobId);
   let providerStatus;
   if(!job&&req.user.role==='admin'){

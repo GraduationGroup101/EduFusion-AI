@@ -72,7 +72,7 @@ const upstream = async (url,options = {}) => {
 };
 const prepareTranscript = async (job,context,isStopping = () => false) => {
   if (context.lecture.transcript) return;
-  const base = String(process.env.LECTURESCRIBE_API_URL || 'https://lecturescribe.app').replace(/\/+$/,'');
+  const base = require('../src/lib/lectureScribe').LECTURESCRIBE_BASE;
   let providerId = context.lecture.provider_job_id;
   if (!providerId) {
     const created = await readJson(await upstream(base + '/jobs', {

@@ -2,7 +2,9 @@ const { createHash } = require('node:crypto');
 const study = require('../lectureStudy/store');
 const learning = require('../lectureStudy/database');
 const legacy = require('../db/appStore');
+const cache = require('../db/lectureCache');
 const { requestUpstream } = require('../lib/upstream');
+const { LECTURESCRIBE_BASE } = require('../lib/lectureScribe');
 const { fail } = require('./contracts');
 
 // Existing study chunks are used verbatim. Plain transcripts use bounded overlapping
@@ -28,10 +30,13 @@ async function resolveMaterial(user,source) {
   }
   if(source.kind==='transcript') {
     if(!await legacy.ownsJob(user,source.id)) fail(404,'Material not found');
-    const base=String(process.env.LECTURESCRIBE_API_URL||'https://lecturescribe.app').replace(/\/+$/,'');
-    const response=await requestUpstream(null,`${base}/jobs/${encodeURIComponent(source.id)}/transcript?kind=cleaned`,{},{timeoutMs:30000,maxBytes:1024*1024});
-    if(!response.ok) fail(409,'The transcript is not ready. Try a completed lecture.');
-    const text=await response.text();
+    // The cached transcript copy is preferred; the provider is only asked when none is stored.
+    let text=await cache.getTranscript(source.id,'cleaned')??await cache.getTranscript(source.id,'raw');
+    if(text===null) {
+      const response=await requestUpstream(null,`${LECTURESCRIBE_BASE}/jobs/${encodeURIComponent(source.id)}/transcript?kind=cleaned`,{},{timeoutMs:30000,maxBytes:1024*1024});
+      if(!response.ok) fail(409,'The transcript is not ready. Try a completed lecture.');
+      text=await response.text();
+    }
     if(text.trim().length<100) fail(400,'This transcript has too little readable content');
     const jobs=await legacy.listJobs(user);
     return {source,title:jobs.find(j=>j.job_id===source.id)?.title||'Lecture transcript',context:boundedContext(chunksFromText(text))};
