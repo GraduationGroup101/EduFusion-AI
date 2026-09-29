@@ -6,7 +6,10 @@ const assessment = z.object({ understanding:score, accuracy:score, completeness:
 const question = z.object({ question:z.string().trim().min(5).max(600), concept:z.string().min(1).max(160),
   question_type:z.enum(['initial','follow_up','next_topic']), difficulty:z.enum(['foundation','application','analysis']),
   citations:z.array(z.string().min(1).max(80)).min(1).max(6), follow_up_reason:z.string().max(300) }).strict();
-const decision = z.object({ assessment:assessment.nullable(), next:question.nullable() }).strict();
+// What the student's latest utterance was: an answer attempt, or a
+// conversational request that must not be scored or advance the exam.
+const intent = z.enum(['answer','repeat','clarify','dont_know','unclear']);
+const decision = z.object({ intent, reply:z.string().trim().max(400).nullable(), assessment:assessment.nullable(), next:question.nullable() }).strict();
 const evaluation = z.object({ understanding:score, accuracy:score, completeness:score, communication:score,
   strengths:z.array(sentence).max(8), areasForImprovement:z.array(sentence).max(8),
   topicsCovered:z.array(z.string().max(160)).max(40), summary:sentence }).strict();
@@ -27,4 +30,4 @@ const createInput = z.object({ language:z.enum(['en','ar']).default('en'), sourc
 ]) }).strict();
 const weightedScore = (value) => Math.round(value.understanding*.4+value.accuracy*.3+value.completeness*.2+value.communication*.1);
 const fail = (statusCode,message) => { throw Object.assign(new Error(message),{statusCode}); };
-module.exports = { assessment,question,decision,evaluation,decisionJsonSchema,evaluationJsonSchema,id,createInput,weightedScore,fail };
+module.exports = { assessment,question,intent,decision,evaluation,decisionJsonSchema,evaluationJsonSchema,id,createInput,weightedScore,fail };

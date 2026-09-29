@@ -5,6 +5,7 @@ const queries=require('../db/queries');
 const db=require('../db');
 const store=require('./store');
 const examiner=require('./examiner');
+const conversation=require('./conversation');
 const voice=require('./voice');
 const {id}=require('./contracts');
 const {configured}=require('./config');
@@ -59,19 +60,39 @@ function attachRealtime(server,dependencies={}) {
       await stt.opened;
       if(current===generation&&!closed)state('listening');
     }
-    async function speakQuestion() {
+    // Speaks the current question, or a conversational reply about it. The
+    // `question` event always carries the persisted question and sequence; a
+    // repeat re-reads it, while a clarification, nudge or retry prompt is
+    // spoken on its own and shown as the examiner's remark.
+    async function speakQuestion(kind='question',remark='') {
       const current=++generation;
       state('thinking');
       const question=session.turns.at(-1);
-      send({type:'question',question:question.question,sequence:question.sequence});
-      const introduction=session.turns.length===1?(session.language==='ar'?'مرحباً. سنجري امتحاناً شفهياً قصيراً بناءً على مادتك. ':'Welcome. We will explore your material in a short oral exam. '):'';
+      send({type:'question',question:question.question,sequence:question.sequence,kind,remark});
+      const introduction=session.turns.length===1&&kind==='question'?(session.language==='ar'?'مرحباً. سنجري امتحاناً شفهياً قصيراً بناءً على مادتك. ':'Welcome. We will explore your material in a short oral exam. '):'';
+      const text=kind==='question'?introduction+question.question:conversation.spoken(kind,remark,question.question);
       try {
-        const data=await audio.speak(introduction+question.question,session.language,abort.signal);
+        const data=await audio.speak(text,session.language,abort.signal);
         if(closed||abort.signal.aborted||current!==generation)return;
         state('speaking');
         send({type:'audio',audio:data.toString('base64'),sequence:question.sequence});
         playbackTimer=setTimeout(()=>{if(phase==='speaking')error('Audio playback did not finish. Reconnect to retry.');},60000);
       }catch {if(!abort.signal.aborted)error('The examiner’s audio could not play. Reconnect to hear the question again.');}
+    }
+    // Handles a non-answer utterance: nothing is scored, no question is
+    // consumed, and the exchange is stored on the current turn for the review.
+    async function converse(intent,transcript,modelReply=null) {
+      const turn=session.turns.at(-1);
+      let text=modelReply;
+      if(text===null&&['clarify','dont_know'].includes(intent)&&typeof model.reply==='function') {
+        try {text=(await model.reply(session,transcript,intent,abort.signal)).reply;}
+        catch(err) {if(abort.signal.aborted||closed)return;console.error('Oral exam reply failed:',examiner.diagnostic('conversation_reply',err,0));}
+      }
+      if(abort.signal.aborted||closed)return;
+      const kind=conversation.KIND[intent];
+      const exchange=await store.recordExchange(session.id,token,turn.sequence,{kind,transcript,reply:conversation.reply(intent,session.language,turn.question,text)});
+      session=await store.get(user,session.id);
+      await speakQuestion(kind,exchange.reply);
     }
     async function advance(transcript) {
       if(busy||closed||abort.signal.aborted)return;
@@ -80,10 +101,17 @@ function attachRealtime(server,dependencies={}) {
         const live=await store.renew(session.id,token);
         if(!live){await lostLease();return;}
         session=await store.get(user,session.id);
-        if(transcript!==null)await store.recordAnswer(session.id,token,session.turns.at(-1).sequence,transcript);
+        const turn=session.turns.at(-1);
+        // Obvious control phrases are handled without the model; everything
+        // else is classified by the examiner as part of its decision.
+        const intent=transcript===null?'answer':conversation.resolve(conversation.classify(transcript),turn?.exchanges);
+        if(intent!=='answer'){await converse(intent,transcript);return;}
+        if(transcript!==null)await store.recordAnswer(session.id,token,turn.sequence,transcript);
         const decision=await model.next(session,transcript,abort.signal);
         if(abort.signal.aborted||closed)return;
-        await store.commit(session.id,token,session.turns.at(-1)?.sequence||0,transcript,decision);
+        const modelIntent=transcript===null?'answer':conversation.resolve(decision.intent||'answer',turn?.exchanges);
+        if(modelIntent!=='answer'){await converse(modelIntent,transcript,decision.reply??null);return;}
+        await store.commit(session.id,token,turn?.sequence||0,transcript,decision);
         session=await store.get(user,session.id);
         if(!decision.next){await finish();return;}
         await speakQuestion();

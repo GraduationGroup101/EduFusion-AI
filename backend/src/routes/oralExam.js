@@ -45,13 +45,16 @@ router.post('/sessions/:id/start',aiLimiter,wrap(async(req,res)=>{
 }));
 router.post('/sessions/:id/end',wrap(async(req,res)=>{
   await store.finish(req.user,id.parse(req.params.id));
-  await examiner.evaluate(req.user,req.params.id);
-  res.json({session:store.publicView(await store.get(req.user,req.params.id))});
+  const evaluation=await examiner.evaluate(req.user,req.params.id);
+  res.json({session:store.publicView(await store.get(req.user,req.params.id)),evaluation});
 }));
+// Retrying feedback is idempotent: a ready report is returned as-is, a
+// concurrent attempt is shared, and a failed attempt reports a safe reason
+// while the saved answers stay untouched.
 router.post('/sessions/:id/evaluation',aiLimiter,wrap(async(req,res)=>{
   const session=await store.get(req.user,id.parse(req.params.id));
   if(['ready','active'].includes(session.status))fail(409,'End the exam before requesting feedback');
-  await examiner.evaluate(req.user,req.params.id);
-  res.json({session:store.publicView(await store.get(req.user,req.params.id))});
+  const evaluation=await examiner.evaluate(req.user,req.params.id);
+  res.json({session:store.publicView(await store.get(req.user,req.params.id)),evaluation});
 }));
 module.exports=router;
