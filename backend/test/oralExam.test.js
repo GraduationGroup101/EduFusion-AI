@@ -21,7 +21,7 @@ const user={id_student:900};
 const material={source:{kind:'text',digest:'test'},title:'Networks',context:boundedContext(chunksFromText('Packets travel through routers. A router selects a path across networks. '.repeat(20)))};
 const question={question:'What does a router do?',concept:'Routing',question_type:'initial',difficulty:'foundation',citations:['text-1'],follow_up_reason:''};
 const assessment={understanding:80,accuracy:80,completeness:75,communication:90,feedback:'You explained path selection.',strengths:['Path selection'],improvements:['Explain packets']};
-let database,server,realtime,finalizeSpeech;
+let database,server,realtime,finalizeSpeech,nextOverride;
 const original={query:db.pool.query,connect:db.pool.connect,transaction:db.transaction,fetch:global.fetch};
 const api=(method,path,id=900)=>request(server)[method]('/api/oral-exam'+path).set('Authorization','Bearer '+jwt.sign({id_student:id},process.env.JWT_SECRET));
 const create=()=>store.create(user,material,'en',randomUUID());
@@ -37,7 +37,7 @@ before(async()=>{
   await require('../scripts/migrate').migrate();
   await database.query("INSERT INTO students(id_student,student_name,pin_hash) VALUES(900,'Oral student','hash'),(901,'Other student','hash')");
   server=app.listen(0,'127.0.0.1');await once(server,'listening');
-  realtime=attachRealtime(server,{examiner:{...examiner,next:async(_s,text)=>({assessment:text===null?null:assessment,next:text===null?question:{...question,question:'Why is path selection useful?',question_type:'follow_up'}})},voice:{
+  realtime=attachRealtime(server,{examiner:{...examiner,next:async(_s,text)=>nextOverride?nextOverride(_s,text):({assessment:text===null?null:assessment,next:text===null?question:{...question,question:'Why is path selection useful?',question_type:'follow_up'}})},voice:{
     speak:async()=>Buffer.from('ID3fake-test-audio'),
     transcriber:({onFinal})=>{finalizeSpeech=onFinal;return {opened:Promise.resolve(),close(){},send(){return true;}};},
   }});
@@ -122,7 +122,7 @@ test('model output is validated, grounded and failed final evaluation is recover
   const a=await create();await store.start(user,a.id);const lease=await store.claim(user,a.id);
   const mock=value=>{global.fetch=async()=>new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(value)}}]}));};
   mock({assessment:null,next:{...question,citations:['foreign-source']}});
-  await assert.rejects(async()=>examiner.next({...await store.get(user,a.id),turns:[]},null),/Ungrounded/);
+  await assert.rejects(async()=>examiner.next({...await store.get(user,a.id),turns:[]},null),{code:'ungrounded_citation'});
   await store.commit(a.id,lease.token,0,null,{assessment:null,next:question});
   await store.commit(a.id,lease.token,1,'A router selects packet routes.',{assessment,next:null});
   await store.finish(user,a.id);mock({understanding:999});await examiner.evaluate(user,a.id);
@@ -131,6 +131,21 @@ test('model output is validated, grounded and failed final evaluation is recover
   mock(report);await examiner.evaluate(user,a.id);
   const saved=await store.get(user,a.id);assert.equal(saved.evaluation_status,'ready');assert.equal(saved.evaluation.score,80);assert.deepEqual(saved.evaluation.topicsCovered,['Routing']);
   global.fetch=original.fetch;
+});
+test('final evaluation retries one invalid output and persists only the valid report',async()=>{
+  const a=await create();await store.start(user,a.id);const lease=await store.claim(user,a.id);
+  await store.commit(a.id,lease.token,0,null,{assessment:null,next:question});
+  await store.commit(a.id,lease.token,1,'A router selects paths for packets.',{assessment,next:null});
+  await store.finish(user,a.id);
+  const report={understanding:80,accuracy:80,completeness:75,communication:90,strengths:['Path selection'],areasForImprovement:['Add detail'],topicsCovered:['Routing'],summary:'You explained the core idea.'};
+  let calls=0;
+  global.fetch=async()=>new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(++calls===1?{...report,accuracy:80.5}:report)}}]}));
+  try {
+    await examiner.evaluate(user,a.id);
+    const saved=await store.get(user,a.id);
+    assert.equal(calls,2);assert.equal(saved.evaluation_status,'ready');assert.equal(saved.evaluation.score,80);
+    assert.equal(saved.turns.length,1);assert.equal(saved.turns[0].transcript,'A router selects paths for packets.');
+  } finally {global.fetch=original.fetch;}
 });
 async function socket(sessionId,student=900,origin='http://localhost:3000') {
   const ws=new WebSocket(`ws://127.0.0.1:${server.address().port}/api/oral-exam/realtime`,{origin});
@@ -157,6 +172,33 @@ test('real WebSocket authenticates, resumes persisted question, and automaticall
     await database.query("WITH t AS (SELECT NOW() AS n) UPDATE edufusion_oral_exam_sessions SET started_at=t.n-INTERVAL '599.5 seconds',expires_at=t.n+INTERVAL '0.5 seconds' FROM t WHERE id=$1",[a.id]);
   });
   const expiring=await socket(a.id);await expiring.until(e=>e.type==='ended');assert.equal((await store.get(user,a.id)).status,'timed_out');
+});
+test('model failure preserves the accepted answer and reconnect resumes one incomplete turn',async()=>{
+  await database.query("UPDATE edufusion_oral_exam_sessions SET created_at=NOW()-INTERVAL '2 days'");
+  const a=await create();const started=await store.start(user,a.id);
+  const first=await socket(a.id);await first.until(e=>e.type==='audio');
+  first.ws.send(JSON.stringify({type:'played',sequence:1}));await first.until(e=>e.type==='state'&&e.state==='listening');
+  nextOverride=async(_session,text)=>{
+    if(text===null)return {assessment:null,next:question};
+    throw new Error('Synthetic transient model failure');
+  };
+  try {
+    finalizeSpeech('A router selects packet paths.');
+    await first.until(e=>e.type==='error');
+    const stranded=await store.get(user,a.id);
+    assert.equal(stranded.turns.length,1);assert.equal(stranded.turns[0].transcript,'A router selects packet paths.');
+    assert.equal(stranded.turns[0].assessment,null);
+    assert.equal(+new Date(stranded.started_at),+new Date(started.started_at));
+    assert.equal(+new Date(stranded.expires_at),+new Date(started.expires_at));
+    first.ws.terminate();await once(first.ws,'close');await new Promise(r=>setTimeout(r,50));
+    nextOverride=async(_session,text)=>({assessment:text===null?null:assessment,next:text===null?question:{...question,question:'How are paths selected?',question_type:'follow_up'}});
+    const recovered=await socket(a.id);await recovered.until(e=>e.type==='question'&&e.sequence===2);
+    const saved=await store.get(user,a.id);
+    assert.equal(saved.turns.length,2);assert.equal(saved.turns[0].transcript,'A router selects packet paths.');
+    assert.equal(+new Date(saved.started_at),+new Date(started.started_at));
+    assert.equal(+new Date(saved.expires_at),+new Date(started.expires_at));
+    recovered.ws.terminate();await once(recovered.ws,'close');await store.finish(user,a.id);
+  } finally {nextOverride=undefined;}
 });
 test('WebSocket rejects foreign owners and untrusted origins before voice starts',async()=>{
   const a=await create();await store.start(user,a.id);

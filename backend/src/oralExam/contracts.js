@@ -10,6 +10,15 @@ const decision = z.object({ assessment:assessment.nullable(), next:question.null
 const evaluation = z.object({ understanding:score, accuracy:score, completeness:score, communication:score,
   strengths:z.array(sentence).max(8), areasForImprovement:z.array(sentence).max(8),
   topicsCovered:z.array(z.string().max(160)).max(40), summary:sentence }).strict();
+// Generate provider contracts from the same Zod definitions used after decoding.
+// Groq strict mode requires every object property and closed nested objects.
+const providerSchema = contract => {
+  const schema=z.toJSONSchema(contract);
+  delete schema.$schema;
+  return schema;
+};
+const decisionJsonSchema=providerSchema(decision);
+const evaluationJsonSchema=providerSchema(evaluation);
 const id = z.string().uuid();
 const createInput = z.object({ language:z.enum(['en','ar']).default('en'), source:z.discriminatedUnion('kind',[
   z.object({kind:z.literal('lecture'),id}).strict(),
@@ -18,4 +27,4 @@ const createInput = z.object({ language:z.enum(['en','ar']).default('en'), sourc
 ]) }).strict();
 const weightedScore = (value) => Math.round(value.understanding*.4+value.accuracy*.3+value.completeness*.2+value.communication*.1);
 const fail = (statusCode,message) => { throw Object.assign(new Error(message),{statusCode}); };
-module.exports = { assessment,question,decision,evaluation,id,createInput,weightedScore,fail };
+module.exports = { assessment,question,decision,evaluation,decisionJsonSchema,evaluationJsonSchema,id,createInput,weightedScore,fail };

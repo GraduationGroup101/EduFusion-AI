@@ -131,7 +131,7 @@ function attachRealtime(server,dependencies={}) {
         else if(msg.type==='end'&&user&&session)await finish('student_ended');
         else if(msg.type==='hello')ws.close(4400,'Repeated handshake');
       })().catch(err=>{
-        console.error('Oral exam connection failed:',err.code||err.name);
+        console.error('Oral exam connection failed:',examiner.diagnostic('connection',err,0));
         if(!user||!token){
           send({type:'error',message:err.statusCode===409?'This exam is connected elsewhere. Retrying shortly; the timer continues.':'Unable to connect to this exam. Sign in and retry.'});
           ws.close(err.statusCode===409?4429:4403,'Session unavailable');
