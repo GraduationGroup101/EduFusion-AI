@@ -1,107 +1,30 @@
 import PageHeader from '../components/ui/PageHeader';
+import StatusBadge from '../components/ui/StatusBadge';
+import ConfirmDialog from '../components/ui/ConfirmDialog';
+import ScenarioBuilder from '../components/edupredict/ScenarioBuilder';
+import ScenarioResults from '../components/edupredict/ScenarioResults';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
-import { BookOpen, MousePointerClick, RefreshCw, Save, Sparkles } from 'lucide-react';
+import { BookOpen, Eraser, RefreshCw, Save, Sparkles } from 'lucide-react';
 import { studentService } from '../services/api';
+import { buildPayload, defaultForm, describeChanges, formFromInputs, formatPercent, hasChanges } from '../lib/scenario';
 
-const toNumber = (value, fallback = 0) => {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-};
-
-const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-
-const getLimits = (row, form = {}) => {
-  if (!row) {
-    return {
-      elapsedDays: 1,
-      maxClicks: 50,
-      tmaDelayMax: 0,
-      cmaDelayMax: 0,
-      newDelayMax: 0,
-    };
-  }
-
-  const currentDay = toNumber(row.current_day, 0);
-  const elapsedDays = Math.max(1, currentDay + 1);
-  const maxClicks = elapsedDays * 50;
-  const tmaDue = row.latest_tma_due_date;
-  const cmaDue = row.latest_cma_due_date;
-  const nextDue = form.new_submission_type === 'CMA'
-    ? row.next_cma_due_date
-    : row.next_tma_due_date;
-
-  return {
-    elapsedDays,
-    maxClicks,
-    tmaDelayMax: tmaDue === null || tmaDue === undefined ? 0 : Math.max(0, currentDay - Number(tmaDue)),
-    cmaDelayMax: cmaDue === null || cmaDue === undefined ? 0 : Math.max(0, currentDay - Number(cmaDue)),
-    newDelayMax: nextDue === null || nextDue === undefined ? 0 : Math.max(0, currentDay - Number(nextDue)),
-  };
-};
-
-const submissionTypes = (row) => row ? ['TMA', 'CMA'].filter((type) => {
-  const key = type.toLowerCase();
-  return row[`next_${key}_assessment_id`] && row[`next_${key}_due_date`] != null && Number(row[`next_${key}_due_date`]) <= Number(row.current_day);
-}) : [];
-
-const resetSimulationForm = (row, previous = {}) => ({
-  ...row,
-  quiz_clicks: 0,
-  forum_clicks: 0,
-  resource_clicks: 0,
-  activity_days: 1,
-  latest_tma_score: row.latest_tma_score ?? '',
-  tma_delay_days: '',
-  latest_cma_score: row.latest_cma_score ?? '',
-  cma_delay_days: '',
-  new_submission_type: submissionTypes(row).includes(previous.new_submission_type) ? previous.new_submission_type : submissionTypes(row)[0] || 'TMA',
-  new_submission_score: '',
-  new_submission_delay_days: '',
-});
-
-const NumberInput = ({ label, value, onChange, max, min = 0, disabled = false, hint = '' }) => (
-  <label className="space-y-2">
-    <span className="text-xs font-mono uppercase text-light-accent/50">{label}</span>
-    <input
-      aria-label={label}
-      value={value ?? ''}
-      type="number"
-      min={min}
-      max={max}
-      disabled={disabled}
-      onChange={(event) => {
-        const next = event.target.value;
-        if (next === '') {
-          onChange('');
-          return;
-        }
-        onChange(clamp(Math.trunc(Number(next)), min, max));
-      }}
-      className="w-full rounded-xl border border-border bg-surface px-3 py-2 text-sm text-light-accent focus:outline-none focus:border-accent disabled:opacity-50"
-    />
-    <p className="text-xs text-light-accent/45">Highest allowed now: {max}{hint ? ` ${hint}` : ''}</p>
-  </label>
-);
-
-const SummaryCard = ({ label, value }) => (
-  <div className="rounded-xl border border-border bg-surface/60 p-4">
-    <p className="text-xs font-mono uppercase text-light-accent/45">{label}</p>
-    <p className="text-xl font-display font-bold text-light-accent">{value}</p>
-  </div>
-);
+const USABLE_STATES = ['current', 'needs_reevaluation'];
 
 export default function StudentPredictionPage() {
   const [enrollments, setEnrollments] = useState([]);
   const [selectedId, setSelectedId] = useState('');
-  const [form, setForm] = useState({});
+  const [form, setForm] = useState(null);
   const [prediction, setPrediction] = useState(null);
   const [scenario, setScenario] = useState(null);
+  const [status, setStatus] = useState(null);
   const [scenarioPrediction, setScenarioPrediction] = useState(null);
   const [scenarioError, setScenarioError] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const predictionRequest = useRef(null);
   const scenarioRequest = useRef(null);
   const scenarioPredictionRequest = useRef(null);
@@ -110,13 +33,9 @@ export default function StudentPredictionPage() {
     () => enrollments.find((item) => String(item.enrollment_id) === String(selectedId)),
     [enrollments, selectedId]
   );
-
-  const limits = getLimits(selected, form);
-  const availableSubmissionTypes = submissionTypes(selected);
-
-  const setField = (key, value) => {
-    setForm((prev) => ({ ...prev, [key]: value }));
-  };
+  const payload = selected && form ? buildPayload(form, selected) : null;
+  const canSave = Boolean(payload && hasChanges(payload));
+  const busy = saving || deleting;
 
   const loadData = async (signal) => {
     setLoading(true);
@@ -125,11 +44,7 @@ export default function StudentPredictionPage() {
       if (signal.aborted) return;
       const rows = data.enrollments || [];
       setEnrollments(rows);
-      const first = rows[0];
-      if (first) {
-        setSelectedId(first.enrollment_id);
-        setForm(resetSimulationForm(first));
-      }
+      if (rows[0]) setSelectedId(rows[0].enrollment_id);
     } catch (err) {
       if (!signal.aborted) toast.error(err.response?.data?.error || 'Failed to load your data');
     } finally {
@@ -167,13 +82,20 @@ export default function StudentPredictionPage() {
     setScenarioError('');
     try {
       const { data } = await studentService.getScenarioPrediction(enrollmentId, { signal: controller.signal });
-      if (!controller.signal.aborted) setScenarioPrediction(data);
+      if (controller.signal.aborted) return;
+      setScenarioPrediction(data);
+      if (data.status) setStatus(data.status);
     } catch (err) {
-      if (!controller.signal.aborted) setScenarioError(err.response?.data?.error || 'Hypothetical risk could not be evaluated. Try again.');
+      if (controller.signal.aborted) return;
+      const body = err.response?.data;
+      // A stale or invalid scenario is a state, not an outage: show it as such.
+      if (body?.status?.state) setStatus(body.status);
+      else setScenarioError(body?.error || 'Hypothetical risk could not be evaluated. Try again.');
     }
   };
 
-  const saveData = async () => {
+  // Shared by "Save & evaluate" and by updating a stale scenario to today.
+  const applyScenario = async (inputs, { reevaluating = false } = {}) => {
     if (!selected) return;
     scenarioRequest.current?.abort();
     scenarioPredictionRequest.current?.abort();
@@ -182,34 +104,66 @@ export default function StudentPredictionPage() {
     const enrollmentId = selected.enrollment_id;
     setSaving(true);
     try {
-      const payload = {
-        quiz_clicks: toNumber(form.quiz_clicks, 0),
-        forum_clicks: toNumber(form.forum_clicks, 0),
-        resource_clicks: toNumber(form.resource_clicks, 0),
-        activity_days: toNumber(form.activity_days, 1),
-      };
-
-      if (form.latest_tma_score !== '') payload.latest_tma_score = toNumber(form.latest_tma_score, 0);
-      if (form.tma_delay_days !== '') payload.tma_delay_days = toNumber(form.tma_delay_days, 0);
-      if (form.latest_cma_score !== '') payload.latest_cma_score = toNumber(form.latest_cma_score, 0);
-      if (form.cma_delay_days !== '') payload.cma_delay_days = toNumber(form.cma_delay_days, 0);
-
-      if (availableSubmissionTypes.length > 0 && form.new_submission_score !== '') {
-        payload.new_submission_type = form.new_submission_type;
-        payload.new_submission_score = toNumber(form.new_submission_score, 0);
-        if (form.new_submission_delay_days !== '') {
-          payload.new_submission_delay_days = toNumber(form.new_submission_delay_days, 0);
-        }
-      }
-
-      const { data } = await studentService.saveScenario(selected.enrollment_id, payload);
+      const { data } = await studentService.saveScenario(enrollmentId, inputs);
       setScenario(data.scenario);
-      toast.success('Scenario saved. Your academic records are unchanged.');
+      setStatus({ state: 'current', reasons: [], based_on_day: data.scenario.based_on_day, current_day: data.scenario.based_on_day });
+      setForm(formFromInputs(selected, data.scenario.inputs));
+      toast.success(reevaluating ? 'Scenario updated. Your academic records are unchanged.' : 'Scenario saved. Your academic records are unchanged.');
       await evaluateScenario(enrollmentId);
     } catch (err) {
-      toast.error(err.response?.data?.error || err.response?.data?.detail || err.message || 'Failed to save your data');
+      const message = err.response?.data?.error || err.response?.data?.detail || err.message || 'Failed to save your scenario';
+      if (reevaluating && err.response?.status === 400) {
+        setStatus((previous) => ({ ...(previous || {}), state: 'invalid', reasons: [message] }));
+      } else {
+        toast.error(message);
+      }
     } finally {
       setSaving(false);
+    }
+  };
+
+  const saveData = () => { if (payload) applyScenario(payload); };
+  const reevaluate = () => { if (scenario) applyScenario(scenario.inputs, { reevaluating: true }); };
+  const clearControls = () => { if (selected) setForm(defaultForm(selected)); };
+
+  const clearScenarioState = () => {
+    scenarioPredictionRequest.current?.abort();
+    setScenario(null);
+    setStatus(null);
+    setScenarioPrediction(null);
+    setScenarioError('');
+    if (selected) setForm(defaultForm(selected));
+  };
+
+  const deleteSaved = async () => {
+    if (!selected) return;
+    setDeleting(true);
+    try {
+      await studentService.deleteScenario(selected.enrollment_id);
+      clearScenarioState();
+      setConfirmDelete(false);
+      toast.success('Scenario deleted. Your actual prediction is unchanged.');
+    } catch (err) {
+      if (err.response?.status === 404) {
+        clearScenarioState();
+        setConfirmDelete(false);
+        toast.success('Scenario already removed. Your actual prediction is unchanged.');
+      } else {
+        toast.error(err.response?.data?.error || 'Failed to delete the scenario');
+      }
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const togglePlan = async () => {
+    if (!selected || !scenario) return;
+    try {
+      const { data } = await studentService.setScenarioPlan(selected.enrollment_id, !scenario.plan);
+      setScenario(data.scenario);
+      toast.success(data.message || 'Learning plan updated.');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to update the learning plan');
     }
   };
 
@@ -223,16 +177,21 @@ export default function StudentPredictionPage() {
     const controller = new AbortController();
     scenarioRequest.current = controller;
     if (selected) {
-      setForm(resetSimulationForm(selected));
+      setForm(defaultForm(selected));
       setPrediction(null);
       setScenario(null);
+      setStatus(null);
       setScenarioPrediction(null);
       setScenarioError('');
       runPrediction(selected);
       studentService.getScenario(selected.enrollment_id, { signal: controller.signal }).then(({ data }) => {
-        if (!controller.signal.aborted) {
-          setScenario(data.scenario?.data || null);
-          if (data.scenario?.data) evaluateScenario(selected.enrollment_id);
+        if (controller.signal.aborted) return;
+        const saved = data.scenario?.data || null;
+        setScenario(saved);
+        setStatus(data.status || null);
+        if (saved) {
+          setForm(formFromInputs(selected, saved.inputs));
+          if (!data.status || USABLE_STATES.includes(data.status.state)) evaluateScenario(selected.enrollment_id);
         }
       }).catch((error) => {
         if (!controller.signal.aborted) toast.error(error.response?.data?.error || 'Saved scenario could not be loaded');
@@ -241,20 +200,21 @@ export default function StudentPredictionPage() {
     return () => { controller.abort(); predictionRequest.current?.abort(); scenarioPredictionRequest.current?.abort(); };
   }, [selected]);
 
-  const summary = selected ? [
-    ['Day', selected.current_day],
-    ['Total Clicks', selected.total_clicks],
-    ['Active Days', selected.active_days],
-    ['Days Since Activity', selected.days_since_last_click ?? '-'],
-    ['Avg Score', Number(selected.avg_score || 0).toFixed(1)],
+  const evidence = selected ? [
+    ['Course day', selected.current_day],
+    ['Interactions', selected.total_clicks],
+    ['Active days', selected.active_days],
+    ['Days since last activity', selected.days_since_last_click ?? '—'],
+    ['Average score', Number(selected.avg_score || 0).toFixed(1)],
     ['Submitted', selected.num_submitted],
-    ['Submission Rate', `${Math.round(Number(selected.submission_rate || 0) * 100)}%`],
-    ['Late Avg', Number(selected.avg_days_late || 0).toFixed(1)],
+    ['Submission rate', `${Math.round(Number(selected.submission_rate || 0) * 100)}%`],
+    ['Average days late', Number(selected.avg_days_late || 0).toFixed(1)],
   ] : [];
+  const pendingChanges = payload ? describeChanges(payload, selected) : [];
 
   return (
     <div className="p-6 space-y-6">
-      <PageHeader title="EduPredict" icon={BookOpen} description="Explore a separate what-if scenario alongside your actual academic prediction.">
+      <PageHeader title="EduPredict" icon={BookOpen} description="See your actual academic prediction, then explore a separate what-if scenario without changing any records.">
         <button onClick={() => runPrediction(selected, true)} disabled={loading || !selected} className="flex items-center gap-2 rounded-xl border border-border px-4 py-2 text-sm text-light-accent disabled:opacity-60"><RefreshCw className={loading ? 'animate-spin' : ''} size={16} />Rerun actual prediction</button>
       </PageHeader>
 
@@ -264,7 +224,7 @@ export default function StudentPredictionPage() {
             <span className="text-xs font-mono uppercase text-light-accent/50">Course</span>
             <select
               value={selectedId}
-              disabled={saving}
+              disabled={busy}
               onChange={(event) => setSelectedId(event.target.value)}
               className="w-full rounded-xl border border-border bg-surface px-3 py-2 text-sm text-light-accent focus:outline-none focus:border-accent"
             >
@@ -279,70 +239,54 @@ export default function StudentPredictionPage() {
 
         {selected ? (
           <>
-            <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
-              {summary.map(([label, value]) => (
-                <SummaryCard key={label} label={label} value={value} />
-              ))}
-            </div>
-
-            <div className="rounded-2xl border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-800">
-              These what-if inputs are stored separately and never change your actual grades or activity. Activity means extra interactions with the course platform up to the current day. The maximum is based on day {selected.current_day}.
-            </div>
-
-            <div className="rounded-2xl border border-border bg-surface/40 p-5 space-y-4">
-              <div className="flex items-center gap-2">
-                <MousePointerClick className="w-5 h-5 text-accent" />
-                <h2 className="font-display text-sm font-semibold text-light-accent">1. Add Learning Activity</h2>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-                <NumberInput label="Extra Quiz Activity" value={form.quiz_clicks} max={limits.maxClicks} onChange={(value) => setField('quiz_clicks', value)} hint="interactions" />
-                <NumberInput label="Extra Forum Activity" value={form.forum_clicks} max={limits.maxClicks} onChange={(value) => setField('forum_clicks', value)} hint="interactions" />
-                <NumberInput label="Extra Resource Study" value={form.resource_clicks} max={limits.maxClicks} onChange={(value) => setField('resource_clicks', value)} hint="interactions" />
-                <NumberInput label="Days You Were Active" value={form.activity_days} min={1} max={limits.elapsedDays} onChange={(value) => setField('activity_days', value || 1)} hint="days" />
+            <div>
+              <p className="text-xs font-mono uppercase text-light-accent/45 mb-2">Your records today</p>
+              <div className="evidence-grid">
+                {evidence.map(([label, value]) => (
+                  <div key={label} className="evidence-cell"><p>{label}</p><p>{value}</p></div>
+                ))}
               </div>
             </div>
 
-            <div className="rounded-2xl border border-border bg-surface/40 p-5 space-y-4">
-              <div className="flex items-center gap-2">
-                <BookOpen className="w-5 h-5 text-accent" />
-                <h2 className="font-display text-sm font-semibold text-light-accent">2. Update Latest Grades</h2>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-                <NumberInput label="TMA Score" value={form.latest_tma_score} max={100} disabled={!selected.latest_tma_id} onChange={(value) => setField('latest_tma_score', value)} />
-                <NumberInput label="TMA Late Days" value={form.tma_delay_days} max={limits.tmaDelayMax} disabled={!selected.latest_tma_id} onChange={(value) => setField('tma_delay_days', value)} />
-                <NumberInput label="CMA Score" value={form.latest_cma_score} max={100} disabled={!selected.latest_cma_id} onChange={(value) => setField('latest_cma_score', value)} />
-                <NumberInput label="CMA Late Days" value={form.cma_delay_days} max={limits.cmaDelayMax} disabled={!selected.latest_cma_id} onChange={(value) => setField('cma_delay_days', value)} />
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-border bg-surface/40 p-5 space-y-4">
-              <h2 className="font-display text-sm font-semibold text-light-accent">3. Add a New Submission</h2>
-              {availableSubmissionTypes.length === 0 ? (
-                <div className="rounded-xl border border-border bg-surface/70 px-4 py-3 text-sm text-light-accent/60">
-                  No unsubmitted TMA/CMA is due by the current course day. Future submissions become available as the course clock advances.
+            {prediction ? (
+              <motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="rounded-2xl border border-border bg-surface/40 p-5 space-y-4" aria-label="Actual academic prediction">
+                <div className="flex flex-wrap items-center gap-3">
+                  <Sparkles className="w-5 h-5 text-accent" aria-hidden="true" />
+                  <h2 className="font-display font-semibold text-light-accent">Actual academic prediction</h2>
+                  <StatusBadge status="success">From real records</StatusBadge>
                 </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <label className="space-y-2">
-                    <span className="text-xs font-mono uppercase text-light-accent/50">Submission Type</span>
-                    <select
-                      value={form.new_submission_type}
-                      onChange={(event) => setField('new_submission_type', event.target.value)}
-                      className="w-full rounded-xl border border-border bg-surface px-3 py-2 text-sm text-light-accent focus:outline-none focus:border-accent"
-                    >
-                      {availableSubmissionTypes.map((type) => <option key={type} value={type}>{type}</option>)}
-                    </select>
-                  </label>
-                  <NumberInput label="Score" value={form.new_submission_score} max={100} onChange={(value) => setField('new_submission_score', value)} />
-                  <NumberInput label="Late Days" value={form.new_submission_delay_days} max={limits.newDelayMax} onChange={(value) => setField('new_submission_delay_days', value)} />
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+                  <div>
+                    <p className="text-xs font-mono uppercase text-light-accent/45">Risk level</p>
+                    <p className="text-2xl font-display font-bold text-light-accent">{prediction.risk_level}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-mono uppercase text-light-accent/45">Probability</p>
+                    <p className="text-2xl font-display font-bold text-light-accent">{formatPercent(prediction.risk_probability)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-mono uppercase text-light-accent/45">At risk</p>
+                    <p className="text-2xl font-display font-bold text-light-accent">{prediction.at_risk ? 'Yes' : 'No'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-mono uppercase text-light-accent/45">Day</p>
+                    <p className="text-2xl font-display font-bold text-light-accent">{prediction.day_of_course ?? prediction.model_confidence?.day_of_course ?? selected.current_day}</p>
+                  </div>
                 </div>
-              )}
-            </div>
-
-            <button onClick={saveData} disabled={saving} className="flex items-center gap-2 rounded-xl bg-secondary px-4 py-2 text-sm font-medium text-white disabled:opacity-60">
-              <Save className="w-4 h-4" />
-              {saving ? 'Saving...' : 'Save & evaluate scenario'}
-            </button>
+                {(prediction.explanation || []).length > 0 && (
+                  <div>
+                    <p className="text-xs font-mono uppercase text-light-accent/45 mb-2">Reasons</p>
+                    <ul className="space-y-2">
+                      {prediction.explanation.map((item, index) => (
+                        <li key={index} className="rounded-xl border border-border bg-surface/70 px-4 py-3 text-sm text-light-accent/75">{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </motion.section>
+            ) : (
+              <p className="text-sm text-light-accent/50">{loading ? 'Loading your actual prediction…' : 'Your actual prediction is not available right now.'}</p>
+            )}
           </>
         ) : (
           <div className="h-24 flex items-center justify-center text-light-accent/40">
@@ -351,65 +295,57 @@ export default function StudentPredictionPage() {
         )}
       </div>
 
-      {scenario && (
-        <section className="glass rounded-2xl p-5 space-y-3" aria-label="Saved scenario">
-          <h2 className="font-display font-semibold">Saved What-if Scenario</h2>
-          <p className="text-sm text-light-accent/65">{scenario.message}</p>
-          <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
-            <SummaryCard label="Projected Clicks" value={scenario.projected.total_clicks} />
-            <SummaryCard label="Projected TMA" value={scenario.projected.latest_tma_score ?? '—'} />
-            <SummaryCard label="Projected CMA" value={scenario.projected.latest_cma_score ?? '—'} />
-            <SummaryCard label="Based on Day" value={scenario.based_on_day} />
-          </div>
-        </section>
-      )}
-      {scenarioError && <p role="alert" className="text-sm text-amber-700">{scenarioError}</p>}
-      {scenarioPrediction && (
-        <section className="glass rounded-2xl p-6 glow-border space-y-4" aria-label="Hypothetical scenario prediction">
-          <h2 className="font-display font-semibold text-light-accent">Hypothetical Scenario Prediction</h2>
-          <p className="text-sm text-light-accent/65">Based on your saved what-if inputs for day {scenarioPrediction.based_on_day}. Your actual prediction and academic records are unchanged.</p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <SummaryCard label="Hypothetical Risk Level" value={scenarioPrediction.risk_level} />
-            <SummaryCard label="Hypothetical Probability" value={`${(scenarioPrediction.risk_probability * 100).toFixed(1)}%`} />
-            <SummaryCard label="Hypothetical At Risk" value={scenarioPrediction.at_risk ? 'Yes' : 'No'} />
-          </div>
-          <ul className="space-y-2">{(scenarioPrediction.explanation || []).map((item, index) => <li key={index} className="rounded-xl border border-border bg-surface/70 px-4 py-3 text-sm text-light-accent/75">{item}</li>)}</ul>
-        </section>
-      )}
-      {prediction && (
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-2xl p-6 glow-border space-y-5">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-accent" />
-            <h2 className="font-display font-semibold text-light-accent">Actual Academic Prediction</h2>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-            <div>
-              <p className="text-xs font-mono uppercase text-light-accent/45">Risk Level</p>
-              <p className="text-2xl font-display font-bold text-light-accent">{prediction.risk_level}</p>
-            </div>
-            <div>
-              <p className="text-xs font-mono uppercase text-light-accent/45">Probability</p>
-              <p className="text-2xl font-display font-bold text-light-accent">{(prediction.risk_probability * 100).toFixed(1)}%</p>
-            </div>
-            <div>
-              <p className="text-xs font-mono uppercase text-light-accent/45">At Risk</p>
-              <p className="text-2xl font-display font-bold text-light-accent">{prediction.at_risk ? 'Yes' : 'No'}</p>
-            </div>
-            <div>
-              <p className="text-xs font-mono uppercase text-light-accent/45">Day</p>
-              <p className="text-2xl font-display font-bold text-light-accent">{prediction.day_of_course ?? prediction.model_confidence?.day_of_course ?? selected?.current_day}</p>
-            </div>
-          </div>
+      {selected && form && (
+        <div className="glass rounded-2xl p-5 glow-border space-y-5">
           <div>
-            <p className="text-xs font-mono uppercase text-light-accent/45 mb-2">Reasons</p>
-            <ul className="space-y-2">
-              {(prediction.explanation || []).map((item, index) => (
-                <li key={index} className="rounded-xl border border-border bg-surface/70 px-4 py-3 text-sm text-light-accent/75">{item}</li>
-              ))}
-            </ul>
+            <h2 className="font-display font-semibold text-light-accent">What would you like to explore?</h2>
+            <p className="text-sm text-light-accent/65 mt-1">Build a what-if scenario in a minute. It is stored separately and never changes your grades, activity or actual prediction.</p>
           </div>
-        </motion.div>
+
+          <ScenarioBuilder row={selected} form={form} onChange={setForm} disabled={busy} />
+
+          <div className="scenario-actions">
+            <button type="button" onClick={saveData} disabled={busy || !canSave} className="button-primary-sm" title={canSave ? undefined : 'Choose at least one change first'}>
+              <Save size={14} aria-hidden="true" />
+              {saving ? 'Saving...' : 'Save & evaluate scenario'}
+            </button>
+            <button type="button" onClick={clearControls} disabled={busy} className="button-outline">
+              <Eraser size={14} aria-hidden="true" />Clear controls
+            </button>
+            {!canSave && <span className="text-xs text-light-accent/50">Choose at least one change to evaluate a scenario.</span>}
+            {canSave && scenario && pendingChanges.length > 0 && <span className="text-xs text-light-accent/50">Saving replaces your current saved scenario.</span>}
+          </div>
+        </div>
       )}
+
+      {selected && (
+        <ScenarioResults
+          row={selected}
+          prediction={prediction}
+          scenario={scenario}
+          status={status}
+          scenarioPrediction={scenarioPrediction}
+          scenarioError={scenarioError}
+          busy={busy}
+          onReevaluate={reevaluate}
+          onDelete={() => setConfirmDelete(true)}
+          onTogglePlan={togglePlan}
+        />
+      )}
+
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete this what-if scenario?"
+        description="Only the saved scenario is removed. Your grades, activity and actual academic prediction stay exactly as they are."
+        confirmLabel="Delete scenario"
+        busy={deleting}
+        onConfirm={deleteSaved}
+        onCancel={() => setConfirmDelete(false)}
+      >
+        {scenario && describeChanges(scenario.inputs || {}, selected).length > 0 && (
+          <ul>{describeChanges(scenario.inputs || {}, selected).map((change) => <li key={change}>{change}</li>)}</ul>
+        )}
+      </ConfirmDialog>
     </div>
   );
 }
