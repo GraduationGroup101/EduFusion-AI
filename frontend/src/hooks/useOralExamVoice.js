@@ -1,7 +1,7 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {socketUrl} from '../services/oralExam';
 import {oralLifecycle} from '../services/oralExamDiagnostics';
-import {claimResumeKey,forgetResumeKey} from '../services/oralExamResume';
+import {claimResumeKey,forgetResumeKey,nextResumeAttempt} from '../services/oralExamResume';
 
 // The server keeps an orphaned connection's lease for up to ~35 s (pong watchdog)
 // or 20 s after its process stops. A busy lease is retried for longer than that.
@@ -57,9 +57,11 @@ export function useOralExamVoice(onSession) {
       if(!active())return;
       setState('connecting');r.phase='connecting';
       const ws=new WebSocket(socketUrl()),instance=crypto.randomUUID();r.socket=ws;
+      // Numbered when the socket is created, so the server can refuse a delayed older handshake.
+      const attempt=nextResumeAttempt(r.sessionId);
       const current=()=>active()&&r.socket===ws;
       const log=(event,fields={})=>oralLifecycle(event,{session:r.sessionId,connection:instance,...fields});
-      log('connect',{attempt:r.attempts});
+      log('connect',{attempt:r.attempts,connection_attempt:attempt});
       function disconnected(code,reason){
         if(!current())return;
         clearTimeout(r.watchdog);r.socket=null;r.source?.stop();
@@ -84,7 +86,7 @@ export function useOralExamVoice(onSession) {
       ws.onopen=()=>{
         if(!current()){ws.close();return;}
         const claim=resume.current.claim;
-        const hello=key=>{if(current()&&ws.readyState===1)ws.send(JSON.stringify({type:'hello',token:localStorage.getItem('token'),sessionId:r.sessionId,connectionKey:key}));};
+        const hello=key=>{if(current()&&ws.readyState===1)ws.send(JSON.stringify({type:'hello',token:localStorage.getItem('token'),sessionId:r.sessionId,connectionKey:key,connectionAttempt:attempt}));};
         // The key is verified against other live tabs before it is ever sent.
         if(claim.key)hello(claim.key);else claim.ready.then(hello);
       };

@@ -48,13 +48,16 @@ async function session(){
   const row=await store.create(user,material,'en',randomUUID());
   return store.start(user,row.id);
 }
-async function connect(sessionId,connectionKey,options={},targetServer=server){
+// Each browser capability numbers its connection attempts, like the real client.
+const attempts=new Map();
+async function connect(sessionId,connectionKey,options={},targetServer=server,hello={}){
   const ws=new WebSocket(`ws://127.0.0.1:${targetServer.address().port}/api/oral-exam/realtime`,{origin:'http://localhost:3000',...options});
   const events=[];
   ws.on('message',raw=>events.push(JSON.parse(raw)));
   const closed=once(ws,'close');
   await once(ws,'open');
-  ws.send(JSON.stringify({type:'hello',sessionId,token:'isolated-auth',connectionKey}));
+  const connectionAttempt=connectionKey?hello.connectionAttempt??attempts.set(connectionKey,(attempts.get(connectionKey)||0)+1).get(connectionKey):undefined;
+  ws.send(JSON.stringify({type:'hello',sessionId,token:'isolated-auth',connectionKey,connectionAttempt,...hello}));
   const until=async predicate=>{
     const deadline=Date.now()+7000;
     while(Date.now()<deadline){const event=events.find(predicate);if(event)return event;await new Promise(r=>setTimeout(r,10));}
@@ -106,18 +109,18 @@ test('an expired lease with no second owner closes retryably rather than claimin
 test('late release and another browser capability cannot clear or steal the current lease',async()=>{
   const row=await session();
   try {
-    const key=randomUUID(),first=await store.claim(user,row.id,key);
-    const second=await store.claim(user,row.id,key);
+    const key=randomUUID(),first=await store.claim(user,row.id,key,1);
+    const second=await store.claim(user,row.id,key,2);
     await store.release(row.id,first.token);
     assert.ok(await store.renew(row.id,second.token));
     assert.equal(await store.renew(row.id,first.token),undefined);
     assert.equal((await store.finish(user,row.id,'student_ended',first.token)).status,'active');
-    await assert.rejects(()=>store.claim(user,row.id,first.token),{statusCode:409});
+    await assert.rejects(()=>store.claim(user,row.id,first.token,1),{statusCode:409});
     await assert.rejects(()=>store.claim(user,row.id,randomUUID()),{statusCode:409});
     await store.release(row.id,second.token);
     const third=await store.claim(user,row.id,randomUUID());
     assert.ok(third.token);
-    await assert.rejects(()=>store.claim(user,row.id,key),{statusCode:409});
+    await assert.rejects(()=>store.claim(user,row.id,key,3),{statusCode:409});
   } finally {await store.finish(user,row.id);}
 });
 test('rapid reconnects recover a lost welcome while rotating every write lease',async()=>{
@@ -212,4 +215,54 @@ test('duplicate final speech and a late old transcriber cannot create duplicate 
     assert.equal(saved.turns[1].transcript,'Second accepted answer.');assert.equal(saved.turns[2].transcript,null);
     assert.equal(+new Date(saved.expires_at),+new Date(row.expires_at));
   } finally {first.ws.terminate();await first.closed;if(second){second.ws.terminate();await second.closed;}await store.finish(user,row.id);}
+});
+
+test('a claim never lets an older or repeated attempt of the same capability take the lease',async()=>{
+  const row=await session();
+  try {
+    const key=randomUUID(),newer=await store.claim(user,row.id,key,5);
+    await assert.rejects(()=>store.claim(user,row.id,key,4),{statusCode:409});
+    await assert.rejects(()=>store.claim(user,row.id,key,5),{statusCode:409});
+    assert.ok(await store.renew(row.id,newer.token));
+    // A normal release frees the lease but still remembers the newest attempt.
+    await store.release(row.id,newer.token);
+    await assert.rejects(()=>store.claim(user,row.id,key,3),{statusCode:409});
+    const next=await store.claim(user,row.id,key,6);
+    assert.ok(await store.renew(row.id,next.token));
+    const saved=await store.get(user,row.id);
+    assert.equal(store.publicView(saved).lease_client_attempt,undefined);
+  } finally {await store.finish(user,row.id);}
+});
+test('overlapping handshakes: a delayed older authentication cannot replace a newer welcomed socket',async()=>{
+  let releaseSlowAuth;const slowAuth=new Promise(resolve=>{releaseSlowAuth=resolve;});
+  let slowStarted;const slowStart=new Promise(resolve=>{slowStarted=resolve;});
+  const racingServer=require('node:http').createServer();
+  racingServer.listen(0,'127.0.0.1');await once(racingServer,'listening');
+  const racingRuntime=attachRealtime(racingServer,{...runtimeDependencies,authenticate:async token=>{
+    if(token==='slow-auth'){slowStarted();await slowAuth;}
+    return {user,expires:Date.now()+3600000};
+  }});
+  const row=await session(),key=randomUUID();
+  let older,newer;
+  try {
+    older=await connect(row.id,key,{},racingServer,{token:'slow-auth',connectionAttempt:1});
+    await slowStart;
+    newer=await connect(row.id,key,{},racingServer,{connectionAttempt:2});
+    await newer.until(e=>e.type==='welcome');await newer.until(e=>e.type==='question');
+    const owned=await store.get(user,row.id);
+    releaseSlowAuth();
+    const [code]=await Promise.race([older.closed,new Promise((_,reject)=>setTimeout(()=>reject(new Error('The older handshake kept the exam')),5000))]);
+    assert.equal(code,4429);
+    assert.equal(older.events.some(e=>e.type==='welcome'),false);
+    // Give any mistaken takeover time to close the newer socket.
+    await new Promise(resolve=>setTimeout(resolve,300));
+    assert.equal(newer.ws.readyState,WebSocket.OPEN);
+    const current=await store.get(user,row.id);
+    assert.equal(current.lease_token,owned.lease_token);
+    assert.ok(await store.renew(row.id,owned.lease_token));
+  } finally {
+    releaseSlowAuth();
+    for(const c of [older,newer])if(c){c.ws.terminate();await c.closed;}
+    racingRuntime.close();await new Promise(resolve=>racingServer.close(resolve));await store.finish(user,row.id);
+  }
 });

@@ -51,7 +51,8 @@ it('reconnects a server-side close with a private resume credential and the same
   act(()=>sockets[0].closed(4500,'Connection unavailable'));
   act(()=>vi.advanceTimersByTime(1100));
   expect(sockets).toHaveLength(2);act(()=>sockets[1].open());
-  expect(sockets[1].sent[0]).toMatchObject({type:'hello',sessionId:'exam-1',connectionKey});
+  expect(sockets[0].sent[0].connectionAttempt).toBe(1);
+  expect(sockets[1].sent[0]).toMatchObject({type:'hello',sessionId:'exam-1',connectionKey,connectionAttempt:2});
   act(()=>sockets[1].message({type:'welcome',session:snapshot(Date.now())}));
   expect(hook.result.current.error).toBe('');hook.unmount();
 });
@@ -119,6 +120,8 @@ it('a refreshed tab reclaims its orphaned connection with the same resume key',a
   before.unmount();
   const after=await ready();
   expect(await helloKey(sockets[1])).toBe(key);
+  // The server only lets a strictly newer attempt of the same key reclaim the exam.
+  expect(sockets[1].sent[0].connectionAttempt).toBeGreaterThan(sockets[0].sent[0].connectionAttempt);
   after.unmount();delete navigator.locks;
 });
 it('a duplicated tab inherits the stored key but must use its own while the original is alive',async()=>{
@@ -138,6 +141,7 @@ it('an ended exam forgets the stored resume key',async()=>{
   expect(sessionStorage.getItem('oral-exam-resume:exam-1')).not.toBeNull();
   act(()=>sockets[0].message({type:'ended',session:{...snapshot(Date.now()),status:'completed'}}));
   expect(sessionStorage.getItem('oral-exam-resume:exam-1')).toBeNull();
+  expect(sessionStorage.getItem('oral-exam-resume:exam-1:attempt')).toBeNull();
   hook.unmount();delete navigator.locks;
 });
 it('keeps retrying a busy lease until an orphaned connection must have been released',async()=>{
@@ -154,5 +158,14 @@ it('stops retrying a lease held by another live tab after the busy window',async
   for(let i=0;i<14;i++){act(()=>{sockets.at(-1)?.open();sockets.at(-1)?.closed(4429,'Session unavailable');});act(()=>vi.advanceTimersByTime(8400));}
   expect(hook.result.current.state).toBe('error');
   expect(hook.result.current.error).toMatch(/another tab or window/);
+  hook.unmount();
+});
+it('numbers attempts in creation order, so a replaced socket that opens late sends the older number',async()=>{
+  const hook=await ready();const older=sockets[0];
+  act(()=>hook.result.current.connect(snapshot()));const newer=sockets[1];
+  act(()=>newer.open());act(()=>older.open());
+  expect(newer.sent[0].connectionAttempt).toBe(2);
+  // The replaced socket is closed instead of sending a hello.
+  expect(older.sent).toHaveLength(0);
   hook.unmount();
 });

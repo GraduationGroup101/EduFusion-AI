@@ -1,6 +1,7 @@
 import PageHeader from '../components/ui/PageHeader';
 import StatusBadge from '../components/ui/StatusBadge';
 import EmptyState from '../components/ui/EmptyState';
+import BrandedLoader from '../components/ui/BrandedLoader';
 import { lazy,Suspense,useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
@@ -138,7 +139,7 @@ export function ChatbotFilesPage() {
         Manage knowledge base <ExternalLink size={16}/>
       </a>
     </div>
-    <Suspense fallback={<p role="status">Loading academic chatbot…</p>}><AcademicChatbot/></Suspense>
+    <Suspense fallback={<BrandedLoader variant="panel" label="Loading Academic Chatbot" />}><AcademicChatbot/></Suspense>
   </>;
 }
 

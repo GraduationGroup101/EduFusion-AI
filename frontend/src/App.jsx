@@ -3,6 +3,7 @@ import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './context/AuthContext';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import DashboardLayout from './components/layout/DashboardLayout';
+import BrandedLoader from './components/ui/BrandedLoader';
 import Landing from './pages/Landing';
 import Auth from './pages/Auth';
 import { lazy, Suspense } from 'react';
@@ -23,7 +24,9 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <Suspense fallback={<div role="status" className="p-8 text-light-accent">Loading page…</div>}>
+        {/* Public and shell chunks: a full-screen branded loader. Pages inside the
+            workspace have their own Suspense in DashboardLayout so the shell stays. */}
+        <Suspense fallback={<BrandedLoader variant="screen" label="Loading EduFusion" />}>
         <Routes>
           {/* Public */}
           <Route path="/" element={<Landing />} />

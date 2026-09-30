@@ -2,7 +2,7 @@
 // after a transport drop, even when the page is refreshed while the server
 // still holds the orphaned connection's lease.
 //
-// - sessionStorage keeps the key across a refresh of the same tab only.
+// - sessionStorage keeps the key, and its attempt counter, across a refresh of the same tab only.
 // - A Web Lock named after the key is held for the page's lifetime. A duplicated
 //   tab inherits sessionStorage but cannot take the lock while the original tab
 //   is alive, so it gets a fresh key and stays a separate owner.
@@ -47,4 +47,18 @@ export function claimResumeKey(sessionId){
   return claim;
 }
 
-export function forgetResumeKey(sessionId){try{sessionStorage.removeItem(PREFIX+sessionId);}catch{/* Nothing stored. */}}
+// The server accepts a reclaim only from a strictly newer attempt of the same key,
+// so attempt numbers must keep increasing across a refresh of this tab too.
+const ATTEMPT=':attempt';
+const memoryAttempts=new Map();
+export function nextResumeAttempt(sessionId){
+  const name=PREFIX+sessionId+ATTEMPT;
+  let stored=0;
+  try{stored=Number(sessionStorage.getItem(name))||0;}catch{/* Storage unavailable: count in memory. */}
+  // Memory is only used when storage fails, so a failed write never repeats a number.
+  const next=Math.max(stored,memoryAttempts.get(name)||0)+1;
+  try{sessionStorage.setItem(name,String(next));}catch{memoryAttempts.set(name,next);}
+  return next;
+}
+
+export function forgetResumeKey(sessionId){try{sessionStorage.removeItem(PREFIX+sessionId);sessionStorage.removeItem(PREFIX+sessionId+ATTEMPT);}catch{/* Nothing stored. */}}

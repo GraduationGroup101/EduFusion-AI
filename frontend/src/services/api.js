@@ -130,6 +130,8 @@ export const studentService = {
   saveScenario: (enrollmentId, data) => api.put(`/student/scenarios/${enrollmentId}`, data),
   getScenario: (enrollmentId, options = {}) => api.get(`/student/scenarios/${enrollmentId}`, options),
   getScenarioPrediction: (enrollmentId, options = {}) => api.get(`/student/scenarios/${enrollmentId}/prediction`, options),
+  deleteScenario: (enrollmentId) => api.delete(`/student/scenarios/${enrollmentId}`),
+  setScenarioPlan: (enrollmentId, adopted) => api.patch(`/student/scenarios/${enrollmentId}/plan`, { adopted }),
   getPrediction: (params = {}, options = {}) => api.get('/student/prediction', { ...options, params }),
 };
 

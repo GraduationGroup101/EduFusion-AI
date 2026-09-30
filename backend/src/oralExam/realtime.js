@@ -117,12 +117,15 @@ function attachRealtime(server,dependencies={}) {
           if(msg.type!=='hello'||typeof msg.token!=='string'||msg.token.length>8000)throw new Error('Invalid handshake');
           const sessionId=id.parse(msg.sessionId);
           const clientId=msg.connectionKey==null?null:id.parse(msg.connectionKey);
+          // A capability must number its attempts so the newest one always wins.
+          const attempt=clientId?msg.connectionAttempt:null;
+          if(clientId&&!(Number.isSafeInteger(attempt)&&attempt>=1&&attempt<=2147483647))throw new Error('Invalid handshake');
           const identity=await auth(msg.token);
           if(closed)return;
           user=identity.user;
           session=await store.get(user,sessionId);
           if(session.status!=='active'){send({type:'ended',session:store.publicView(session)});ws.close(1000);return;}
-          const lease=await store.claim(user,sessionId,clientId);token=lease.token;
+          const lease=await store.claim(user,sessionId,clientId,attempt);token=lease.token;
           if(closed){await store.release(sessionId,token);return;}
           // Retire a resumed local socket immediately, including provider work.
           // On another process the database token still fences every old write.
