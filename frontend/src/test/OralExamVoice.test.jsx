@@ -93,3 +93,66 @@ it('a real ownership conflict and expired authentication stop automatic reconnec
     expect(sockets).toHaveLength(count);expect(hook.result.current.state).toBe('error');hook.unmount();
   }
 });
+
+// A minimal Web Locks implementation: exclusive named locks, ifAvailable and abort signals.
+function installLocks(){
+  const held=new Set(),waiting=new Map();
+  const request=(name,options,callback)=>new Promise((resolve,reject)=>{
+    const grant=()=>{held.add(name);Promise.resolve(callback({name})).then(value=>{held.delete(name);waiting.get(name)?.shift()?.();resolve(value);},reject);};
+    if(!held.has(name))return grant();
+    if(options.ifAvailable)return Promise.resolve(callback(null)).then(resolve,reject);
+    const queue=waiting.get(name)||[];waiting.set(name,queue);queue.push(grant);
+    options.signal?.addEventListener('abort',()=>{queue.splice(queue.indexOf(grant),1);reject(new DOMException('Aborted','AbortError'));});
+  });
+  Object.defineProperty(navigator,'locks',{configurable:true,value:{request}});
+  vi.spyOn(AbortSignal,'timeout').mockImplementation(ms=>{const controller=new AbortController();setTimeout(()=>controller.abort(),ms);return controller.signal;});
+}
+async function helloKey(socket){
+  await act(async()=>{socket.open();await vi.advanceTimersByTimeAsync(0);});
+  return socket.sent[0]?.connectionKey;
+}
+it('a refreshed tab reclaims its orphaned connection with the same resume key',async()=>{
+  installLocks();
+  const before=await ready();const key=await helloKey(sockets[0]);
+  expect(key).toMatch(/^[0-9a-f-]{36}$/);
+  // Refresh: the page unloads without a server-side close, then mounts again in the same tab.
+  before.unmount();
+  const after=await ready();
+  expect(await helloKey(sockets[1])).toBe(key);
+  after.unmount();delete navigator.locks;
+});
+it('a duplicated tab inherits the stored key but must use its own while the original is alive',async()=>{
+  installLocks();
+  const original=await ready();const key=await helloKey(sockets[0]);
+  const duplicate=await ready();
+  await act(async()=>{sockets[1].open();await vi.advanceTimersByTimeAsync(0);});
+  expect(sockets[1].sent).toHaveLength(0); // No key is sent until ownership is verified.
+  await act(()=>vi.advanceTimersByTimeAsync(1600));
+  const other=sockets[1].sent[0].connectionKey;
+  expect(other).toMatch(/^[0-9a-f-]{36}$/);expect(other).not.toBe(key);
+  original.unmount();duplicate.unmount();delete navigator.locks;
+});
+it('an ended exam forgets the stored resume key',async()=>{
+  installLocks();
+  const hook=await ready();await helloKey(sockets[0]);
+  expect(sessionStorage.getItem('oral-exam-resume:exam-1')).not.toBeNull();
+  act(()=>sockets[0].message({type:'ended',session:{...snapshot(Date.now()),status:'completed'}}));
+  expect(sessionStorage.getItem('oral-exam-resume:exam-1')).toBeNull();
+  hook.unmount();delete navigator.locks;
+});
+it('keeps retrying a busy lease until an orphaned connection must have been released',async()=>{
+  const hook=await ready();
+  // The first eight attempts meet a lease still renewed by the dropped connection.
+  for(let i=0;i<8;i++){act(()=>{sockets.at(-1).open();sockets.at(-1).closed(4429,'Session unavailable');});act(()=>vi.advanceTimersByTime(8400));}
+  expect(hook.result.current.state).toBe('connecting');
+  welcome(sockets.at(-1));
+  expect(hook.result.current.state).toBe('listening');expect(hook.result.current.error).toBe('');
+  hook.unmount();
+});
+it('stops retrying a lease held by another live tab after the busy window',async()=>{
+  const hook=await ready();
+  for(let i=0;i<14;i++){act(()=>{sockets.at(-1)?.open();sockets.at(-1)?.closed(4429,'Session unavailable');});act(()=>vi.advanceTimersByTime(8400));}
+  expect(hook.result.current.state).toBe('error');
+  expect(hook.result.current.error).toMatch(/another tab or window/);
+  hook.unmount();
+});
