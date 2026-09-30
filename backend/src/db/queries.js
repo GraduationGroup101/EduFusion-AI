@@ -225,8 +225,8 @@ const getRiskDistribution = async () => {
   return result.rows;
 };
 
-const getStudentBehaviorData = async (idStudent) => {
-  const result = await readQuery(`SELECT
+const getStudentBehaviorData = async (idStudent, execute = readQuery) => {
+  const result = await execute(`SELECT
        e.id AS enrollment_id,
        e.id_student,
        cp.code_module,

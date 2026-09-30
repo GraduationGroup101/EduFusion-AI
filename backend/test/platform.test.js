@@ -81,7 +81,7 @@ before(async () => {
 after(async () => { if(server) await new Promise((resolve) => { server.close(resolve); server.closeAllConnections(); }); global.fetch=originalFetch;pool.query=originalQuery;pool.connect=originalConnect;await database.close();await pool.end(); });
 
 test('migrations are repeatable and new student PINs are hashes',async()=>{
-  assert.equal((await database.query('SELECT COUNT(*)::int AS n FROM edufusion_schema_migrations')).rows[0].n,9);
+  assert.equal((await database.query('SELECT COUNT(*)::int AS n FROM edufusion_schema_migrations')).rows[0].n,10);
   const student=(await database.query('SELECT * FROM students WHERE id_student=123')).rows[0];
   assert.notEqual(student.pin_hash,'abcd1234');assert.equal(await bcrypt.compare('abcd1234',student.pin_hash),true);
   const login=await request(server).post('/api/auth/login').send({username:'123',password:'abcd1234'});
@@ -422,4 +422,53 @@ test('question upload validates multipart size, file types and counts before gen
   assert.equal(response.status,400);assert.equal(providerCalls.length,0);
   response=await request(server).post('/api/question-generator/generate').set('Authorization',auth).attach('file',Buffer.from('notes'),{filename:'notes.txt'}).field('num_mcq','1').field('num_tf','0').field('num_essay','0');
   assert.equal(response.status,200);assert.equal(providerCalls.at(-1).options.body.get('num_mcq'),'1');
+});
+
+test('scenario save, evaluation and delete preserve real scores; only explicit apply updates atomically',async()=>{
+  const {enrollment_id:id}=await registerStudentWithEnrollment(profile(171));
+  const auth=`Bearer ${studentToken(171)}`,path=`/api/student/scenarios/${id}`;
+  await database.query('INSERT INTO student_assessments(enrollment_id,id_assessment,date_submitted,score) VALUES($1,2000000001,30,60)',[id]);
+  const actual=async()=>Number((await database.query('SELECT score FROM student_assessments WHERE enrollment_id=$1',[id])).rows[0].score);
+  const save=async()=>request(server).put(path).set('Authorization',auth).send({latest_tma_score:90,quiz_clicks:9,activity_days:3});
+  let saved=await save();assert.equal(saved.status,200);
+  assert.equal((await request(server).get(`${path}/prediction`).set('Authorization',auth)).status,200);
+  assert.equal(await actual(),60);
+  let reloaded=(await request(server).get(path).set('Authorization',auth)).body.scenario.data;
+  assert.equal(reloaded.inputs.latest_tma_score,90);assert.equal(reloaded.prediction.risk_probability,0.1);assert.ok(reloaded.predicted_at);
+  assert.equal((await request(server).delete(path).set('Authorization',auth)).status,200);assert.equal(await actual(),60);
+  saved=await save();const revision=saved.body.scenario.revision;
+  assert.equal((await request(server).post(`${path}/actual`).set('Authorization',auth).send({confirm:true,revision})).status,409);
+  await request(server).get(`${path}/prediction`).set('Authorization',auth);
+  assert.equal((await request(server).post(`${path}/actual`).set('Authorization',auth).send({revision})).status,400);
+  assert.equal((await request(server).post(`${path}/actual`).set('Authorization',`Bearer ${studentToken()}`).send({confirm:true,revision})).status,404);
+  assert.equal(await actual(),60);
+  const applied=await request(server).post(`${path}/actual`).set('Authorization',auth).send({confirm:true,revision});
+  assert.equal(applied.status,200,JSON.stringify(applied.body));assert.equal(await actual(),90);
+  const clicks=async()=>Number((await database.query('SELECT SUM(sum_click) AS n FROM student_vle_events WHERE enrollment_id=$1',[id])).rows[0].n);
+  assert.equal(await clicks(),9);
+  assert.equal((await request(server).post(`${path}/actual`).set('Authorization',auth).send({confirm:true,revision})).body.already_applied,true);
+  assert.equal(await clicks(),9);
+  const audit=(await database.query('SELECT before_data FROM edufusion_scenario_applications WHERE revision=$1',[revision])).rows[0];
+  assert.equal(Number(audit.before_data.submissions[0].score),60);
+  assert.equal(Number((await database.query('SELECT risk_probability FROM predictions WHERE enrollment_id=$1',[id])).rows[0].risk_probability),0.1);
+  await request(server).delete(path).set('Authorization',auth);assert.equal(await actual(),90);
+});
+
+test('Save as Actual rejects changed evidence and rolls back academic writes if prediction persistence fails',async()=>{
+  const {enrollment_id:id}=await registerStudentWithEnrollment(profile(172));
+  const auth=`Bearer ${studentToken(172)}`,path=`/api/student/scenarios/${id}`;
+  await database.query('INSERT INTO student_assessments(enrollment_id,id_assessment,date_submitted,score) VALUES($1,2000000001,30,60)',[id]);
+  const saved=await request(server).put(path).set('Authorization',auth).send({latest_tma_score:90,quiz_clicks:9});
+  const revision=saved.body.scenario.revision;
+  await request(server).get(`${path}/prediction`).set('Authorization',auth);
+  await database.query('UPDATE student_assessments SET score=61 WHERE enrollment_id=$1',[id]);
+  assert.equal((await request(server).post(`${path}/actual`).set('Authorization',auth).send({confirm:true,revision})).status,409);
+  await database.query('UPDATE student_assessments SET score=60 WHERE enrollment_id=$1',[id]);
+  const connect=pool.connect;
+  pool.connect=async()=>{const client=await connect();return {...client,query:async(sql,params)=>{if(sql.startsWith('INSERT INTO predictions'))throw new Error('injected prediction failure');return client.query(sql,params);}};};
+  try {assert.equal((await request(server).post(`${path}/actual`).set('Authorization',auth).send({confirm:true,revision})).status,503);}
+  finally{pool.connect=connect;}
+  assert.equal(Number((await database.query('SELECT score FROM student_assessments WHERE enrollment_id=$1',[id])).rows[0].score),60);
+  assert.equal((await database.query('SELECT * FROM student_vle_events WHERE enrollment_id=$1',[id])).rows.length,0);
+  assert.equal((await database.query('SELECT * FROM edufusion_scenario_applications WHERE revision=$1',[revision])).rows.length,0);
 });

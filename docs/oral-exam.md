@@ -22,9 +22,9 @@ Provider contracts were checked against the [ElevenLabs realtime API](https://el
 
 - Completed, owned learning-library lectures reuse `study_chunks` through the existing owner-scoped store.
 - Owned legacy LectureScribe jobs reuse the existing transcript download endpoint and gateway entitlement.
-- New UTF-8 `.txt` files up to 90 KB and pasted text are supported. Files are read locally and sent as bounded text. Binary/empty content is rejected.
+- Uploaded PDF, DOC, DOCX, PPTX, TXT and Markdown use authenticated `POST /api/oral-exam/materials/extract` (multipart `file`, at most 4 MiB). Pasted text remains supported, with a 90,000-character context limit.
 
-QuizForge accepts PDF/Word/PowerPoint but its gateway contract returns generated questions, not reusable extracted source text. There is no persisted upload/document entity or documented extraction endpoint to reuse. Those formats must be exported to text for this MVP; no parallel PDF/DOCX/PPTX ingestion stack was added. This is a deliberate supported-format limit.
+Extraction runs in a bounded worker with cancellation and signature/content validation. DOC uses a pinned text-only OLE parser; encrypted and VBA documents are rejected. DOCX/PPTX retain archive safeguards. Scanned PDFs require OCR elsewhere; legacy PPT remains unsupported. Upload bytes stay in memory, filenames are display metadata, and no temporary files are created. Extracted text feeds the existing source preparation flow.
 
 Context uses up to 24 excerpts sampled across the complete source, including its tail. Existing chunks retain their IDs. Each decision selects current-question evidence, lexical matches, and uncovered excerpts. Questions must cite supplied excerpt IDs; invalid citations and repeated questions fail safely. This is bounded lecture-scoped retrieval, not a second vector store. The source snapshot belongs to the exam and remains stable if a lecture later changes. Source sampling and prompt instructions do not prove model factual correctness; representative material review is still required before broad rollout.
 

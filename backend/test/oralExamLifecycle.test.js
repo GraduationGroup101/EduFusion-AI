@@ -130,9 +130,14 @@ test('rapid reconnects recover a lost welcome while rotating every write lease',
     await first.until(e=>e.type==='question');
     const before=await store.get(user,row.id);
     for(let i=0;i<3;i++){
+      // Client close and server close are separate events. Observe the server's
+      // cleanup before asserting its client registry, on fast Linux runners too.
+      const retired=Promise.all([...realtime.wss.clients].map(client=>client.readyState===WebSocket.CLOSED?Promise.resolve():once(client,'close')));
       const next=await connect(row.id,key);clients.push(next);
       await next.until(e=>e.type==='welcome');
       await next.until(e=>e.type==='question');
+      await clients[clients.length-2].closed;
+      await retired;
     }
     const after=await store.get(user,row.id);
     assert.equal(after.turns.length,1);assert.equal(+new Date(after.expires_at),+new Date(before.expires_at));
@@ -265,4 +270,22 @@ test('overlapping handshakes: a delayed older authentication cannot replace a ne
     for(const c of [older,newer])if(c){c.ws.terminate();await c.closed;}
     racingRuntime.close();await new Promise(resolve=>racingServer.close(resolve));await store.finish(user,row.id);
   }
+});
+
+test('provider failure closes the socket and resumes the same saved answer and deadline',async()=>{
+  const row=await session(),key=randomUUID(),first=await connect(row.id,key);
+  const next=runtimeDependencies.examiner.next;let resumed;
+  try {
+    await first.until(e=>e.type==='audio');first.ws.send(JSON.stringify({type:'played',sequence:1}));
+    await first.until(e=>e.type==='state'&&e.state==='listening');
+    runtimeDependencies.examiner.next=async()=>{throw Object.assign(new Error('provider throttled'),{retryAfterMs:1000});};
+    finalizers.at(-1)('Saved answer before provider failure.');
+    const failed=await first.until(e=>e.type==='error');assert.equal(failed.retryable,true);assert.equal(failed.retry_after_ms,1000);
+    assert.equal((await first.closed)[0],4500);
+    runtimeDependencies.examiner.next=next;
+    resumed=await connect(row.id,key);const welcome=await resumed.until(e=>e.type==='welcome');
+    assert.equal(welcome.session.id,row.id);assert.equal(+new Date(welcome.session.expires_at),+new Date(row.expires_at));
+    await resumed.until(e=>e.type==='question'&&e.sequence===2);
+    const saved=await store.get(user,row.id);assert.equal(saved.turns[0].transcript,'Saved answer before provider failure.');assert.ok(saved.turns[0].assessment);
+  } finally {runtimeDependencies.examiner.next=next;first.ws.terminate();if(resumed){resumed.ws.terminate();await resumed.closed;}await store.finish(user,row.id);}
 });

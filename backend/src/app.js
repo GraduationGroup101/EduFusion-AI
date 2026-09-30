@@ -15,7 +15,7 @@ for (const [path, file] of Object.entries({ auth:'auth', dashboard:'dashboard', 
 app.use('/api/lecture-study', require('./routes/lectureStudy'));
 app.use('/api/oral-exam', require('./routes/oralExam'));
 app.use('/api/services', require('./routes/services'));
-app.get('/api/health', (req,res) => res.json({ status:'ok', timestamp:new Date().toISOString() }));
+app.get('/api/health', (req,res) => res.json({ status:'ok', timestamp:new Date().toISOString(), revision:process.env.RENDER_GIT_COMMIT||process.env.VERCEL_GIT_COMMIT_SHA||null }));
 app.get('/api/ready', async (req,res) => {
   try {
     await assertDatabaseReady();

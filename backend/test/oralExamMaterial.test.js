@@ -92,7 +92,7 @@ test('PPTX follows presentation order, keeps notes and removes slide numbers',as
 test('unsupported, legacy, image and executable files get specific explanations',async()=>{
   const cases=[
     [Buffer.from(SENTENCE),'notes.exe','application/octet-stream',415,/not supported/],
-    [Buffer.from('\u00d0\u00cf\u0011\u00e0\u00a1\u00b1\u001a\u00e1'+'x'.repeat(200),'latin1'),'old.doc','application/msword',415,/save it as \.docx/],
+    [Buffer.from('\u00d0\u00cf\u0011\u00e0\u00a1\u00b1\u001a\u00e1'+'x'.repeat(200),'latin1'),'old.doc','application/msword',422,/damaged|encrypted/],
     [Buffer.from('\u0089PNG\r\n\u001a\n'+'x'.repeat(200),'latin1'),'board.png','image/png',415,/OCR/],
     [Buffer.from('MZ'+'x'.repeat(300),'latin1'),'notes.txt','text/plain',415,/Programs and scripts/],
     [docs.docx([{text:SENTENCE}]),'macro.docm','',415,/Macro-enabled/],
@@ -204,4 +204,21 @@ test('decks exported without title placeholders get headings and lose repeated n
   assert.doesNotMatch(body.material.text,/Copyright/);
   assert.match(body.material.text,/^## Slide 1: Objectives\n- Insert rows\n- -5 degrees: Insert rows below freezing on the Celsius scale/);
   assert.match(body.material.text,/## Slide 3: Transactions\n- Commit changes/);
+});
+
+test('legacy DOC extracts text but rejects encrypted and macro-enabled documents',async()=>{
+  const text=SENTENCE.repeat(3);
+  const result=await upload(docs.doc(text),'notes.doc','application/msword');
+  assert.equal(result.status,200,JSON.stringify(result.body));assert.equal(result.body.material.text,text);
+  for(const options of [{encrypted:true},{macro:true}]){
+    const rejected=await upload(docs.doc(text,options),'protected.doc','application/msword');assert.equal(rejected.status,422);
+  }
+});
+
+test('a 1.7 MB DOCX is accepted by the production Express route and unsafe filenames are stripped',async()=>{
+  const file=docs.zip({'[Content_Types].xml':'<Types/>','word/document.xml':`<w:document><w:body><w:p><w:r><w:t>${SENTENCE.repeat(3)}</w:t></w:r></w:p></w:body></w:document>`,'word/media/image.bin':Buffer.alloc(1700000,42)},{store:true});
+  const result=await upload(file,'Lab01.docx',DOCX);
+  assert.equal(result.status,200,JSON.stringify(result.body));assert.match(result.body.material.text,/Routers/);
+  const safe=await ingest.extractInWorker({name:'../../Lab01.docx',type:DOCX,buffer:new Uint8Array(file)});
+  assert.equal(safe.file_name,'Lab01.docx');
 });

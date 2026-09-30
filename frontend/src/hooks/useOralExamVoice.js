@@ -62,7 +62,7 @@ export function useOralExamVoice(onSession) {
       const current=()=>active()&&r.socket===ws;
       const log=(event,fields={})=>oralLifecycle(event,{session:r.sessionId,connection:instance,...fields});
       log('connect',{attempt:r.attempts,connection_attempt:attempt});
-      function disconnected(code,reason){
+      function disconnected(code,reason,retryAfterMs=0){
         if(!current())return;
         clearTimeout(r.watchdog);r.socket=null;r.source?.stop();
         log('disconnect',{code,reason});
@@ -75,7 +75,7 @@ export function useOralExamVoice(onSession) {
         if([4001,4401,4403,4409].includes(code)||(r.attempts>=6&&!waitingForLease)){
           setError(code===4401?'Your sign-in expired. Sign in again to recover your exam.':[4001,4409].includes(code)?'Another connection now owns this exam. Close other exam tabs, then reconnect. The timer continues.':code===4429?'This exam is still connected in another tab or window. Close it, then reconnect. The timer continues.':'Connection lost. Reconnect to recover your exam. The timer continues.');setState('error');return;
         }
-        const delay=Math.min(8000,750*2**r.attempts++)+Math.random()*300;
+        const delay=Math.max(Math.min(600000,Math.max(0,Number(retryAfterMs)||0)),Math.min(8000,750*2**r.attempts++))+Math.random()*300;
         log('reconnect',{attempt:r.attempts,delay_ms:Math.round(delay)});
         r.retry=setTimeout(dial,delay);
       }
@@ -94,13 +94,13 @@ export function useOralExamVoice(onSession) {
         if(!current())return;
         try{
           const msg=JSON.parse(event.data);watch();
-          if(msg.type==='welcome'){r.attempts=0;r.busySince=null;setError('');log('welcome',{server_connection:msg.connectionId});onSessionRef.current(msg.session);deadline(msg.session);}
+          if(msg.type==='welcome'){r.busySince=null;setError('');log('welcome',{server_connection:msg.connectionId});onSessionRef.current(msg.session);deadline(msg.session);}
           if(msg.type==='clock'){onSessionRef.current({id:r.sessionId,...msg});}
-          if(msg.type==='state'){r.phase=msg.state;setState(msg.state);}
+          if(msg.type==='state'){r.phase=msg.state;setState(msg.state);if(msg.state==='listening')r.attempts=0;}
           // A conversational reply (repeat, clarification, nudge, retry) keeps the
           // same question and sequence; the remark is what the examiner just said.
           if(msg.type==='question'){setQuestion(msg.question);setRemark(msg.kind&&msg.kind!=='question'?{kind:msg.kind,text:msg.remark||''}:null);}
-          if(msg.type==='error'){setError(msg.message);r.phase='error';setState('error');r.source?.stop();}
+          if(msg.type==='error'){setError(msg.message);r.phase='error';setState('error');r.source?.stop();if(msg.retryable){disconnected(4500,'recoverable_exam_failure',msg.retry_after_ms);ws.close(4500,'Recoverable exam failure');}}
           if(msg.type==='ended'){r.phase='ended';forgetResumeKey(r.sessionId);setState('ended');onSessionRef.current(msg.session);stop();}
           if(msg.type==='audio'){
             const buffer=Uint8Array.from(atob(msg.audio),c=>c.charCodeAt(0)).buffer;

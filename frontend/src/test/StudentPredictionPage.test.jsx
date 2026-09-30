@@ -196,7 +196,7 @@ it('keeps a scenario as a learning plan without any save or prediction call', as
   render(<StudentPredictionPage />);
   const plan = await screen.findByRole('region', { name: 'Learning plan' });
   expect(within(plan).getByText('Keep this as a plan')).toBeInTheDocument();
-  expect(within(plan).getByText(/A scenario is never written into your academic records/)).toBeInTheDocument();
+  expect(within(plan).getByText(/Saving or evaluating a scenario does not change your academic records/)).toBeInTheDocument();
   expect(within(plan).getByText('Add about 25 interactions over the next 7 days, roughly 4 a day (quizzes 8 · forums 8 · study materials 9).')).toBeInTheDocument();
   expect(within(plan).getByText('Aim for 80 or more on your next TMA.')).toBeInTheDocument();
   fireEvent.click(within(plan).getByText('Use as my learning plan'));
@@ -271,4 +271,16 @@ it('shows the safe prediction error returned by the gateway', async () => {
   studentService.getPrediction.mockRejectedValueOnce({ response: { data: { error: 'Prediction service is temporarily unavailable. Please try again.' } } });
   render(<StudentPredictionPage />);
   await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Prediction service is temporarily unavailable. Please try again.'));
+});
+
+it('requires explicit confirmation before applying a scenario to actual data',async()=>{
+  studentService.getScenario.mockResolvedValue({data:{scenario:{data:saved({latest_tma_score:90},{revision:'reviewed-version'})},status:status('current')}});
+  studentService.applyScenarioActual=vi.fn().mockResolvedValue({data:{scenario:saved({latest_tma_score:90},{revision:'reviewed-version',applied_at:'2026-09-30'}),message:'Applied'}});
+  render(<StudentPredictionPage/>);
+  const apply=await screen.findByRole('button',{name:'Save as Actual'});
+  expect(studentService.applyScenarioActual).not.toHaveBeenCalled();
+  fireEvent.click(apply);fireEvent.click(screen.getByRole('button',{name:'Cancel'}));
+  expect(studentService.applyScenarioActual).not.toHaveBeenCalled();
+  fireEvent.click(apply);fireEvent.click(screen.getByRole('button',{name:'Apply to actual data'}));
+  await waitFor(()=>expect(studentService.applyScenarioActual).toHaveBeenCalledWith(1,'reviewed-version'));
 });

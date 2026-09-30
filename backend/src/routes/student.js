@@ -4,6 +4,8 @@ const { authenticate, requireRole } = require('../middleware/auth');
 const { aiLimiter } = require('../middleware/limits');
 const { getCurrentStudentPrediction, getStudentBehaviorData } = require('../db/queries');
 const { saveScenario, getScenario, deleteScenario, setScenarioPlan, scenarioStatus } = require('../db/scenarios');
+const db=require('../db');
+const {evidence,validatePrediction,applyActual,conflict}=require('../db/scenarioActual');
 const { integer, text, badRequest } = require('../lib/validation');
 const { requestUpstream, readJson, upstreamStatus, sendError } = require('../lib/upstream');
 const router = express.Router();
@@ -78,18 +80,30 @@ router.patch('/scenarios/:enrollment_id/plan', async (req, res) => {
   } catch (error) { sendError(res, error, 'Unable to update the learning plan'); }
 });
 
+router.post('/scenarios/:enrollment_id/actual',aiLimiter,async(req,res)=>{
+  try {
+    if(req.body?.confirm!==true||typeof req.body?.revision!=='string')throw badRequest('Confirm Save as Actual for the reviewed scenario.');
+    const id=integer(req.params.enrollment_id,'Enrollment ID',1);
+    const result=await applyActual(req.user.id_student,id,req.body.revision);
+    if(!result)return res.status(404).json({error:'Enrollment not found'});
+    return res.json({...result,message:'Scenario applied to your actual academic records and prediction.'});
+  }catch(error){const failure=error.code==='40001'?Object.assign(new Error('Academic records changed. Reload and try again.'),{statusCode:409}):error;sendError(res,failure,'Unable to apply the scenario. No partial changes were saved.');}
+});
+
 router.get('/scenarios/:enrollment_id/prediction', aiLimiter, async (req, res) => {
   try {
     const { id, course } = await ownedEnrollment(req);
     if (!course) return res.status(404).json({ error: 'Enrollment not found' });
     const saved = await getScenario(req.user.id_student, id);
     if (!saved) return res.status(404).json({ error: 'Save a scenario before evaluating it.' });
+    if(saved.data.applied_at)return res.json({...saved.data.prediction,hypothetical:true,based_on_day:saved.data.based_on_day,applied_at:saved.data.applied_at});
     const status = scenarioStatus(saved, course);
     // Never evaluate stale assumptions silently: a scenario built on another
     // course day or on evidence that no longer exists must be rebuilt first.
     if (status.state === 'stale') return res.status(409).json({ error: 'Course day changed. Update the scenario for the current day.', status });
     if (status.state === 'invalid') return res.status(409).json({ error: 'This scenario no longer matches your academic records.', status });
     const { based_on_day, inputs, activity } = saved.data;
+    const before=await evidence(id);
     const params = new URLSearchParams({ code_module: course.code_module, code_presentation: course.code_presentation });
     const response = await requestUpstream(req, `${EDUPREDICT_BASE}/students/${req.user.id_student}/scenario-prediction?${params}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -100,7 +114,16 @@ router.get('/scenarios/:enrollment_id/prediction', aiLimiter, async (req, res) =
         status: { ...status, state: 'invalid', reasons: ['The prediction model could not apply this scenario to your current records.'] } });
     }
     if (!response.ok) return res.status(503).json({ error: 'Scenario prediction service is temporarily unavailable. Please try again.' });
-    return res.json({ ...await readJson(response), hypothetical: true, based_on_day, status });
+    const prediction=validatePrediction(await readJson(response));
+    const after=await evidence(id);
+    if(!before||before.hash!==after?.hash)conflict();
+    // Compare the revision at the write boundary: a slow model response must
+    // never attach itself to a replaced or deleted scenario.
+    const result=await db.query(`UPDATE edufusion_student_scenarios
+      SET data=data||$4::jsonb WHERE id_student=$1 AND enrollment_id=$2 AND data->>'revision'=$3`,
+    [req.user.id_student,id,saved.data.revision,JSON.stringify({prediction,prediction_available:true,predicted_at:new Date().toISOString(),prediction_evidence_hash:before.hash})]);
+    if(!result.rowCount)conflict();
+    return res.json({ ...prediction, hypothetical: true, based_on_day, status, revision:saved.data.revision });
   } catch (error) { return sendError(res, error, 'Scenario prediction service is temporarily unavailable. Please try again.'); }
 });
 

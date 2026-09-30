@@ -75,3 +75,19 @@ function pdf(pages) {
 }
 
 module.exports = { zip, docx, pptx, pdf };
+
+// Minimal uncompressed Word 97 OLE file, built locally without Office or assets.
+function doc(text,{encrypted=false,macro=false}={}) {
+  const header=Buffer.alloc(512),dir=Buffer.alloc(512),word=Buffer.alloc(4096),table=Buffer.alloc(4096),fat=Buffer.alloc(512,255);
+  Buffer.from('d0cf11e0a1b11ae1','hex').copy(header);
+  header.writeUInt16LE(0x3e,24);header.writeUInt16LE(3,26);header.writeUInt16LE(0xfffe,28);header.writeUInt16LE(9,30);header.writeUInt16LE(6,32);
+  header.writeUInt32LE(1,44);header.writeUInt32LE(0,48);header.writeUInt32LE(4096,56);header.writeInt32LE(-2,60);header.writeInt32LE(-2,68);
+  for(let i=76;i<512;i+=4)header.writeInt32LE(-1,i);header.writeUInt32LE(17,76);
+  const entry=(i,name,type,start,size,right=-1,child=-1)=>{const offset=i*128;dir.write(name+'\0',offset,'utf16le');dir.writeUInt16LE((name.length+1)*2,offset+64);dir[offset+66]=type;dir[offset+67]=1;dir.writeInt32LE(-1,offset+68);dir.writeInt32LE(right,offset+72);dir.writeInt32LE(child,offset+76);dir.writeInt32LE(start,offset+116);dir.writeUInt32LE(size,offset+120);};
+  entry(0,'Root Entry',5,-2,0,-1,1);entry(1,'WordDocument',2,1,4096,2);entry(2,'0Table',2,9,4096,macro?3:-1);if(macro)entry(3,'Macros',1,-2,0);
+  fat.writeInt32LE(-2,0);for(let i=1;i<=16;i++)fat.writeInt32LE(i===8||i===16?-2:i+1,i*4);fat.writeInt32LE(-3,17*4);
+  word.writeUInt16LE(0xa5ec,0);word.writeUInt16LE(0xc1,2);word.writeUInt16LE(encrypted?0x100:0,10);word.writeUInt32LE(512,24);word.writeUInt32LE(text.length,0x4c);word.writeUInt32LE(21,0x1a6);word.write(text,512,'utf16le');
+  table[0]=2;table.writeUInt32LE(16,1);table.writeUInt32LE(text.length,9);table.writeUInt32LE(512,15);
+  return Buffer.concat([header,dir,word,table,fat]);
+}
+module.exports.doc=doc;

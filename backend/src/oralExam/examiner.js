@@ -20,7 +20,7 @@ Only return the requested JSON. Assessments are brief student-facing feedback, n
 Use the requested language. Do not score accent, disability, or speaking style; communication measures clarity of academic meaning.`;
 
 class ProviderError extends Error {
-  constructor(status,code) {super('Exam model unavailable');this.name='ProviderError';this.status=status;this.code=code;}
+  constructor(status,code,retryAfterMs=150) {super('Exam model unavailable');this.name='ProviderError';this.status=status;this.code=code;this.retryAfterMs=retryAfterMs;}
 }
 class ModelValidationError extends Error {
   constructor(code) {super('Invalid model decision');this.name='ModelValidationError';this.code=code;}
@@ -58,7 +58,9 @@ async function jsonModel(messages,{operation,schemaName,schema,contract,signal,e
       if(!response.ok) {
         let code;
         try {const body=await response.text();code=safeCode(JSON.parse(body.slice(0,8192))?.error?.code);}catch { /* Provider body is not trusted diagnostic data. */ }
-        throw new ProviderError(response.status,code);
+        const retryAfter=response.headers.get('retry-after');
+        const retryAfterMs=retryAfter===null?10000:Number.isFinite(Number(retryAfter))?Number(retryAfter)*1000:Date.parse(retryAfter)-Date.now();
+        throw new ProviderError(response.status,code,response.status===429?Math.max(1000,Number.isFinite(retryAfterMs)?retryAfterMs:10000):150);
       }
       let raw='';const decoder=new TextDecoder();
       for await(const part of response.body) {raw+=decoder.decode(part,{stream:true});if(raw.length>64000)throw new ModelValidationError('response_too_large');}
@@ -68,10 +70,14 @@ async function jsonModel(messages,{operation,schemaName,schema,contract,signal,e
     } catch(error) {
       console.error('Oral exam model failure:',diagnostic(operation,error,attempt));
       const recoverable=error?.name==='ZodError'||error instanceof SyntaxError||error instanceof ModelValidationError||
-        error instanceof ProviderError&&([408,429].includes(error.status)||error.status>=500)||
+        error instanceof ProviderError&&([408,429].includes(error.status)||error.status>=500||error.status===400&&error.code==='json_validate_failed')||
         error?.name==='TimeoutError'||error instanceof TypeError;
       if(attempt===2||!recoverable||signal?.aborted||expiresAt&&Date.now()>=new Date(expiresAt).getTime())throw error;
-      await delay(150,undefined,{signal});
+      const waitMs=error.retryAfterMs||150;
+      if(expiresAt&&Date.now()+waitMs>=new Date(expiresAt).getTime())throw error;
+      // Honor provider throttling without changing the authoritative exam time.
+      if(waitMs>60000)throw error;
+      await delay(waitMs,undefined,{signal});
     }
   }
 }

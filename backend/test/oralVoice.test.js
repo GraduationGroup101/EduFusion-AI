@@ -33,3 +33,12 @@ test('TTS validates content type and audio signature before returning playback',
   const audio=await speak('Question','en',signal,async()=>new Response(Buffer.from('ID3test'),{headers:{'content-type':'audio/mpeg'}}));
   assert.equal(audio.toString(),'ID3test');
 });
+
+test('STT startup timeout settles opened and reports one failure',async(t)=>{
+  t.mock.timers.enable({apis:['setTimeout']});
+  let errors=0;
+  class Fake extends EventEmitter {terminate(){}}
+  const provider=transcriber({language:'en',signal:new AbortController().signal,onError(){errors++;}},{WebSocketImpl:Fake});
+  const rejected=assert.rejects(provider.opened,/Speech service unavailable/);
+  t.mock.timers.tick(10001);await rejected;assert.equal(errors,1);
+});

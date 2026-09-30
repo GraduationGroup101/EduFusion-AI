@@ -3,6 +3,7 @@ import StatusBadge from '../ui/StatusBadge';
 import { compareRisk, describeChanges, formatPercent, planSteps } from '../../lib/scenario';
 
 const STATES = {
+  applied: { badge: 'success', label: 'Applied to actual records' },
   current: { badge: 'success', label: 'Current' },
   needs_reevaluation: { badge: 'warning', label: 'Records changed', tone: 'neutral', title: 'Your records changed since this scenario was saved' },
   stale: { badge: 'warning', label: 'Out of date', tone: 'warning', title: 'This scenario is out of date' },
@@ -14,12 +15,12 @@ const DeltaIcon = ({ direction }) => {
   return <Icon size={22} aria-hidden="true" />;
 };
 
-export default function ScenarioResults({ row, prediction, scenario, status, scenarioPrediction, scenarioError, busy = false, onReevaluate, onDelete, onTogglePlan }) {
+export default function ScenarioResults({ row, prediction, scenario, status, scenarioPrediction, scenarioError, busy = false, onReevaluate, onDelete, onTogglePlan, onApplyActual }) {
   if (!scenario) return null;
   const state = STATES[status?.state] ? status.state : 'current';
   const copy = STATES[state];
-  const usable = state === 'current' || state === 'needs_reevaluation';
-  const comparison = usable && prediction && scenarioPrediction ? compareRisk(prediction.risk_probability, scenarioPrediction.risk_probability) : null;
+  const usable = state === 'current' || state === 'needs_reevaluation' || state === 'applied';
+  const comparison = !scenario.applied_at && usable && prediction && scenarioPrediction ? compareRisk(prediction.risk_probability, scenarioPrediction.risk_probability) : null;
   const changes = describeChanges(scenario.inputs || {}, row);
   const steps = planSteps(scenario.inputs || {}, row);
 
@@ -38,7 +39,7 @@ export default function ScenarioResults({ row, prediction, scenario, status, sce
         ) : (
           <p className="text-sm text-light-accent/60">This scenario makes no changes, so its estimate matches your actual prediction.</p>
         )}
-        {state !== 'current' && (
+        {state !== 'current' && state !== 'applied' && (
           <div className={`status-banner ${copy.tone}`} role="status">
             <strong>{copy.title}</strong>
             {(status?.reasons || []).map((reason) => <span key={reason}>{reason}</span>)}
@@ -51,10 +52,12 @@ export default function ScenarioResults({ row, prediction, scenario, status, sce
           {state === 'stale' && (
             <button type="button" className="button-primary-sm" onClick={onReevaluate} disabled={busy}><RefreshCw size={14} aria-hidden="true" />Update to day {status.current_day}</button>
           )}
-          {state === 'needs_reevaluation' && (
+          {state === 'needs_reevaluation' && !scenario.applied_at && (
             <button type="button" className="button-primary-sm" onClick={onReevaluate} disabled={busy}><RefreshCw size={14} aria-hidden="true" />Re-evaluate with today&apos;s records</button>
           )}
           <button type="button" className="button-danger-outline" onClick={onDelete} disabled={busy}><Trash2 size={14} aria-hidden="true" />Delete scenario</button>
+          {usable && scenarioPrediction && scenario.revision && !scenario.applied_at && <button type="button" className="button-outline" onClick={onApplyActual} disabled={busy}>Save as Actual</button>}
+          {scenario.applied_at && <p className="text-sm">Applied to actual records. Create a new scenario to explore further changes.</p>}
         </div>
       </section>
 
@@ -98,9 +101,9 @@ export default function ScenarioResults({ row, prediction, scenario, status, sce
         <section className="hypothetical-card p-5 space-y-3" aria-label="Hypothetical scenario prediction">
           <div className="flex flex-wrap items-center gap-3">
             <h2 className="font-display font-semibold text-light-accent">Hypothetical scenario prediction</h2>
-            <StatusBadge status="warning">Hypothetical</StatusBadge>
+            <StatusBadge status={scenario.applied_at ? 'success' : 'warning'}>{scenario.applied_at ? 'Applied' : 'Hypothetical'}</StatusBadge>
           </div>
-          <p className="text-sm text-light-accent/65">Estimated from your saved what-if changes on course day {scenarioPrediction.based_on_day}. Your actual prediction and academic records are unchanged.</p>
+          <p className="text-sm text-light-accent/65">Estimated from your saved what-if changes on course day {scenarioPrediction.based_on_day}. {scenario.applied_at ? 'This result was saved to your actual records after your confirmation.' : 'Your actual prediction and academic records are unchanged.'}</p>
           <div className="evidence-grid">
             <div className="evidence-cell"><p>Risk level</p><p>{scenarioPrediction.risk_level}</p></div>
             <div className="evidence-cell"><p>Probability</p><p>{formatPercent(scenarioPrediction.risk_probability)}</p></div>
@@ -112,14 +115,14 @@ export default function ScenarioResults({ row, prediction, scenario, status, sce
         </section>
       )}
 
-      {usable && (
+      {usable && !scenario.applied_at && (
         <section className="glass rounded-2xl p-5 space-y-3" aria-label="Learning plan">
           <div className="flex flex-wrap items-center gap-3">
             <h2 className="font-display font-semibold text-light-accent">{scenario.plan ? 'Your learning plan' : 'Keep this as a plan'}</h2>
             {scenario.plan && <StatusBadge status="success">Adopted</StatusBadge>}
           </div>
           <p className="text-sm text-light-accent/65">
-            A scenario is never written into your academic records. {scenario.plan
+            Saving or evaluating a scenario does not change your academic records. Only Save as Actual applies it. {scenario.plan
               ? 'These targets are yours to work towards; your real grades, activity and actual prediction are unchanged.'
               : 'You can keep it as personal targets instead. Nothing about your real records or actual prediction changes.'}
           </p>

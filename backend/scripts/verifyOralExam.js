@@ -27,7 +27,8 @@ async function main(){
   await database.query("INSERT INTO students(id_student,student_name,pin_hash,pin_format) VALUES(99001,'Browser Test Student','fixture-pin','legacy')");
   global.fetch=async url=>{if(!String(url).startsWith('https://api.groq.com/'))throw new Error('Fixture blocks external network');return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(report)}}]}));};
   const app=require('../src/app');
-  const server=app.listen(5000,'127.0.0.1',()=>console.log('Isolated Oral Exam fixture: http://localhost:5000; student 99001 / fixture-pin'));
+  const port=Number(process.env.ORAL_EXAM_FIXTURE_PORT||5000);
+  const server=app.listen(port,'127.0.0.1',()=>console.log(`Isolated Oral Exam fixture: http://localhost:${port}; student 99001 / fixture-pin`));
   const realtime=require('../src/oralExam/realtime').attachRealtime(server,{examiner:{...examiner,next:async(session,text)=>({assessment:text===null?null:assessment,next:{question:text===null?'What is the role of a router in a computer network?':'How does a router decide where to forward a packet?',concept:'Routing',question_type:text===null?'initial':'follow_up',difficulty:'foundation',citations:[session.context.chunks[0].id],follow_up_reason:text===null?'':'Probe packet forwarding'}})},voice:{speak:async()=>wav(),transcriber:({onFinal})=>{
     let bytes=0,done=false;return {opened:Promise.resolve(),close(){done=true;},send(chunk){bytes+=chunk.length;if(bytes>=answerBytes&&!done){done=true;onFinal('A router chooses a path and forwards packets between networks.');}return true;}};
   }}});

@@ -12,15 +12,16 @@ const FORMATS = {
   md: { label: 'Markdown', mimes: ['text/markdown', 'text/x-markdown', 'text/plain'] },
   markdown: { label: 'Markdown', mimes: ['text/markdown', 'text/x-markdown', 'text/plain'] },
   pdf: { label: 'PDF', mimes: ['application/pdf', 'application/x-pdf'] },
+  doc: { label: 'Word', mimes: ['application/msword', 'application/vnd.ms-word'] },
   docx: { label: 'Word', mimes: ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'] },
   pptx: { label: 'PowerPoint', mimes: ['application/vnd.openxmlformats-officedocument.presentationml.presentation'] },
 };
 // Browsers send an empty or generic type for many files, so those never count as a mismatch.
 const GENERIC_MIMES = ['', 'application/octet-stream', 'binary/octet-stream'];
-const SUPPORTED = 'Upload a PDF, Word (.docx), PowerPoint (.pptx), Markdown or plain-text file.';
+const SUPPORTED = 'Upload a PDF, Word (.doc or .docx), PowerPoint (.pptx), Markdown or plain-text file.';
 const IMAGE_MESSAGE = 'Images and photos of notes are not supported yet because EduFusion cannot read text from images (OCR). Paste the text or upload a document with selectable text.';
 const UNSUPPORTED = [
-  [['doc', 'ppt', 'dot', 'pps', 'pot'], 'Older Word and PowerPoint files (.doc, .ppt) are not supported. Open the file and save it as .docx, .pptx or PDF, then upload it again.'],
+  [['ppt', 'dot', 'pps', 'pot'], 'Older PowerPoint and Office templates are not supported. Save the file as .docx, .pptx or PDF, then upload it again.'],
   [['docm', 'pptm', 'dotm', 'potm', 'ppsm', 'xlsm'], 'Macro-enabled Office files are not accepted. Save a copy as .docx or .pptx and upload that instead.'],
   [['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tif', 'tiff', 'heic', 'heif', 'svg'], IMAGE_MESSAGE],
   [['xls', 'xlsx', 'csv', 'ods'], 'Spreadsheets are not supported as exam material. Paste the relevant notes as text instead.'],
@@ -63,7 +64,7 @@ function validate({ name, type, buffer }) {
   }
   const mime = String(type || '').split(';')[0].trim().toLowerCase();
   if (!GENERIC_MIMES.includes(mime) && !format.mimes.includes(mime)) reject(415, 'type_mismatch', `This file is labelled ${mime}, which does not match its .${extension} name. ${SUPPORTED}`);
-  const expected = extension === 'pdf' ? 'pdf' : ['docx', 'pptx'].includes(extension) ? 'zip' : null;
+  const expected = extension === 'doc' ? 'ole' : extension === 'pdf' ? 'pdf' : ['docx', 'pptx'].includes(extension) ? 'zip' : null;
   if (signature !== expected) {
     if (signature === 'ole') reject(415, 'legacy_or_protected', `This .${extension} file is an older Office format or is password-protected. Save it as an unprotected .docx, .pptx or PDF and try again.`);
     if (signature === 'image') reject(415, 'image', IMAGE_MESSAGE);
@@ -256,7 +257,11 @@ async function extractMaterial({ name, type, buffer }) {
   const { fileName, extension, format } = validate({ name, type, buffer });
   let raw;
   try {
-    raw = extension === 'pdf' ? await pdf(buffer) : extension === 'docx' ? docx(openZip(buffer)) : extension === 'pptx' ? pptx(openZip(buffer)) : plain(buffer);
+    if(extension==='doc') {
+      // A parser reads OLE text streams only; Office/macros are never launched.
+      try {raw={text:await require('./doc')(buffer),units:null};}
+      catch {reject(422,'malformed','This Word file is damaged, encrypted or unsupported. Save an unprotected copy and retry.');}
+    } else raw = extension === 'pdf' ? await pdf(buffer) : extension === 'docx' ? docx(openZip(buffer)) : extension === 'pptx' ? pptx(openZip(buffer)) : plain(buffer);
   } catch (error) {
     if (error instanceof ArchiveError) reject(422, 'malformed', `This ${format.label} file is damaged, encrypted or unusually compressed, so it was not opened. Save it again and retry.`);
     throw error;

@@ -66,3 +66,12 @@ test('all attempts fail validation and aborted or expired exams never retry',asy
   await assert.rejects(()=>examiner.next(expiring,null),{name:'ZodError'});
   assert.equal(timeoutCalls,1);
 });
+
+test('provider JSON validation rejection retries once and rate limiting honors Retry-After',async()=>{
+  let calls=mock([new Response(JSON.stringify({error:{code:'json_validate_failed'}}),{status:400}),reply(decision)]);
+  assert.deepEqual(await examiner.next(session(),null),decision);assert.equal(calls(),2);
+  calls=mock([new Response(JSON.stringify({error:{code:'rate_limit_exceeded'}}),{status:429,headers:{'retry-after':'1'}}),reply(decision)]);
+  const start=Date.now();await examiner.next(session(),null);assert.ok(Date.now()-start>=950);assert.equal(calls(),2);
+  calls=mock([new Response('{}',{status:429,headers:{'retry-after':'120'}})]);
+  await assert.rejects(()=>examiner.next(session(),null),{status:429});assert.equal(calls(),1);
+});
