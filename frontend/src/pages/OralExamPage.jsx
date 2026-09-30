@@ -4,6 +4,7 @@ import {Mic,MicOff,Clock,BookOpen,ArrowRight,RotateCcw,CheckCircle} from 'lucide
 import PageHeader from '../components/ui/PageHeader';
 import {oralExamService as api} from '../services/oralExam';
 import {useOralExamVoice} from '../hooks/useOralExamVoice';
+import MaterialUpload from '../components/oralExam/MaterialUpload';
 import '../styles/oral-exam.css';
 
 const message=e=>e.response?.data?.error||e.message||'Unable to load Oral Exam. Please try again.';
@@ -12,7 +13,7 @@ const labels={idle:'Ready when you are',connecting:'Connecting to your examiner'
 
 export default function OralExamPage(){
   const [params,setParams]=useSearchParams();
-  const [enabled,setEnabled]=useState(null),[materials,setMaterials]=useState([]),[history,setHistory]=useState([]),[selected,setSelected]=useState(''),[text,setText]=useState(''),[title,setTitle]=useState('My study material'),[language,setLanguage]=useState('en');
+  const [enabled,setEnabled]=useState(null),[materials,setMaterials]=useState([]),[history,setHistory]=useState([]),[selected,setSelected]=useState(''),[text,setText]=useState(''),[title,setTitle]=useState('My study material'),[language,setLanguage]=useState('en'),[fromFile,setFromFile]=useState(false);
   const [session,setSession]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[remaining,setRemaining]=useState(600),[warning,setWarning]=useState('');
   const requestKey=useRef(null),clock=useRef(null),alive=useRef(true);
   const update=useCallback(snapshot=>{
@@ -78,11 +79,6 @@ export default function OralExamPage(){
     if(data.session.status==='active')voice.connect(data.session);else voice.stop();
   }
   async function end(){voice.stop();const {data}=await api.end(session.id);update(data.session);}
-  async function upload(file){
-    if(!file)return;
-    if(!/\.txt$/i.test(file.name)||file.size>90000)throw new Error('Choose a UTF-8 .txt file up to 90 KB. Export PDF, Word or PowerPoint content as text first.');
-    setText(await file.text());setTitle(file.name.replace(/\.txt$/i,''));setSelected('');
-  }
   const report=session?.evaluation;
   // After an exam on a saved transcript, continue with that lecture's other tools.
   const transcriptId=session?.source?.kind==='transcript'?session.source.id:null;
@@ -95,7 +91,7 @@ export default function OralExamPage(){
     {enabled&&!session&&<>
       <section className="oral-panel oral-setup"><div><span className="oral-eyebrow">01 / YOUR MATERIAL</span><h2>What would you like to explore?</h2><p>Choose a completed lecture or bring your own notes. Questions will use only this material.</p>{warning&&<p role="status">{warning}</p>}
         <label>Saved lecture<select value={selected} onChange={e=>setSelected(e.target.value)}><option value="">Use my own text</option>{materials.map(m=><option key={`${m.kind}:${m.id}`} value={`${m.kind}:${m.id}`}>{m.title}</option>)}</select></label>
-        {!selected&&<><label>Upload notes <span className="oral-hint">UTF-8 .txt · up to 90 KB</span><input type="file" accept=".txt,text/plain" onChange={e=>run(()=>upload(e.target.files?.[0]))}/></label><label>Material title<input value={title} maxLength={160} onChange={e=>setTitle(e.target.value)}/></label><label>Or paste your study material<textarea rows={7} value={text} maxLength={90000} onChange={e=>setText(e.target.value)} placeholder="Paste at least 100 characters of lecture notes or a transcript…"/></label></>}
+        {!selected&&<><MaterialUpload disabled={busy} onExtracted={m=>{setText(m.text);setTitle(m.title);setFromFile(true);}} onCleared={()=>{setText('');setTitle('My study material');setFromFile(false);}}/><label>Material title<input value={title} maxLength={160} onChange={e=>setTitle(e.target.value)}/></label><label>{fromFile?'Extracted material — the exam uses exactly this text':'Or paste your study material'}<textarea rows={fromFile?12:7} value={text} maxLength={90000} onChange={e=>setText(e.target.value)} placeholder="Paste at least 100 characters of lecture notes or a transcript…"/></label><p className="oral-hint oral-count">{text.trim().length.toLocaleString('en-US')} / 90,000 characters{text.trim().length<100?' · at least 100 needed':''}</p></>}
         <label>Exam language<select value={language} onChange={e=>setLanguage(e.target.value)}><option value="en">English</option><option value="ar">العربية</option></select></label>
         <button className="button-primary" disabled={busy||(!selected&&text.trim().length<100)} onClick={()=>run(prepare)}>Prepare exam <ArrowRight size={17}/></button>
       </div><aside className="oral-guide"><BookOpen size={32}/><h3>A conversation about understanding</h3><p>One question at a time. Follow-up questions adapt to what you say.</p><ol><li>Choose material you’ve studied.</li><li>Check your microphone.</li><li>Speak naturally and review your feedback.</li></ol><p className="oral-hint">Your voice is sent to a speech provider during the exam. EduFusion saves final transcripts and feedback, not audio recordings. This practice score is separate from your course grades.</p></aside></section>
