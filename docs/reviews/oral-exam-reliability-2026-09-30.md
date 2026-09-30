@@ -104,6 +104,8 @@ New regressions failed against the prior implementation before the fixes. Final 
 
 Final lint and `git diff --check` passed. The production Vite build passed in 6.42 seconds. There is no separate TypeScript typecheck. Deterministic fixtures do not evaluate provider/model quality.
 
+[GitHub CI run 48](https://github.com/GraduationGroup101/EduFusion-AI/actions/runs/36685631341) also passed against the PR candidate combined with newer `main` commit `b9876cc`: 99 backend tests, 81 frontend tests, lint/build, 11 lecture-engine Python tests and both production dependency audits (zero vulnerabilities). Those higher counts include the intervening What-if feature tests. This was GitHub's temporary test candidate; the PR and `main` were not merged by this task.
+
 ## 8. Long-duration verification after the fix
 
 The fixed browser run completed the full **ten-minute deadline**, September 30, 07:30:53.340–07:40:53.340 UTC (10:30:53–10:40:53 Cairo). Session: `321defc3-a067-4290-8799-68fd7cbeecd2`. It used the slower answer fixture, a drop at four minutes and a browser-intercepted LectureScribe 502 every 15 seconds through the real Axios service. These are local conditions, not production events.
@@ -134,4 +136,4 @@ To repeat locally, start `verifyOralExam.js` with `NODE_ENV=test`, `ORAL_EXAM_FI
 
 ## 10. Pull request
 
-The draft PR URL is recorded in the delivery message. Do not merge before migration/deployment review and the outstanding production verification.
+[Draft PR #19](https://github.com/GraduationGroup101/EduFusion-AI/pull/19). Do not merge before migration/deployment review and the outstanding production verification.
