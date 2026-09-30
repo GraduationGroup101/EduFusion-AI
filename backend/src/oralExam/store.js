@@ -76,6 +76,21 @@ async function recordAnswer(id,token,sequence,transcript) {
     await client.query(`UPDATE ${TURNS} SET transcript=$3,answered_at=COALESCE(answered_at,clock_timestamp()) WHERE session_id=$1 AND sequence=$2`,[id,sequence,transcript]);
   });
 }
+// A conversational exchange (repeat, clarification, nudge, retry) belongs to
+// the current question. It is appended to that turn and never creates a turn,
+// a transcript or an assessment. A transcript recorded provisionally before
+// the intent was known is cleared so it cannot be scored later.
+async function recordExchange(id,token,sequence,exchange) {
+  return db.transaction(async client=>{
+    const valid=await client.query(`SELECT id FROM ${TABLE} WHERE id=$1 AND lease_token=$2 AND status='active' AND expires_at>clock_timestamp() AND lease_until>clock_timestamp() FOR UPDATE`,[id,token]);
+    if(!valid.rowCount)fail(409,'Exam connection expired');
+    const row=(await client.query(`SELECT * FROM ${TURNS} WHERE session_id=$1 AND sequence=$2`,[id,sequence])).rows[0];
+    if(!row||row.assessment)fail(409,'This question is already answered');
+    const entry={kind:String(exchange.kind),transcript:exchange.transcript==null?null:String(exchange.transcript).slice(0,8000),reply:String(exchange.reply||'').slice(0,1200),at:new Date().toISOString()};
+    await client.query(`UPDATE ${TURNS} SET transcript=NULL,answered_at=NULL,exchanges=COALESCE(exchanges,'[]'::jsonb)||$3::jsonb WHERE session_id=$1 AND sequence=$2`,[id,sequence,JSON.stringify([entry])]);
+    return entry;
+  });
+}
 async function commit(id,token,expectedSequence,transcript,decision) {
   return db.transaction(async client=>{
     const session=(await client.query(`SELECT * FROM ${TABLE} WHERE id=$1 AND lease_token=$2 AND status='active' AND expires_at>clock_timestamp() AND lease_until>clock_timestamp() FOR UPDATE`,[id,token])).rows[0];
@@ -84,6 +99,9 @@ async function commit(id,token,expectedSequence,transcript,decision) {
     const last=turns.at(-1);
     if((last?.sequence||0)!==expectedSequence) fail(409,'The exam has already advanced');
     if(last && transcript!==null) {
+      // An answer is only committed with its assessment; a control decision
+      // (repeat, clarify, don't know) must never end or advance the exam here.
+      if(!decision.assessment||(decision.intent&&decision.intent!=='answer')) fail(409,'An answer must be assessed before it is saved');
       if(last.assessment||(last.transcript!==null&&last.transcript!==transcript)) fail(409,'This answer is already saved');
       await client.query(`UPDATE ${TURNS} SET transcript=$2,assessment=$3,answered_at=COALESCE(answered_at,clock_timestamp()) WHERE id=$1`,[last.id,transcript,decision.assessment]);
     } else if(last) fail(409,'Answer the current question first');
@@ -102,14 +120,17 @@ async function finish(user,id,reason='student_ended',token=null) {
   return get(user,id);
 }
 async function saveEvaluation(id,evaluation) {
-  await db.query(`UPDATE ${TABLE} SET evaluation=$2,evaluation_status='ready',updated_at=clock_timestamp() WHERE id=$1 AND status NOT IN ('ready','active') AND evaluation_status<>'ready'`,[id,evaluation]);
+  await db.query(`UPDATE ${TABLE} SET evaluation=$2,evaluation_status='ready',evaluation_error=NULL,evaluation_attempts=evaluation_attempts+1,updated_at=clock_timestamp() WHERE id=$1 AND status NOT IN ('ready','active') AND evaluation_status<>'ready'`,[id,evaluation]);
 }
-const evaluationFailed=id=>db.query(`UPDATE ${TABLE} SET evaluation_status='failed' WHERE id=$1 AND evaluation_status<>'ready'`,[id]);
+// Records why the last attempt failed (a safe code, never provider text) so a
+// retry can explain it; a ready report is never downgraded.
+const evaluationFailed=(id,code='unknown')=>db.query(`UPDATE ${TABLE} SET evaluation_status='failed',evaluation_error=$2,evaluation_attempts=evaluation_attempts+1,updated_at=clock_timestamp() WHERE id=$1 AND evaluation_status<>'ready'`,[id,String(code).slice(0,80)]);
 function publicView(row) {
-  const {id,material_title,language,status,started_at,expires_at,ended_at,termination_reason,evaluation,evaluation_status,server_now}=row;
+  const {id,material_title,language,status,started_at,expires_at,ended_at,termination_reason,evaluation,evaluation_status,evaluation_error,evaluation_attempts,server_now}=row;
   // Only the material reference is exposed (never pasted text) so results can link back to lecture tools.
   const source=row.source&&row.source.kind!=='text'?{kind:row.source.kind,id:row.source.id}:undefined;
-  return {id,material_title,language,status,started_at,expires_at,ended_at,termination_reason,evaluation,evaluation_status,server_now:server_now||new Date(),source,
-    turns:row.turns?.map(({id,sequence,question,concept,transcript,assessment})=>({id,sequence,question,concept,transcript,feedback:assessment?.feedback}))||[]};
+  return {id,material_title,language,status,started_at,expires_at,ended_at,termination_reason,evaluation,evaluation_status,evaluation_error:evaluation_error??null,evaluation_attempts:evaluation_attempts??0,server_now:server_now||new Date(),source,
+    turns:row.turns?.map(({id,sequence,question,concept,transcript,assessment,exchanges})=>({id,sequence,question,concept,transcript,feedback:assessment?.feedback,
+      exchanges:(exchanges||[]).map(({kind,transcript,reply,at})=>({kind,transcript,reply,at}))}))||[]};
 }
-module.exports={create,get,list,start,claim,renew,release,recordAnswer,commit,finish,expire,saveEvaluation,evaluationFailed,publicView};
+module.exports={create,get,list,start,claim,renew,release,recordAnswer,recordExchange,commit,finish,expire,saveEvaluation,evaluationFailed,publicView};

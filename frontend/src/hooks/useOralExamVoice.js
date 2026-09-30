@@ -8,7 +8,7 @@ import {claimResumeKey,forgetResumeKey,nextResumeAttempt} from '../services/oral
 const LEASE_BUSY_WINDOW_MS=60000;
 
 export function useOralExamVoice(onSession) {
-  const [state,setState]=useState('idle'),[error,setError]=useState(''),[mic,setMic]=useState(false),[muted,setMuted]=useState(false),[question,setQuestion]=useState('');
+  const [state,setState]=useState('idle'),[error,setError]=useState(''),[mic,setMic]=useState(false),[muted,setMuted]=useState(false),[question,setQuestion]=useState(''),[remark,setRemark]=useState(null);
   const runtime=useRef({}),onSessionRef=useRef(onSession);onSessionRef.current=onSession;
   // A per-tab capability: survives a refresh of this tab, never shared with another live tab.
   const resume=useRef({});
@@ -97,7 +97,9 @@ export function useOralExamVoice(onSession) {
           if(msg.type==='welcome'){r.attempts=0;r.busySince=null;setError('');log('welcome',{server_connection:msg.connectionId});onSessionRef.current(msg.session);deadline(msg.session);}
           if(msg.type==='clock'){onSessionRef.current({id:r.sessionId,...msg});}
           if(msg.type==='state'){r.phase=msg.state;setState(msg.state);}
-          if(msg.type==='question')setQuestion(msg.question);
+          // A conversational reply (repeat, clarification, nudge, retry) keeps the
+          // same question and sequence; the remark is what the examiner just said.
+          if(msg.type==='question'){setQuestion(msg.question);setRemark(msg.kind&&msg.kind!=='question'?{kind:msg.kind,text:msg.remark||''}:null);}
           if(msg.type==='error'){setError(msg.message);r.phase='error';setState('error');r.source?.stop();}
           if(msg.type==='ended'){r.phase='ended';forgetResumeKey(r.sessionId);setState('ended');onSessionRef.current(msg.session);stop();}
           if(msg.type==='audio'){
@@ -119,5 +121,5 @@ export function useOralExamVoice(onSession) {
     dial();
   },[stop]);
   const toggleMute=()=>{const r=runtime.current;r.muted=!r.muted;setMuted(r.muted);r.stream?.getAudioTracks().forEach(t=>{t.enabled=!r.muted;});};
-  return {state,error,mic,muted,question,checkMic,connect,stop,toggleMute};
+  return {state,error,mic,muted,question,remark,checkMic,connect,stop,toggleMute};
 }

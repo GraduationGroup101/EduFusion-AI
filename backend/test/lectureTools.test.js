@@ -122,12 +122,17 @@ test('practice questions validate counts, drop malformed items and are stored pr
 
 test('job creation identifies this gateway to the provider only when a key is configured', async () => {
   const { gatewayHeaders } = require('../src/lib/lectureScribe');
-  assert.deepEqual(gatewayHeaders({}), {});
-  assert.deepEqual(gatewayHeaders({ LECTURESCRIBE_GATEWAY_KEY: 'shared' }), { 'X-Gateway-Key': 'shared' });
+  assert.deepEqual(gatewayHeaders({ id_student: 5 }, {}), {});
+  assert.deepEqual(gatewayHeaders(null, { LECTURESCRIBE_GATEWAY_KEY: 'shared' }), { 'X-Gateway-Key': 'shared' });
+  const identified = gatewayHeaders({ id_student: 702 }, { LECTURESCRIBE_GATEWAY_KEY: 'shared' });
+  assert.match(identified['X-Gateway-User'], /^[0-9a-f]{40}$/);
+  assert.notEqual(identified['X-Gateway-User'], gatewayHeaders({ id_student: 703 }, { LECTURESCRIBE_GATEWAY_KEY: 'shared' })['X-Gateway-User']);
+  assert.doesNotMatch(identified['X-Gateway-User'], /702/);
   process.env.LECTURESCRIBE_GATEWAY_KEY = 'shared';
   try {
     assert.equal((await request(server).post('/api/lecture-scribe/jobs').set('Authorization', auth(702)).send({ youtube_url: 'https://youtu.be/qqqqqqqqqqq' })).status, 202);
     assert.equal(calls.at(-1).options.headers['X-Gateway-Key'], 'shared');
+    assert.equal(calls.at(-1).options.headers['X-Gateway-User'], gatewayHeaders({ id_student: 702 }, { LECTURESCRIBE_GATEWAY_KEY: 'shared' })['X-Gateway-User']);
   } finally { delete process.env.LECTURESCRIBE_GATEWAY_KEY; }
   assert.equal((await request(server).post('/api/lecture-scribe/jobs').set('Authorization', auth(702)).send({ youtube_url: 'https://youtu.be/rrrrrrrrrrr' })).status, 202);
   assert.equal(calls.at(-1).options.headers['X-Gateway-Key'], undefined);
