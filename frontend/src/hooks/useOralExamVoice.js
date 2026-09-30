@@ -1,18 +1,23 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {socketUrl} from '../services/oralExam';
 import {oralLifecycle} from '../services/oralExamDiagnostics';
+import {claimResumeKey,forgetResumeKey,nextResumeAttempt} from '../services/oralExamResume';
+
+// The server keeps an orphaned connection's lease for up to ~35 s (pong watchdog)
+// or 20 s after its process stops. A busy lease is retried for longer than that.
+const LEASE_BUSY_WINDOW_MS=60000;
 
 export function useOralExamVoice(onSession) {
   const [state,setState]=useState('idle'),[error,setError]=useState(''),[mic,setMic]=useState(false),[muted,setMuted]=useState(false),[question,setQuestion]=useState('');
   const runtime=useRef({}),onSessionRef=useRef(onSession);onSessionRef.current=onSession;
-  // A per-mounted-page capability; never shared through storage with other tabs.
+  // A per-tab capability: survives a refresh of this tab, never shared with another live tab.
   const resume=useRef({});
   const stop=useCallback(()=>{
     const r=runtime.current;r.stopped=true;clearTimeout(r.retry);clearTimeout(r.deadline);clearTimeout(r.watchdog);r.socket?.close();r.source?.stop();
     r.stream?.getTracks().forEach(t=>t.stop());r.capture?.disconnect();r.input?.disconnect();r.context?.close().catch(()=>{});
     runtime.current={};setMic(false);
   },[]);
-  useEffect(()=>()=>stop(),[stop]);
+  useEffect(()=>()=>{stop();resume.current.claim?.release();resume.current={};},[stop]);
   const checkMic=useCallback(async()=>{
     stop();setError('');
     const r={stopped:false,muted:false};runtime.current=r;setMuted(false);
@@ -40,12 +45,12 @@ export function useOralExamVoice(onSession) {
     r.connectionGeneration=(r.connectionGeneration||0)+1;
     const generation=r.connectionGeneration;
     const active=()=>runtime.current===r&&!r.stopped&&r.connectionGeneration===generation&&r.phase!=='ended';
-    if(resume.current.sessionId!==session.id)resume.current={sessionId:session.id,key:crypto.randomUUID(),attempt:0};
-    r.sessionId=session.id;r.attempts=0;setError('');
+    if(resume.current.sessionId!==session.id){resume.current.claim?.release();resume.current={sessionId:session.id,claim:claimResumeKey(session.id)};}
+    r.sessionId=session.id;r.attempts=0;r.busySince=null;setError('');
     function deadline(snapshot){
       clearTimeout(r.deadline);
       const remaining=Math.max(0,new Date(snapshot.expires_at)-new Date(snapshot.server_now));
-      r.deadline=setTimeout(()=>{if(!active())return;r.phase='ended';clearTimeout(r.retry);clearTimeout(r.watchdog);r.source?.stop();r.stream?.getTracks().forEach(t=>t.stop());r.socket?.close();setState('ended');onSessionRef.current({...snapshot,status:'timed_out'});},remaining);
+      r.deadline=setTimeout(()=>{if(!active())return;r.phase='ended';forgetResumeKey(r.sessionId);clearTimeout(r.retry);clearTimeout(r.watchdog);r.source?.stop();r.stream?.getTracks().forEach(t=>t.stop());r.socket?.close();setState('ended');onSessionRef.current({...snapshot,status:'timed_out'});},remaining);
     }
     deadline(session);
     function dial(){
@@ -53,7 +58,7 @@ export function useOralExamVoice(onSession) {
       setState('connecting');r.phase='connecting';
       const ws=new WebSocket(socketUrl()),instance=crypto.randomUUID();r.socket=ws;
       // Numbered when the socket is created, so the server can refuse a delayed older handshake.
-      const attempt=++resume.current.attempt;
+      const attempt=nextResumeAttempt(r.sessionId);
       const current=()=>active()&&r.socket===ws;
       const log=(event,fields={})=>oralLifecycle(event,{session:r.sessionId,connection:instance,...fields});
       log('connect',{attempt:r.attempts,connection_attempt:attempt});
@@ -63,8 +68,12 @@ export function useOralExamVoice(onSession) {
         log('disconnect',{code,reason});
         if(r.deviceLost){r.phase='error';setState('error');return;}
         r.phase='reconnecting';setState('reconnecting');
-        if([4001,4401,4403,4409].includes(code)||r.attempts>=6){
-          setError(code===4401?'Your sign-in expired. Sign in again to recover your exam.':[4001,4409].includes(code)?'Another connection now owns this exam. Close other exam tabs, then reconnect. The timer continues.':'Connection lost. Reconnect to recover your exam. The timer continues.');setState('error');return;
+        // A busy lease is usually this tab's own orphaned connection: keep retrying
+        // until the server has certainly released it, not just six times.
+        if(code===4429&&r.busySince==null)r.busySince=Date.now();
+        const waitingForLease=code===4429&&Date.now()-r.busySince<LEASE_BUSY_WINDOW_MS;
+        if([4001,4401,4403,4409].includes(code)||(r.attempts>=6&&!waitingForLease)){
+          setError(code===4401?'Your sign-in expired. Sign in again to recover your exam.':[4001,4409].includes(code)?'Another connection now owns this exam. Close other exam tabs, then reconnect. The timer continues.':code===4429?'This exam is still connected in another tab or window. Close it, then reconnect. The timer continues.':'Connection lost. Reconnect to recover your exam. The timer continues.');setState('error');return;
         }
         const delay=Math.min(8000,750*2**r.attempts++)+Math.random()*300;
         log('reconnect',{attempt:r.attempts,delay_ms:Math.round(delay)});
@@ -74,17 +83,23 @@ export function useOralExamVoice(onSession) {
         if(!current())return;
         log('watchdog');disconnected(4000,'heartbeat_timeout');ws.close(4000,'Heartbeat timeout');
       },20000);};watch();
-      ws.onopen=()=>{if(current())ws.send(JSON.stringify({type:'hello',token:localStorage.getItem('token'),sessionId:r.sessionId,connectionKey:resume.current.key,connectionAttempt:attempt}));else ws.close();};
+      ws.onopen=()=>{
+        if(!current()){ws.close();return;}
+        const claim=resume.current.claim;
+        const hello=key=>{if(current()&&ws.readyState===1)ws.send(JSON.stringify({type:'hello',token:localStorage.getItem('token'),sessionId:r.sessionId,connectionKey:key,connectionAttempt:attempt}));};
+        // The key is verified against other live tabs before it is ever sent.
+        if(claim.key)hello(claim.key);else claim.ready.then(hello);
+      };
       ws.onmessage=async event=>{
         if(!current())return;
         try{
           const msg=JSON.parse(event.data);watch();
-          if(msg.type==='welcome'){r.attempts=0;setError('');log('welcome',{server_connection:msg.connectionId});onSessionRef.current(msg.session);deadline(msg.session);}
+          if(msg.type==='welcome'){r.attempts=0;r.busySince=null;setError('');log('welcome',{server_connection:msg.connectionId});onSessionRef.current(msg.session);deadline(msg.session);}
           if(msg.type==='clock'){onSessionRef.current({id:r.sessionId,...msg});}
           if(msg.type==='state'){r.phase=msg.state;setState(msg.state);}
           if(msg.type==='question')setQuestion(msg.question);
           if(msg.type==='error'){setError(msg.message);r.phase='error';setState('error');r.source?.stop();}
-          if(msg.type==='ended'){r.phase='ended';setState('ended');onSessionRef.current(msg.session);stop();}
+          if(msg.type==='ended'){r.phase='ended';forgetResumeKey(r.sessionId);setState('ended');onSessionRef.current(msg.session);stop();}
           if(msg.type==='audio'){
             const buffer=Uint8Array.from(atob(msg.audio),c=>c.charCodeAt(0)).buffer;
             const decoded=await r.context.decodeAudioData(buffer);
