@@ -219,6 +219,106 @@ test('saved scenario reaches a distinct model call without changing academic evi
     assert.doesNotMatch(JSON.stringify(invalid.body),/invalid evidence/);
   } finally {providerMode='ok';}
 });
+test('scenario delete and learning plan are owner-only and never touch academic evidence or the actual prediction', async () => {
+  const owner = `Bearer ${studentToken(136)}`;
+  const other = `Bearer ${studentToken()}`;
+  const { enrollment_id: enrollment } = await registerStudentWithEnrollment(profile(136));
+  await database.query('INSERT INTO student_assessments(enrollment_id,id_assessment,date_submitted,score) VALUES($1,2000000001,31,45)', [enrollment]);
+  await database.query('INSERT INTO student_vle_events(enrollment_id,id_site,date,sum_click) VALUES($1,2000000002,2,7)', [enrollment]);
+  const path = `/api/student/scenarios/${enrollment}`;
+  assert.equal((await request(server).delete(path).set('Authorization', owner)).status, 404);
+  assert.equal((await request(server).patch(`${path}/plan`).set('Authorization', owner).send({ adopted: true })).status, 404);
+  const saved = await request(server).put(path).set('Authorization', owner).send({ quiz_clicks: 3, activity_days: 2, latest_tma_score: 80, tma_delay_days: 0 });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.body.scenario.plan, null);
+  assert.equal(saved.body.scenario.evidence.latest_tma_score, 45);
+  assert.equal(saved.body.scenario.evidence.total_clicks, 7);
+  let read = await request(server).get(path).set('Authorization', owner);
+  assert.equal(read.body.status.state, 'current');
+  assert.deepEqual(read.body.status.reasons, []);
+  // Another student sees nothing, cannot delete it and cannot label it.
+  assert.equal((await request(server).get(path).set('Authorization', other)).status, 404);
+  assert.equal((await request(server).delete(path).set('Authorization', other)).status, 404);
+  assert.equal((await request(server).patch(`${path}/plan`).set('Authorization', other).send({ adopted: true })).status, 404);
+  assert.equal((await database.query('SELECT COUNT(*)::int AS n FROM edufusion_student_scenarios WHERE enrollment_id=$1', [enrollment])).rows[0].n, 1);
+  // The learning plan is a label on the isolated row, not a write to records.
+  assert.equal((await request(server).patch(`${path}/plan`).set('Authorization', owner).send({ adopted: 'yes' })).status, 400);
+  const evidenceBefore = await getStudentBehaviorData(136);
+  const predictionsBefore = (await database.query('SELECT * FROM predictions')).rows;
+  const planned = await request(server).patch(`${path}/plan`).set('Authorization', owner).send({ adopted: true });
+  assert.equal(planned.status, 200);
+  assert.match(planned.body.scenario.plan.adopted_at, /^\d{4}-/);
+  assert.deepEqual(planned.body.scenario.inputs, saved.body.scenario.inputs);
+  read = await request(server).get(path).set('Authorization', owner);
+  assert.ok(read.body.scenario.data.plan.adopted_at);
+  assert.equal((await request(server).patch(`${path}/plan`).set('Authorization', owner).send({ adopted: false })).body.scenario.plan, null);
+  assert.deepEqual(await getStudentBehaviorData(136), evidenceBefore);
+  const removed = await request(server).delete(path).set('Authorization', owner);
+  assert.equal(removed.status, 200);
+  assert.equal(removed.body.deleted, true);
+  read = await request(server).get(path).set('Authorization', owner);
+  assert.equal(read.status, 200);
+  assert.equal(read.body.scenario, null);
+  assert.equal(read.body.status, null);
+  assert.equal((await request(server).delete(path).set('Authorization', owner)).status, 404);
+  assert.deepEqual(await getStudentBehaviorData(136), evidenceBefore);
+  assert.deepEqual((await database.query('SELECT * FROM predictions')).rows, predictionsBefore);
+  // The other student's own scenario from the earlier tests is still there.
+  assert.equal((await database.query('SELECT COUNT(*)::int AS n FROM edufusion_student_scenarios WHERE id_student=123')).rows[0].n, 1);
+});
+test('scenario status is stale after the course day moves, invalid when its evidence disappears, and flags changed records', async () => {
+  const owner = `Bearer ${studentToken(136)}`;
+  const enrollment = (await database.query('SELECT id FROM enrollments WHERE id_student=136')).rows[0].id;
+  const path = `/api/student/scenarios/${enrollment}`;
+  // The TMA is already submitted, so the scenario must reference the submitted one.
+  const saved = await request(server).put(path).set('Authorization', owner).send({ latest_tma_score: 90, tma_delay_days: 1 });
+  assert.equal(saved.status, 200);
+  providerCalls = [];
+  await database.query('UPDATE academic_clocks SET current_day=61');
+  try {
+    let read = await request(server).get(path).set('Authorization', owner);
+    assert.equal(read.body.status.state, 'stale');
+    assert.equal(read.body.status.based_on_day, 60);
+    assert.equal(read.body.status.current_day, 61);
+    const stale = await request(server).get(`${path}/prediction`).set('Authorization', owner);
+    assert.equal(stale.status, 409);
+    assert.equal(stale.body.status.state, 'stale');
+    assert.equal(providerCalls.length, 0);
+  } finally { await database.query('UPDATE academic_clocks SET current_day=60'); }
+  // A newer TMA submission replaces the one the scenario referenced.
+  await database.query("INSERT INTO assessments(id_assessment,course_presentation_id,assessment_type,date,weight) VALUES(2000000003,1,'TMA',50,0) ON CONFLICT DO NOTHING");
+  const newer = await database.query('INSERT INTO student_assessments(enrollment_id,id_assessment,date_submitted,score) VALUES($1,2000000003,55,60) RETURNING id', [enrollment]);
+  try {
+    const read = await request(server).get(path).set('Authorization', owner);
+    assert.equal(read.body.status.state, 'invalid');
+    assert.match(read.body.status.reasons[0], /newer TMA/);
+    const invalid = await request(server).get(`${path}/prediction`).set('Authorization', owner);
+    assert.equal(invalid.status, 409);
+    assert.equal(invalid.body.status.state, 'invalid');
+    assert.equal(providerCalls.length, 0);
+  } finally {
+    await database.query('DELETE FROM student_assessments WHERE id=$1', [newer.rows[0].id]);
+    await database.query('DELETE FROM assessments WHERE id_assessment=2000000003');
+  }
+  // Same day, same references, but new real activity: evaluate, and say so.
+  assert.equal((await request(server).put(path).set('Authorization', owner).send({ forum_clicks: 4 })).status, 200);
+  await database.query('INSERT INTO student_vle_events(enrollment_id,id_site,date,sum_click) VALUES($1,2000000003,50,2)', [enrollment]);
+  let read = await request(server).get(path).set('Authorization', owner);
+  assert.equal(read.body.status.state, 'needs_reevaluation');
+  assert.ok(read.body.status.changed.includes('total_clicks'));
+  const evaluated = await request(server).get(`${path}/prediction`).set('Authorization', owner);
+  assert.equal(evaluated.status, 200);
+  assert.equal(evaluated.body.hypothetical, true);
+  assert.equal(evaluated.body.status.state, 'needs_reevaluation');
+  assert.equal(providerCalls.length, 1);
+  // Saving again refreshes the snapshot; a legacy row without a snapshot is simply current.
+  assert.equal((await request(server).put(path).set('Authorization', owner).send({ forum_clicks: 4 })).status, 200);
+  assert.equal((await request(server).get(path).set('Authorization', owner)).body.status.state, 'current');
+  await database.query("UPDATE edufusion_student_scenarios SET data=data-'evidence' WHERE id_student=136");
+  read = await request(server).get(path).set('Authorization', owner);
+  assert.equal(read.body.status.state, 'current');
+  assert.equal((await request(server).delete(path).set('Authorization', owner)).status, 200);
+});
 test('student prediction validates enrollment, uses the current cache, and forces an upstream refresh', async () => {
   const path = '/api/student/prediction?code_module=DEMO&code_presentation=2026';
   const auth = `Bearer ${studentToken()}`;
