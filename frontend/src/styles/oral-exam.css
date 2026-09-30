@@ -23,3 +23,14 @@
 @media(prefers-reduced-motion:reduce){.oral-orb.is-active{animation:none}}
 
 .oral-exam-page .btn-secondary{border:1px solid #bdd1c8;border-radius:10px;padding:12px 18px;background:#fff;font-size:13px;font-weight:600;color:#193c37}.oral-exam-page .btn-secondary:hover{background:#f0f7f3}.oral-exam-page .button-primary{padding:12px 20px}.oral-exam-page button:disabled:hover{transform:none}
+.oral-upload{margin:20px 0;display:grid;gap:8px}.oral-upload-label{font-size:14px;font-weight:600}.oral-upload .oral-hint{margin:0}
+.oral-visually-hidden{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0!important}
+.oral-dropzone{display:flex!important;flex-direction:column;align-items:center;justify-content:center;gap:8px!important;margin:0!important;padding:28px 16px;border:2px dashed #bdd1c8;border-radius:14px;background:#f8fbf9;color:#4c6660;text-align:center;cursor:pointer;font-weight:400!important}
+.oral-dropzone strong{color:#087f75}.oral-dropzone.is-dragging,.oral-dropzone:hover{border-color:#087f75;background:#eef7f3}.oral-dropzone:focus-within{outline:3px solid #087f75;outline-offset:3px}
+.oral-file{border:1px solid #d8e5e1;border-radius:14px;padding:16px;display:grid;gap:12px}.oral-file.is-error{border-color:#ecc5a5;background:#fffaf6}
+.oral-file-row{display:flex;align-items:center;gap:12px;min-width:0}.oral-file-row>svg{flex:none;color:#087f75}.oral-file-name{display:grid;min-width:0;flex:1}.oral-file-name strong{font-size:14px;overflow-wrap:anywhere}
+.oral-file-remove{display:grid;place-items:center;width:44px;border-radius:10px;color:#4c6660}.oral-file-remove:hover{background:#f0f7f3}
+.oral-file progress{width:100%;height:8px;accent-color:#087f75}
+.oral-file-summary p,.oral-file-error{display:flex;gap:8px;align-items:flex-start;font-size:14px;margin:0 0 8px!important;line-height:1.5!important}.oral-file-summary svg,.oral-file-error svg{flex:none;margin-top:3px}.oral-file-summary>p:first-child svg{color:#087f75}
+.oral-file-error{color:#7c4320!important}.oral-file-warning{background:#fff3eb;border-radius:10px;padding:10px 12px;color:#7c4320!important}
+.oral-file-change{justify-self:start;color:#087f75;text-decoration:underline;font-size:14px}

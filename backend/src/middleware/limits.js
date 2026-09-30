@@ -6,4 +6,11 @@ const aiLimiter = rateLimit({
   standardHeaders: true, legacyHeaders: false,
   message: { error: 'Too many requests. Please try again later.' },
 });
-module.exports = { aiLimiter };
+// Document extraction is CPU-bound, so uploads get their own per-student budget.
+const materialLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, limit: 20,
+  keyGenerator: (req) => ownerKey(req.user),
+  standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Too many uploads. Please wait a few minutes and try again.' },
+});
+module.exports = { aiLimiter, materialLimiter };

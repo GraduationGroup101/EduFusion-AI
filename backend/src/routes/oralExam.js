@@ -1,6 +1,8 @@
 const express=require('express');
 const {authenticate}=require('../middleware/auth');
-const {aiLimiter}=require('../middleware/limits');
+const {aiLimiter,materialLimiter}=require('../middleware/limits');
+const {readMultipart}=require('../lib/multipart');
+const ingest=require('../oralExam/ingest');
 const {createInput,id,fail}=require('../oralExam/contracts');
 const {configured}=require('../oralExam/config');
 const {resolveMaterial}=require('../oralExam/material');
@@ -28,6 +30,21 @@ router.get('/materials',wrap(async(req,res)=>{
   res.json({materials:[...lectures.filter(l=>l.status==='ready').map(l=>({kind:'lecture',id:l.id,title:l.title})),
     ...jobs.filter(j=>j.status==='completed').map(j=>({kind:'transcript',id:j.job_id,title:j.title||j.request?.youtube_url||'Lecture transcript'}))],library_unavailable:libraryUnavailable});
 }));
+// Converts an uploaded study document to normalized text. Nothing is stored:
+// the student reviews the text, then creates a session from it like pasted notes.
+router.post('/materials/extract',materialLimiter,async(req,res)=>{
+  try{
+    const form=await readMultipart(req,{maxBytes:ingest.LIMITS.maxBytes+64*1024,fields:['file'],tooLarge:`This file is larger than ${ingest.LIMITS.maxBytes/1024/1024} MB. Upload a smaller file or only the chapters you need.`});
+    const file=form.get('file');
+    if(!file||typeof file==='string')fail(400,'Choose a file to upload');
+    const material=await ingest.extractInWorker({name:file.name,type:file.type,buffer:new Uint8Array(await file.arrayBuffer())});
+    res.json({material,limits:{max_bytes:ingest.LIMITS.maxBytes,max_characters:ingest.LIMITS.maxChars}});
+  }catch(error){
+    const status=error.statusCode||500;
+    if(status>=500)console.error('Oral exam material extraction failed:',error.code||error.name);
+    res.status(status).json({error:status<500?error.message:'This file could not be processed. Try again or paste the text instead.',code:error.code});
+  }
+});
 router.get('/sessions',wrap(async(req,res)=>res.json({sessions:await store.list(req.user)})));
 router.post('/sessions',aiLimiter,wrap(async(req,res)=>{
   const input=createInput.parse(req.body),key=req.get('Idempotency-Key');

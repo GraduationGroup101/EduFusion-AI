@@ -98,10 +98,6 @@ it('preselects a transcript from LectureScribe and links results back to its lec
   expect(await screen.findByRole('link',{name:/Ask this lecture/})).toHaveAttribute('href','/dashboard/youtube?job=job-9&tool=chat');
   expect(screen.getByRole('link',{name:/Practice questions/})).toHaveAttribute('href','/dashboard/youtube?job=job-9&tool=quiz');
 });
-it('rejects unsupported uploads and leaves the existing tools available',async()=>{
-  open();const input=await screen.findByLabelText(/Upload notes/);fireEvent.change(input,{target:{files:[new File(['binary'],'notes.pdf',{type:'application/pdf'})]}});
-  await screen.findByRole('alert');expect(screen.getByRole('alert')).toHaveTextContent('UTF-8 .txt');expect(api.create).not.toHaveBeenCalled();
-});
 const turns=[{id:'t1',sequence:1,question:'What does a router do?',concept:'Routing',transcript:'It selects paths.',feedback:'Good start.',exchanges:[{kind:'repeat',transcript:'Repeat the question',reply:'Of course. Here is the question again.'},{kind:'clarification',transcript:"I don't understand",reply:'In other words, what job does this device do?'}]}];
 const report={score:71,understanding:70,accuracy:72,completeness:70,communication:75,strengths:['Path selection'],areasForImprovement:['Subnetting'],topicsCovered:['Routing'],summary:'Solid basics.'};
 it('retry feedback shows generating, then a clear failure, then the report, and sends one request per click',async()=>{

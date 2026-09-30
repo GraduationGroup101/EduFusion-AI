@@ -2,6 +2,7 @@ const express = require('express');
 const { authenticate } = require('../middleware/auth');
 const { aiLimiter } = require('../middleware/limits');
 const { integer, badRequest } = require('../lib/validation');
+const { readMultipart } = require('../lib/multipart');
 const { requestUpstream, readJson, upstreamStatus, sendError } = require('../lib/upstream');
 const router = express.Router();
 const BASE=(process.env.QUESTION_GENERATOR_API_URL || 'https://question-generator-api-pol9.onrender.com').replace(/\/+$/,'');
@@ -12,21 +13,7 @@ router.get('/health',async(req,res)=>{
   catch(error) { sendError(res,error); }
 });
 const readForm=async(req)=>{
-  const type=req.headers['content-type'] || '';
-  if(!/^multipart\/form-data;\s*boundary=/i.test(type)) throw badRequest('multipart/form-data is required');
-  if(Number(req.headers['content-length'])>MAX_UPLOAD_BYTES) { req.resume(); throw Object.assign(new Error('Upload exceeds 4 MB'),{statusCode:413}); }
-  const chunks=[];let bytes=0;
-  try {
-    for await(const chunk of req.iterator({destroyOnReturn:false})){
-      bytes+=chunk.length;
-      if(bytes>MAX_UPLOAD_BYTES) throw Object.assign(new Error('Upload exceeds 4 MB'),{statusCode:413});
-      chunks.push(chunk);
-    }
-  } catch(error) { req.resume();throw error; }
-  let form;
-  try { form=await new Response(Buffer.concat(chunks),{headers:{'Content-Type':type}}).formData(); }
-  catch { throw badRequest('Invalid multipart data'); }
-  for(const key of form.keys()) if(!['file','num_mcq','num_tf','num_essay'].includes(key)||form.getAll(key).length!==1) throw badRequest('Invalid upload field');
+  const form=await readMultipart(req,{maxBytes:MAX_UPLOAD_BYTES,fields:['file','num_mcq','num_tf','num_essay'],tooLarge:'Upload exceeds 4 MB'});
   const file=form.get('file');
   if(!file || typeof file==='string' || !file.size || !/\.(pdf|docx?|txt|pptx?)$/i.test(file.name)) throw badRequest('Choose a nonempty PDF, Word, text or PowerPoint file');
   const result=new FormData();result.append('file',file,file.name);
