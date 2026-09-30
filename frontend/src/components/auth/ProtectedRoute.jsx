@@ -1,29 +1,14 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { Brain } from 'lucide-react';
+import BrandedLoader from '../ui/BrandedLoader';
 
 export default function ProtectedRoute({ children, allowedRoles }) {
   const { isAuthenticated, loading, user } = useAuth();
   const location = useLocation();
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-primary flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl flex items-center justify-center animate-pulse-glow"
-               style={{ background: '#087F75' }}>
-            <Brain className="w-6 h-6 text-white" />
-          </div>
-          <div className="flex gap-1">
-            {[0,1,2].map(i => (
-              <span key={i} className="w-2 h-2 rounded-full bg-secondary"
-                    style={{ animation: `blink 1s ${i * 0.2}s infinite` }} />
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // While the stored session is verified, show the current brand rather than
+  // a placeholder icon, so there is no flash of an old identity.
+  if (loading) return <BrandedLoader variant="screen" label="Checking your session" />;
 
   if (isAuthenticated && allowedRoles && !allowedRoles.includes(user?.role)) return <Navigate to="/dashboard" replace />;
 
