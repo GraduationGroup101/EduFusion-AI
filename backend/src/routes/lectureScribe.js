@@ -59,7 +59,7 @@ router.post('/jobs', aiLimiter, async (req,res) => {
       await store.saveJob(req.user,job);
       return res.status(200).json(job);
     }
-    const response=await requestUpstream(req,`${BASE}/jobs`,{method:'POST',headers:{'Content-Type':'application/json',...gatewayHeaders()},body:JSON.stringify(body)},{timeoutMs:30000});
+    const response=await requestUpstream(req,`${BASE}/jobs`,{method:'POST',headers:{'Content-Type':'application/json',...gatewayHeaders(req.user)},body:JSON.stringify(body)},{timeoutMs:30000});
     const data=await readJson(response);
     if(response.ok) {
       if(typeof data.job_id !== 'string' || !data.job_id || data.job_id.length > 200) throw Object.assign(new Error('Invalid job response'), {statusCode:502});
