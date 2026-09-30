@@ -12,4 +12,13 @@ describe('ProtectedRoute', () => {
   it('redirects a signed-out visitor to login', () => { useAuth.mockReturnValue({ isAuthenticated:false,loading:false }); show(); expect(screen.getByText('Login')).toBeInTheDocument(); });
   it('prevents students from opening an administration page', () => { useAuth.mockReturnValue({ isAuthenticated:true,loading:false,user:{role:'student'} }); show(); expect(screen.getByText('Dashboard')).toBeInTheDocument(); expect(screen.queryByText('Admin content')).toBeNull(); });
   it('preserves access for administrators and advisors', () => { useAuth.mockReturnValue({ isAuthenticated:true,loading:false,user:{role:'advisor'} }); show(); expect(screen.getByText('Admin content')).toBeInTheDocument(); });
+  it('shows the branded loader, not a placeholder icon, while the session is verified', () => {
+    useAuth.mockReturnValue({ isAuthenticated:false,loading:true });
+    const { container } = show();
+    const status = screen.getByRole('status', { name: 'Checking your session' });
+    expect(status).toHaveClass('branded-loader--screen');
+    expect(status.querySelector('img')).toHaveAttribute('src', '/brand/edufusion-mark-alpha.png');
+    expect(container.querySelector('svg')).toBeNull();
+    expect(screen.queryByText('Login')).toBeNull(); expect(screen.queryByText('Admin content')).toBeNull();
+  });
 });
