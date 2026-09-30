@@ -9,12 +9,30 @@ import '../styles/oral-exam.css';
 const message=e=>e.response?.data?.error||e.message||'Unable to load Oral Exam. Please try again.';
 const terminal=s=>s&&!['ready','active'].includes(s.status);
 const labels={idle:'Ready when you are',connecting:'Connecting to your examiner',connecting_audio:'Preparing to listen',thinking:'Examiner is thinking',speaking:'Examiner is speaking',listening:'Your turn — speak naturally',reconnecting:'Reconnecting — timer continues',error:'Connection needs attention',ended:'Exam finished'};
+const remarkLabels={repeat:'Repeating the question',clarification:'Clarification',nudge:'A gentle prompt',retry:'Please say that again'};
+const exchangeLabels={repeat:'Asked to repeat',clarification:'Asked for clarification',nudge:'Said they did not know',retry:'Answer was not clear'};
+// Safe reason codes from the gateway, in student-facing words. None of these
+// imply that answers were lost.
+const feedbackErrors={
+  model_unavailable:'The feedback model is busy or unavailable right now. Your answers are saved; try again in a moment.',
+  model_auth:'The feedback service is not configured correctly. Your answers are saved; please tell your administrator.',
+  invalid_model_output:'The feedback model returned an unusable report. Your answers are saved; try again.',
+  timeout:'Generating feedback took too long. Your answers are saved; try again.',
+  network:'The feedback service could not be reached. Your answers are saved; try again.',
+};
+const feedbackError=code=>feedbackErrors[code]||'Feedback could not be generated yet. Your answers are saved; you can retry.';
 
 export default function OralExamPage(){
   const [params,setParams]=useSearchParams();
   const [enabled,setEnabled]=useState(null),[materials,setMaterials]=useState([]),[history,setHistory]=useState([]),[selected,setSelected]=useState(''),[text,setText]=useState(''),[title,setTitle]=useState('My study material'),[language,setLanguage]=useState('en');
   const [session,setSession]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[remaining,setRemaining]=useState(600),[warning,setWarning]=useState('');
-  const requestKey=useRef(null),clock=useRef(null),alive=useRef(true);
+  // Feedback generation has its own explicit state so a retry is always visible:
+  // idle → generating → (report appears | failed with a reason, retryable).
+  const [feedback,setFeedback]=useState({state:'idle',error:''});
+  // True from the moment the student ends the exam until the gateway confirms
+  // it, so the live view is replaced immediately rather than after feedback.
+  const [ending,setEnding]=useState(false);
+  const requestKey=useRef(null),clock=useRef(null),alive=useRef(true),evaluating=useRef(null);
   const update=useCallback(snapshot=>{
     if(!alive.current)return;
     if(snapshot.expires_at&&snapshot.server_now)clock.current={at:performance.now(),seconds:Math.max(0,(new Date(snapshot.expires_at)-new Date(snapshot.server_now))/1000)};
@@ -53,12 +71,29 @@ export default function OralExamPage(){
     return()=>{clearInterval(timer);clearInterval(poll);};
   },[session?.id,session?.status,update]);
   useEffect(()=>{if(terminal(session))voice.stop();},[session?.status,voice.stop]);
+  // One evaluation request at a time, whether it comes from the automatic
+  // first attempt or from the Retry button. The outcome is always shown.
+  const requestFeedback=useCallback(async id=>{
+    if(evaluating.current===id)return;
+    evaluating.current=id;setFeedback({state:'generating',error:''});
+    try{
+      const {data}=await api.evaluate(id);
+      // A result for a session the student has since left is ignored.
+      if(!alive.current||evaluating.current!==id)return;
+      update(data.session);
+      const outcome=data.evaluation?.status||(data.session.evaluation_status==='ready'?'ready':'failed');
+      if(outcome==='failed'||(outcome!=='ready'&&data.session.evaluation_status!=='ready'))setFeedback({state:'failed',error:feedbackError(data.evaluation?.error||data.session.evaluation_error)});
+      else setFeedback({state:'idle',error:''});
+    }catch(e){if(alive.current&&evaluating.current===id)setFeedback({state:'failed',error:message(e)});}
+    finally{if(evaluating.current===id)evaluating.current=null;}
+  },[update]);
+  // Reset feedback state when the student opens another exam, before any
+  // automatic request for the new one runs.
+  useEffect(()=>{setFeedback({state:'idle',error:''});evaluating.current=null;},[session?.id]);
   useEffect(()=>{
     if(!terminal(session)||session.evaluation_status!=='pending')return;
-    let cancelled=false;
-    api.evaluate(session.id).then(({data})=>{if(!cancelled)update(data.session);}).catch(e=>{if(!cancelled)setError(message(e));});
-    return()=>{cancelled=true;};
-  },[session?.id,session?.status,session?.evaluation_status,update]);
+    requestFeedback(session.id);
+  },[session?.id,session?.status,session?.evaluation_status,requestFeedback]);
   async function run(work){if(busy)return;setBusy(true);setError('');try{await work();}catch(e){if(alive.current)setError(message(e));}finally{if(alive.current)setBusy(false);}}
   async function prepare(){
     let source;
@@ -77,16 +112,27 @@ export default function OralExamPage(){
     const {data}=await api.get(session.id);update(data.session);
     if(data.session.status==='active')voice.connect(data.session);else voice.stop();
   }
-  async function end(){voice.stop();const {data}=await api.end(session.id);update(data.session);}
+  async function end(){
+    voice.stop();setEnding(true);setFeedback({state:'generating',error:''});
+    try{
+      const {data}=await api.end(session.id);update(data.session);
+      if(data.evaluation?.status==='failed')setFeedback({state:'failed',error:feedbackError(data.evaluation.error)});
+      else if(data.evaluation?.status==='ready'||data.session.evaluation_status==='ready')setFeedback({state:'idle',error:''});
+    }catch(e){setFeedback({state:'idle',error:''});throw e;}
+    finally{if(alive.current)setEnding(false);}
+  }
   async function upload(file){
     if(!file)return;
     if(!/\.txt$/i.test(file.name)||file.size>90000)throw new Error('Choose a UTF-8 .txt file up to 90 KB. Export PDF, Word or PowerPoint content as text first.');
     setText(await file.text());setTitle(file.name.replace(/\.txt$/i,''));setSelected('');
   }
   const report=session?.evaluation;
+  const generating=feedback.state==='generating';
+  const feedbackStatus=generating?'Generating feedback… this can take up to a minute.':feedback.state==='failed'?feedback.error:session?.evaluation_status==='failed'?feedbackError(session.evaluation_error):'Preparing your feedback…';
   // After an exam on a saved transcript, continue with that lecture's other tools.
   const transcriptId=session?.source?.kind==='transcript'?session.source.id:null;
   const lectureLink=tool=>`/dashboard/youtube?job=${encodeURIComponent(transcriptId)}&tool=${tool}`;
+  const direction=session?.language==='ar'?'rtl':'auto';
   return <div className="oral-exam-page">
     <PageHeader title="Oral Exam" description="Turn what you’ve learned into a conversation."><span className="oral-duration"><Clock size={16}/>10 minutes maximum</span></PageHeader>
     {(error||voice.error)&&<div className="oral-notice" role="alert">{error||voice.error}</div>}
@@ -98,12 +144,13 @@ export default function OralExamPage(){
         {!selected&&<><label>Upload notes <span className="oral-hint">UTF-8 .txt · up to 90 KB</span><input type="file" accept=".txt,text/plain" onChange={e=>run(()=>upload(e.target.files?.[0]))}/></label><label>Material title<input value={title} maxLength={160} onChange={e=>setTitle(e.target.value)}/></label><label>Or paste your study material<textarea rows={7} value={text} maxLength={90000} onChange={e=>setText(e.target.value)} placeholder="Paste at least 100 characters of lecture notes or a transcript…"/></label></>}
         <label>Exam language<select value={language} onChange={e=>setLanguage(e.target.value)}><option value="en">English</option><option value="ar">العربية</option></select></label>
         <button className="button-primary" disabled={busy||(!selected&&text.trim().length<100)} onClick={()=>run(prepare)}>Prepare exam <ArrowRight size={17}/></button>
-      </div><aside className="oral-guide"><BookOpen size={32}/><h3>A conversation about understanding</h3><p>One question at a time. Follow-up questions adapt to what you say.</p><ol><li>Choose material you’ve studied.</li><li>Check your microphone.</li><li>Speak naturally and review your feedback.</li></ol><p className="oral-hint">Your voice is sent to a speech provider during the exam. EduFusion saves final transcripts and feedback, not audio recordings. This practice score is separate from your course grades.</p></aside></section>
+      </div><aside className="oral-guide"><BookOpen size={32}/><h3>A conversation about understanding</h3><p>One question at a time. Follow-up questions adapt to what you say. You can ask the examiner to repeat or clarify a question.</p><ol><li>Choose material you’ve studied.</li><li>Check your microphone.</li><li>Speak naturally and review your feedback.</li></ol><p className="oral-hint">Your voice is sent to a speech provider during the exam. EduFusion saves final transcripts and feedback, not audio recordings. This practice score is separate from your course grades.</p></aside></section>
       {history.length>0&&<section className="oral-panel"><h2>Your recent exams</h2><div className="oral-history">{history.map(s=><button key={s.id} onClick={()=>setParams({session:s.id})}><span>{s.material_title}</span><span>{s.status.replace('_',' ')} <ArrowRight size={16}/></span></button>)}</div></section>}
     </>}
-    {session?.status==='ready'&&<section className="oral-panel oral-ready"><span className="oral-eyebrow">02 / BEFORE YOU BEGIN</span><h2>{session.material_title}</h2><p>Find a quiet spot. Your examiner will ask short questions and adapt to your answers.</p><div className="oral-ready-facts"><span><Clock/>Up to 10 minutes</span><span>{voice.mic?<CheckCircle/>:<Mic/>}{voice.mic?'Microphone ready':'Microphone not checked'}</span></div><p>The timer starts when you start the exam and continues if you disconnect.</p><div className="oral-actions"><button className="btn-secondary" onClick={()=>run(voice.checkMic)} disabled={busy}>Check microphone</button><button className="button-primary" onClick={()=>run(start)} disabled={busy}>Start oral exam <ArrowRight size={17}/></button></div></section>}
-    {session?.status==='active'&&<section className="oral-panel oral-live"><div className="oral-live-top"><span>{session.material_title}</span><span className={`oral-timer ${remaining<=60?'is-ending':''}`} aria-label="Time remaining"><Clock size={17}/>{Math.floor(remaining/60)}:{String(remaining%60).padStart(2,'0')}</span></div><div className={`oral-orb ${voice.state==='speaking'||voice.state==='listening'?'is-active':''}`}><Mic size={38}/></div><p className="oral-eyebrow" role="status">{labels[voice.state]||voice.state}</p><h2 dir={session.language==='ar'?'rtl':'auto'}>{voice.question||session.turns?.at(-1)?.question||'Your examiner is getting ready.'}</h2><p className="oral-hint">{voice.muted?'Microphone muted':voice.state==='listening'?'Pause briefly when you finish your answer.':'Listen to the question before answering.'}</p><div className="oral-actions"><button className="btn-secondary" onClick={voice.toggleMute} disabled={!voice.mic}>{voice.muted?<MicOff size={18}/>:<Mic size={18}/>} {voice.muted?'Unmute':'Mute'}</button>{['idle','error'].includes(voice.state)&&<button className="button-primary" onClick={()=>run(reconnect)} disabled={busy}><RotateCcw size={17}/>Reconnect</button>}<button className="btn-secondary" onClick={()=>run(end)} disabled={busy}>End exam</button></div></section>}
-    {terminal(session)&&<section className="oral-panel oral-results"><span className="oral-eyebrow">YOUR EXAM REVIEW</span><h2>{session.material_title}</h2><p>{session.status==='timed_out'?'Your ten-minute exam has ended.':'Your exam has ended.'}</p>{report?<><div className="oral-score"><strong>{report.score??'—'}</strong><span>{report.score==null?'Not scored':'out of 100'}</span></div><p>{report.summary}</p><div className="oral-breakdown">{[['understanding','Understanding','40%'],['accuracy','Accuracy','30%'],['completeness','Completeness','20%'],['communication','Communication','10%']].map(([key,label,weight])=><div key={key}><span>{label} <small>{weight}</small></span><strong>{report[key]??'—'}</strong><progress value={report[key]||0} max="100" aria-label={label}/></div>)}</div><div className="oral-feedback">{[['strengths','What went well'],['areasForImprovement','What to work on'],['topicsCovered','Topics explored']].map(([key,label])=><div key={key}><h3>{label}</h3><ul>{report[key]?.map((item,i)=><li key={i}>{item}</li>)}</ul></div>)}</div>{transcriptId&&<nav className="oral-actions" aria-label="Continue with this lecture"><Link className="btn-secondary" to={lectureLink('chat')}>Ask this lecture about weak topics</Link><Link className="btn-secondary" to={lectureLink('quiz')}>Practice questions on this lecture</Link></nav>}<details><summary>Review questions and answers</summary>{session.turns?.map(t=><article key={t.id}><h3>{t.sequence}. {t.question}</h3><p>{t.transcript||'No completed answer recorded.'}</p>{t.feedback&&<p className="oral-hint">{t.feedback}</p>}</article>)}</details></>:<div role="status"><p>{session.evaluation_status==='failed'?'Your answers are saved. Feedback could not be generated yet.':'Preparing your feedback…'}</p><button className="btn-secondary" disabled={busy} onClick={()=>run(async()=>update((await api.evaluate(session.id)).data.session))}>Retry feedback</button></div>}</section>}
+    {session?.status==='ready'&&<section className="oral-panel oral-ready"><span className="oral-eyebrow">02 / BEFORE YOU BEGIN</span><h2>{session.material_title}</h2><p>Find a quiet spot. Your examiner will ask short questions and adapt to your answers. If a question is unclear, just say so or ask for it again.</p><div className="oral-ready-facts"><span><Clock/>Up to 10 minutes</span><span>{voice.mic?<CheckCircle/>:<Mic/>}{voice.mic?'Microphone ready':'Microphone not checked'}</span></div><p>The timer starts when you start the exam and continues if you disconnect.</p><div className="oral-actions"><button className="btn-secondary" onClick={()=>run(voice.checkMic)} disabled={busy}>Check microphone</button><button className="button-primary" onClick={()=>run(start)} disabled={busy}>Start oral exam <ArrowRight size={17}/></button></div></section>}
+    {session?.status==='active'&&!ending&&<section className="oral-panel oral-live"><div className="oral-live-top"><span>{session.material_title}</span><span className={`oral-timer ${remaining<=60?'is-ending':''}`} aria-label="Time remaining"><Clock size={17}/>{Math.floor(remaining/60)}:{String(remaining%60).padStart(2,'0')}</span></div><div className={`oral-orb ${voice.state==='speaking'||voice.state==='listening'?'is-active':''}`}><Mic size={38}/></div><p className="oral-eyebrow" role="status">{labels[voice.state]||voice.state}</p><h2 dir={direction}>{voice.question||session.turns?.at(-1)?.question||'Your examiner is getting ready.'}</h2>{voice.remark&&<p className="oral-remark" dir={direction} role="status" aria-label={remarkLabels[voice.remark.kind]||'Examiner'}><span className="oral-remark-kind">{remarkLabels[voice.remark.kind]||'Examiner'}</span>{voice.remark.text}</p>}<p className="oral-hint">{voice.muted?'Microphone muted':voice.state==='listening'?'Pause briefly when you finish your answer. You can also ask to repeat or clarify the question.':'Listen to the question before answering.'}</p><div className="oral-actions"><button className="btn-secondary" onClick={voice.toggleMute} disabled={!voice.mic}>{voice.muted?<MicOff size={18}/>:<Mic size={18}/>} {voice.muted?'Unmute':'Mute'}</button>{['idle','error'].includes(voice.state)&&<button className="button-primary" onClick={()=>run(reconnect)} disabled={busy}><RotateCcw size={17}/>Reconnect</button>}<button className="btn-secondary" onClick={()=>run(end)} disabled={busy}>End exam</button></div></section>}
+    {(terminal(session)||ending)&&<section className="oral-panel oral-results"><span className="oral-eyebrow">YOUR EXAM REVIEW</span><h2>{session.material_title}</h2><p>{session.status==='timed_out'?'Your ten-minute exam has ended.':'Your exam has ended.'}</p>{report?<><div className="oral-score"><strong>{report.score??'—'}</strong><span>{report.score==null?'Not scored':'out of 100'}</span></div><p>{report.summary}</p><div className="oral-breakdown">{[['understanding','Understanding','40%'],['accuracy','Accuracy','30%'],['completeness','Completeness','20%'],['communication','Communication','10%']].map(([key,label,weight])=><div key={key}><span>{label} <small>{weight}</small></span><strong>{report[key]??'—'}</strong><progress value={report[key]||0} max="100" aria-label={label}/></div>)}</div><div className="oral-feedback">{[['strengths','What went well'],['areasForImprovement','What to work on'],['topicsCovered','Topics explored']].map(([key,label])=><div key={key}><h3>{label}</h3><ul>{report[key]?.map((item,i)=><li key={i}>{item}</li>)}</ul></div>)}</div>{transcriptId&&<nav className="oral-actions" aria-label="Continue with this lecture"><Link className="btn-secondary" to={lectureLink('chat')}>Ask this lecture about weak topics</Link><Link className="btn-secondary" to={lectureLink('quiz')}>Practice questions on this lecture</Link></nav>}</>:<div className={`oral-feedback-state ${feedback.state==='failed'||session.evaluation_status==='failed'?'is-failed':''}`} role="status" aria-live="polite"><p>{feedbackStatus}</p><button className="btn-secondary" disabled={generating} aria-busy={generating} onClick={()=>requestFeedback(session.id)}>{generating?'Generating feedback…':'Retry feedback'}</button></div>}
+      <details><summary>Review questions and answers</summary>{session.turns?.map(t=><article key={t.id}><h3 dir={direction}>{t.sequence}. {t.question}</h3>{t.exchanges?.map((e,i)=><p key={i} className="oral-exchange" dir={direction}><span className="oral-remark-kind">{exchangeLabels[e.kind]||e.kind}</span>{e.transcript?<q>{e.transcript}</q>:null} <span className="oral-hint">Examiner: {e.reply}</span></p>)}<p dir={direction}>{t.transcript||'No completed answer recorded.'}</p>{t.feedback&&<p className="oral-hint">{t.feedback}</p>}</article>)}</details></section>}
     {session&&session.status!=='active'&&<button className="oral-back" onClick={()=>{voice.stop();setSession(null);setParams({});requestKey.current=null;setError('');}}>Choose material for another exam</button>}
   </div>;
 }
