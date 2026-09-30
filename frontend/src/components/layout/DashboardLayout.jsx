@@ -1,8 +1,9 @@
-import { useRef, useState } from "react";
+import { Suspense, useRef, useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { Menu, ChevronRight, ShieldCheck } from "lucide-react";
 import Sidebar from "./Sidebar";
 import Brand from "../Brand";
+import BrandedLoader from "../ui/BrandedLoader";
 import { useAuth } from "../../context/AuthContext";
 
 const titles = {
@@ -78,7 +79,11 @@ export default function DashboardLayout() {
           className="workspace-content min-h-0 min-w-0 flex-1 overflow-y-auto"
           tabIndex={-1}
         >
-          <Outlet />
+          {/* Lazy pages load inside the shell, so navigation never drops the
+              sidebar and header for an unbranded screen. */}
+          <Suspense fallback={<BrandedLoader variant="panel" label={`Loading ${titles[pathname] || "page"}`} />}>
+            <Outlet />
+          </Suspense>
         </main>
       </div>
     </div>
