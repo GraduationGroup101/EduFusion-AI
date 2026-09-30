@@ -142,10 +142,25 @@ test('oversized, empty, too-short and scanned files are explained',async()=>{
   assert.equal(short.status,422);assert.equal(short.body.code,'too_short');assert.match(short.body.error,/at least 100/);
   const scanned=await upload(docs.pdf([[],[],['Scan']]),'scan.pdf','application/pdf');
   assert.equal(scanned.status,422);assert.equal(scanned.body.code,'scanned');assert.match(scanned.body.error,/OCR/);
+  // Mostly image-only pages with a text cover are scanned; a short but fully
+  // selectable document is merely too short, never "scanned".
+  const mostlyImages=await upload(docs.pdf([['Cover page title'],['Contents'],[],[],[],[],[],[],[],[]]),'album.pdf','application/pdf');
+  assert.equal(mostlyImages.body.code,'scanned');
+  const shortText=await upload(docs.pdf([['Routers forward packets.'],['Switches learn addresses.']]),'brief.pdf','application/pdf');
+  assert.equal(shortText.status,422);assert.equal(shortText.body.code,'too_short');
   const latin1=await upload(Buffer.from('Caf\u00e9 '.repeat(40),'latin1'),'legacy.txt','text/plain');
   assert.equal(latin1.body.code,'encoding');
 });
 
+test('a sparse slide deck with selectable text on every page is accepted',async()=>{
+  // Ten pages with fewer than 25 characters each used to be rejected as scanned.
+  const topics=['Routing basics','Packet forwarding','Routing tables','Next hop choice','Static routes','Dynamic routes','Link cost','Convergence','Loops','Summary'];
+  const deck=docs.pdf(topics.map((topic)=>[topic]));
+  const response=await upload(deck,'deck.pdf','application/pdf');
+  assert.equal(response.status,200,JSON.stringify(response.body));
+  assert.match(response.body.material.text,/\[Page 10\]/);
+  assert.equal(response.body.material.units.count,10);
+});
 test('long material is cut at a page boundary and the cut is reported',async()=>{
   const lines=Array.from({length:40},(_,i)=>`Line ${i} ${SENTENCE}`);
   const response=await upload(docs.pdf(Array.from({length:60},()=>lines)),'textbook.pdf','application/pdf');

@@ -207,8 +207,12 @@ async function pdf(buffer) {
     const edges = (lines) => { const filled = lines.filter(Boolean); return [...filled.slice(0, 2), ...filled.slice(-2)]; };
     const repeated = boilerplate(pages.map(edges));
     const text = pages.map((lines, i) => { const edge = new Set(edges(lines)); return `[Page ${i + 1}]\n${lines.filter((l) => !(edge.has(l) && repeated(l)) && !PAGE_NUMBER.test(l)).join('\n')}`; }).join('\n\n');
-    const letters = text.replace(/\[Page \d+\]/g, '').replace(/\s/g, '').length;
-    if (letters < LIMITS.minChars || letters / count < 25) reject(422, 'scanned', 'This PDF looks like scanned pages or images, so there is no selectable text to read. EduFusion does not run OCR yet. Upload a PDF with selectable text, or paste the text.');
+    // A page has selectable text when anything but page numbers and repeated
+    // headers survives. Sparse decks with a few words per page are fine; only a
+    // document whose pages are mostly image-only is treated as scanned. Overall
+    // length is judged by the shared minimum-characters check afterwards.
+    const textual = pages.filter((lines) => { const edge = new Set(edges(lines)); return lines.some((l) => /[\p{L}\p{N}]/u.test(l) && !(edge.has(l) && repeated(l)) && !PAGE_NUMBER.test(l)); }).length;
+    if (textual < Math.ceil(count / 2)) reject(422, 'scanned', 'This PDF looks like scanned pages or images, so there is no selectable text to read. EduFusion does not run OCR yet. Upload a PDF with selectable text, or paste the text.');
     return { text, units: { kind: 'page', count } };
   } finally { await document.loadingTask.destroy(); }
 }
