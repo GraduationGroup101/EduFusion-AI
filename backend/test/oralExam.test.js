@@ -37,7 +37,7 @@ before(async()=>{
   await require('../scripts/migrate').migrate();
   await database.query("INSERT INTO students(id_student,student_name,pin_hash) VALUES(900,'Oral student','hash'),(901,'Other student','hash')");
   server=app.listen(0,'127.0.0.1');await once(server,'listening');
-  realtime=attachRealtime(server,{examiner:{...examiner,next:async(_s,text,signal,options)=>nextOverride?nextOverride(_s,text,signal,options):({assessment:text===null?null:assessment,next:text===null?question:{...question,question:'Why is path selection useful?',question_type:'follow_up'}}),
+  realtime=attachRealtime(server,{examiner:{...examiner,evaluate:async()=>{},next:async(_s,text,signal,options)=>nextOverride?nextOverride(_s,text,signal,options):({assessment:text===null?null:assessment,next:text===null?question:{...question,question:'Why is path selection useful?',question_type:'follow_up'}}),
     reply:async(_s,text,intent)=>replyOverride?replyOverride(_s,text,intent):({intent,reply:intent==='clarify'?'In other words, what job does this device do for packets?':'No problem. Share anything you remember about this device.',assessment:null,next:null})},voice:{
     speak:async()=>Buffer.from('ID3fake-test-audio'),
     transcriber:({onFinal})=>{finalizeSpeech=onFinal;return {opened:Promise.resolve(),close(){},send(){return true;}};},
@@ -151,9 +151,10 @@ test('final evaluation retries one invalid output and persists only the valid re
 async function socket(sessionId,student=900,origin='http://localhost:3000') {
   const ws=new WebSocket(`ws://127.0.0.1:${server.address().port}/api/oral-exam/realtime`,{origin});
   const events=[];ws.on('message',raw=>events.push(JSON.parse(raw.toString())));
+  const closed=once(ws,'close');
   await once(ws,'open');ws.send(JSON.stringify({type:'hello',sessionId,token:jwt.sign({id_student:student},process.env.JWT_SECRET)}));
   const until=async(predicate,from=0)=>{const end=Date.now()+4000;while(Date.now()<end){const found=events.slice(from).find(predicate);if(found)return found;await new Promise(r=>setTimeout(r,10));}throw new Error('Expected socket event did not arrive');};
-  return {ws,events,until};
+  return {ws,events,until,closed};
 }
 test('real WebSocket authenticates, resumes persisted question, and automatically cuts off on deadline',async()=>{
   // Reset daily fixture quota; this is not an API that students can invoke.
@@ -174,7 +175,7 @@ test('real WebSocket authenticates, resumes persisted question, and automaticall
   });
   const expiring=await socket(a.id);await expiring.until(e=>e.type==='ended');assert.equal((await store.get(user,a.id)).status,'timed_out');
 });
-test('model failure preserves the accepted answer and reconnect resumes one incomplete turn',async()=>{
+test('model failure preserves the accepted answer and reconnect resumes one incomplete turn',{timeout:30000},async()=>{
   await database.query("UPDATE edufusion_oral_exam_sessions SET created_at=NOW()-INTERVAL '2 days'");
   const a=await create();const started=await store.start(user,a.id);
   const first=await socket(a.id);await first.until(e=>e.type==='audio');
@@ -191,7 +192,9 @@ test('model failure preserves the accepted answer and reconnect resumes one inco
     assert.equal(stranded.turns[0].assessment,null);
     assert.equal(+new Date(stranded.started_at),+new Date(started.started_at));
     assert.equal(+new Date(stranded.expires_at),+new Date(started.expires_at));
-    first.ws.terminate();await once(first.ws,'close');await new Promise(r=>setTimeout(r,50));
+    // The server now closes automatically. Observe closure from before the
+    // failure, even when the handshake finishes before the database reads.
+    assert.equal((await first.closed)[0],4500);await new Promise(r=>setTimeout(r,50));
     nextOverride=async(_session,text)=>({assessment:text===null?null:assessment,next:text===null?question:{...question,question:'How are paths selected?',question_type:'follow_up'}});
     const recovered=await socket(a.id);await recovered.until(e=>e.type==='question'&&e.sequence===2);
     const saved=await store.get(user,a.id);
