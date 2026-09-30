@@ -40,7 +40,7 @@ export function useOralExamVoice(onSession) {
     r.connectionGeneration=(r.connectionGeneration||0)+1;
     const generation=r.connectionGeneration;
     const active=()=>runtime.current===r&&!r.stopped&&r.connectionGeneration===generation&&r.phase!=='ended';
-    if(resume.current.sessionId!==session.id)resume.current={sessionId:session.id,key:crypto.randomUUID()};
+    if(resume.current.sessionId!==session.id)resume.current={sessionId:session.id,key:crypto.randomUUID(),attempt:0};
     r.sessionId=session.id;r.attempts=0;setError('');
     function deadline(snapshot){
       clearTimeout(r.deadline);
@@ -52,9 +52,11 @@ export function useOralExamVoice(onSession) {
       if(!active())return;
       setState('connecting');r.phase='connecting';
       const ws=new WebSocket(socketUrl()),instance=crypto.randomUUID();r.socket=ws;
+      // Numbered when the socket is created, so the server can refuse a delayed older handshake.
+      const attempt=++resume.current.attempt;
       const current=()=>active()&&r.socket===ws;
       const log=(event,fields={})=>oralLifecycle(event,{session:r.sessionId,connection:instance,...fields});
-      log('connect',{attempt:r.attempts});
+      log('connect',{attempt:r.attempts,connection_attempt:attempt});
       function disconnected(code,reason){
         if(!current())return;
         clearTimeout(r.watchdog);r.socket=null;r.source?.stop();
@@ -72,7 +74,7 @@ export function useOralExamVoice(onSession) {
         if(!current())return;
         log('watchdog');disconnected(4000,'heartbeat_timeout');ws.close(4000,'Heartbeat timeout');
       },20000);};watch();
-      ws.onopen=()=>{if(current())ws.send(JSON.stringify({type:'hello',token:localStorage.getItem('token'),sessionId:r.sessionId,connectionKey:resume.current.key}));else ws.close();};
+      ws.onopen=()=>{if(current())ws.send(JSON.stringify({type:'hello',token:localStorage.getItem('token'),sessionId:r.sessionId,connectionKey:resume.current.key,connectionAttempt:attempt}));else ws.close();};
       ws.onmessage=async event=>{
         if(!current())return;
         try{

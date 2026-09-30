@@ -51,7 +51,8 @@ it('reconnects a server-side close with a private resume credential and the same
   act(()=>sockets[0].closed(4500,'Connection unavailable'));
   act(()=>vi.advanceTimersByTime(1100));
   expect(sockets).toHaveLength(2);act(()=>sockets[1].open());
-  expect(sockets[1].sent[0]).toMatchObject({type:'hello',sessionId:'exam-1',connectionKey});
+  expect(sockets[0].sent[0].connectionAttempt).toBe(1);
+  expect(sockets[1].sent[0]).toMatchObject({type:'hello',sessionId:'exam-1',connectionKey,connectionAttempt:2});
   act(()=>sockets[1].message({type:'welcome',session:snapshot(Date.now())}));
   expect(hook.result.current.error).toBe('');hook.unmount();
 });
@@ -92,4 +93,14 @@ it('a real ownership conflict and expired authentication stop automatic reconnec
     act(()=>sockets.at(-1).closed(code));act(()=>vi.advanceTimersByTime(10000));
     expect(sockets).toHaveLength(count);expect(hook.result.current.state).toBe('error');hook.unmount();
   }
+});
+
+it('numbers attempts in creation order, so a replaced socket that opens late sends the older number',async()=>{
+  const hook=await ready();const older=sockets[0];
+  act(()=>hook.result.current.connect(snapshot()));const newer=sockets[1];
+  act(()=>newer.open());act(()=>older.open());
+  expect(newer.sent[0].connectionAttempt).toBe(2);
+  // The replaced socket is closed instead of sending a hello.
+  expect(older.sent).toHaveLength(0);
+  hook.unmount();
 });
