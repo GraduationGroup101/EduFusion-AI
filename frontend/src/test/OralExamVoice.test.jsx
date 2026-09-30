@@ -169,3 +169,16 @@ it('numbers attempts in creation order, so a replaced socket that opens late sen
   expect(older.sent).toHaveLength(0);
   hook.unmount();
 });
+
+it('recovers a provider error even when its socket remains open, with a bounded retry budget',async()=>{
+  const hook=await ready();
+  for(let i=0;i<7;i++){
+    const ws=sockets.at(-1);
+    act(()=>{ws.open();ws.message({type:'welcome',session:snapshot(Date.now())});ws.message({type:'error',message:'Provider unavailable',retryable:true});});
+    act(()=>vi.advanceTimersByTime(8500));
+  }
+  expect(sockets).toHaveLength(7);expect(hook.result.current.state).toBe('error');
+  expect(hook.onSession.mock.calls.every(([s])=>s.expires_at===snapshot().expires_at)).toBe(true);
+  expect(sockets.every(ws=>ws.sent[0].sessionId==='exam-1')).toBe(true);
+  hook.unmount();
+});

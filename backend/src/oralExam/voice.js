@@ -5,12 +5,13 @@ const WebSocket=require('ws');
 function transcriber({language,onPartial,onFinal,onError,signal},{WebSocketImpl=WebSocket}={}) {
   const params=new URLSearchParams({model_id:'scribe_v2_realtime',audio_format:'pcm_16000',language_code:language,commit_strategy:'vad',vad_silence_threshold_secs:'1.5'});
   const socket=new WebSocketImpl(`wss://api.elevenlabs.io/v1/speech-to-text/realtime?${params}`,{headers:{'xi-api-key':process.env.ELEVENLABS_API_KEY},maxPayload:64000,handshakeTimeout:8000});
-  let ready=false,closed=false;
+  let ready=false,closed=false,rejectOpened;
   const deadline=setTimeout(()=>failure(),10000);
-  function close() {if(closed)return;closed=true;ready=false;clearTimeout(deadline);signal.removeEventListener('abort',close);socket.terminate();}
+  function close() {if(closed)return;closed=true;ready=false;clearTimeout(deadline);signal.removeEventListener('abort',close);rejectOpened?.(new Error('Speech service unavailable'));socket.terminate();}
   function failure() {if(!closed){close();onError();}}
   signal.addEventListener('abort',close,{once:true});
   const opened=new Promise((resolve,reject)=>{
+    rejectOpened=reject;
     socket.on('message',raw=>{
       if(closed)return;
       try {
@@ -28,6 +29,7 @@ function transcriber({language,onPartial,onFinal,onError,signal},{WebSocketImpl=
     socket.on('close',()=>{reject(new Error('Speech service unavailable'));failure();});
   });
   opened.catch(()=>{});
+  if(signal.aborted)close();
   return {opened,close,send(bytes){
     if(!ready||closed)return false;
     if(bytes.length>6400||bytes.length%2||socket.bufferedAmount>128000){failure();return false;}

@@ -24,6 +24,7 @@ export default function StudentPredictionPage() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmActual,setConfirmActual]=useState(false);
   const [deleting, setDeleting] = useState(false);
   const predictionRequest = useRef(null);
   const scenarioRequest = useRef(null);
@@ -156,6 +157,19 @@ export default function StudentPredictionPage() {
     }
   };
 
+  const saveActual=async()=>{
+    if(!selected||!scenario?.revision)return;
+    setSaving(true);
+    try {
+      const {data}=await studentService.applyScenarioActual(selected.enrollment_id,scenario.revision);
+      setScenario(data.scenario);setConfirmActual(false);
+      const fresh=await studentService.getPredictionData();
+      setEnrollments(fresh.data.enrollments||[]);
+      toast.success(data.message);
+    }catch(error){toast.error(error.response?.data?.error||'Unable to apply the scenario. Please reload and try again.');}
+    finally{setSaving(false);}
+  };
+
   const togglePlan = async () => {
     if (!selected || !scenario) return;
     try {
@@ -191,7 +205,8 @@ export default function StudentPredictionPage() {
         setStatus(data.status || null);
         if (saved) {
           setForm(formFromInputs(selected, saved.inputs));
-          if (!data.status || USABLE_STATES.includes(data.status.state)) evaluateScenario(selected.enrollment_id);
+          if(saved.prediction_available && (saved.applied_at||data.status?.state==='current'))setScenarioPrediction({...saved.prediction,based_on_day:saved.based_on_day});
+          else if (!saved.applied_at&&(!data.status || USABLE_STATES.includes(data.status.state))) evaluateScenario(selected.enrollment_id);
         }
       }).catch((error) => {
         if (!controller.signal.aborted) toast.error(error.response?.data?.error || 'Saved scenario could not be loaded');
@@ -330,9 +345,15 @@ export default function StudentPredictionPage() {
           onReevaluate={reevaluate}
           onDelete={() => setConfirmDelete(true)}
           onTogglePlan={togglePlan}
+          onApplyActual={() => setConfirmActual(true)}
         />
       )}
 
+      <ConfirmDialog open={confirmActual} title="Apply scenario to actual data?"
+        description="This explicitly replaces the affected academic values and saves the corresponding actual prediction. Review the changes before applying."
+        confirmLabel="Apply to actual data" busy={saving} onConfirm={saveActual} onCancel={()=>{if(!saving)setConfirmActual(false);}}>
+        {scenario && <ul>{describeChanges(scenario.inputs||{},selected).map(change=><li key={change}>{change}</li>)}</ul>}
+      </ConfirmDialog>
       <ConfirmDialog
         open={confirmDelete}
         title="Delete this what-if scenario?"

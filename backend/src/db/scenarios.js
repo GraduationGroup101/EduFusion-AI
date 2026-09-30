@@ -1,4 +1,5 @@
 const { transaction, readQuery } = require('./index');
+const {randomUUID}=require('node:crypto');
 const { getStudentBehaviorData } = require('./queries');
 const { scenario: validateScenario, integer, badRequest } = require('../lib/validation');
 
@@ -34,6 +35,7 @@ const scenarioStatus = (saved, course) => {
   if (!data || !course) return null;
   const currentDay = Number(course.current_day);
   const basedOn = Number(data.based_on_day);
+  if (data.applied_at) return { state: 'applied', based_on_day: basedOn, current_day: currentDay, reasons: [] };
   const inputs = data.inputs || {};
   const evidence = data.evidence || null;
   const reasons = [];
@@ -124,7 +126,7 @@ const saveScenario = async (idStudent, enrollmentId, input) => {
        WHERE e.id=$1 AND e.id_student=$2 AND ac.current_day=$3 FOR SHARE OF e, ac`, [id, idStudent, day]
     );
     if (!enrollment.rowCount) throw Object.assign(new Error('Course data changed. Reload and try again.'), { statusCode: 409 });
-    const data = { inputs: values, activity: additions, projected, based_on_day: day, evidence: snapshotEvidence(base), plan: null, prediction: null,
+    const data = { revision:randomUUID(), created_at:new Date().toISOString(), inputs: values, activity: additions, projected, based_on_day: day, evidence: snapshotEvidence(base), plan: null, prediction: null,
       prediction_available: false, message: 'Scenario saved separately from academic records. Its hypothetical risk is evaluated independently.' };
     await client.query(
       `INSERT INTO edufusion_student_scenarios (id_student,enrollment_id,data) VALUES ($1,$2,$3)

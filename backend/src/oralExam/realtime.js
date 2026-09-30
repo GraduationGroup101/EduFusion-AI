@@ -39,7 +39,9 @@ function attachRealtime(server,dependencies={}) {
     const send=data=>{if(ws.readyState!==1)return;if(ws.bufferedAmount>3*1024*1024){ws.close(4503,'Connection too slow');return;}ws.send(JSON.stringify(data));};
     const state=value=>{phase=value;send({type:'state',state:value});};
     function stopAudio(){generation++;stt?.close();stt=null;clearTimeout(playbackTimer);}
-    function error(message){stopAudio();state('error');send({type:'error',message});}
+    // A provider failure is not a healthy idle connection. Close it so the
+    // browser's bounded recovery loop can resume the persisted turn.
+    function error(message,retryAfterMs=0){stopAudio();state('error');send({type:'error',message,retryable:true,retry_after_ms:retryAfterMs});ws.close(4500,'Recoverable exam failure');}
     async function lostLease() {
       const saved=await store.get(user,session.id);
       if(closed)return;
@@ -69,7 +71,7 @@ function attachRealtime(server,dependencies={}) {
       stt=audio.transcriber({language:session.language,signal:abort.signal,
         onPartial:()=>{}, // Keep interim speech ephemeral; the UI stays conversational.
         onError:()=>{if(current===generation&&!closed&&!abort.signal.aborted){log('provider_failure',{stage:'stt'});error('Microphone transcription is unavailable. Reconnect to retry.');}},
-        onFinal:text=>{if(current===generation&&phase==='listening')advance(text).catch(err=>{log('provider_failure',{stage:'answer',error_class:err.name});if(!closed&&!abort.signal.aborted)error('Your answer could not be processed. Reconnect to recover your saved progress.');});},
+        onFinal:text=>{if(current===generation&&phase==='listening')advance(text).catch(err=>{log('provider_failure',{stage:'answer',error_class:err.name});if(!closed&&!abort.signal.aborted)error('Your answer could not be processed. Recovering your saved progress.',err.retryAfterMs);});},
       });
       await stt.opened;
       if(current===generation&&!closed)state('listening');
@@ -171,7 +173,7 @@ function attachRealtime(server,dependencies={}) {
           // Retire a resumed local socket immediately, including provider work.
           // On another process the database token still fences every old write.
           const previous=connections.get(sessionId);
-          if(previous){previous.dispose();previous.ws.close(4001,'Connection resumed');}
+          if(previous){log('connection_replacement');previous.dispose();previous.ws.close(4001,'Connection resumed');}
           connections.set(sessionId,{ws,token,dispose});
           log(previous?'reconnect':'claim');
           // Read again only after fencing. A completed old turn could otherwise
@@ -196,6 +198,7 @@ function attachRealtime(server,dependencies={}) {
           },5000);
           send({type:'welcome',session:store.publicView(session),connectionId:connection});
           log('welcome',{auth_remaining_seconds:Number.isFinite(identity.expires)?Math.floor((identity.expires-Date.now())/1000):undefined});
+          if(session.turns.length)log('session_resume');
           if(!session.turns.length)await advance(null);
           else if(session.turns.at(-1).transcript&&!session.turns.at(-1).assessment)await advance(session.turns.at(-1).transcript);
           else await speakQuestion();
@@ -209,10 +212,10 @@ function attachRealtime(server,dependencies={}) {
           send({type:'error',message:err.statusCode===409?'This exam is connected elsewhere. Retrying shortly; the timer continues.':'Unable to connect to this exam. Sign in and retry.'});
           ws.close(err.statusCode===409?4429:4403,'Session unavailable');
         }
-        else if(!abort.signal.aborted)error('The exam connection failed. Reconnect to continue with the same timer.');
+        else if(!abort.signal.aborted)error('The exam connection failed. Recovering with the same timer.',err.retryAfterMs);
       });
     });
-    ws.on('error',()=>{});
+    ws.on('error',err=>log('server_error',{error_class:err.name}));
     function dispose(){
       if(closed)return;
       closed=true;abort.abort();stopAudio();clearTimeout(helloTimer);clearTimeout(expiry);clearTimeout(authExpiry);clearInterval(heartbeat);

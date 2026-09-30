@@ -1,4 +1,4 @@
-import {useRef,useState} from 'react';
+import {useEffect,useRef,useState} from 'react';
 import {FileText,UploadCloud,X,AlertTriangle,CheckCircle} from 'lucide-react';
 import {oralExamService as api} from '../../services/oralExam';
 
@@ -7,7 +7,7 @@ export const MAX_UPLOAD_BYTES=4*1024*1024;
 export const MAX_MATERIAL_CHARS=90000;
 // The examiner reads up to 24 evenly spaced ~1,400-character passages.
 const SAMPLED_AFTER=24*1400;
-const ACCEPT='.pdf,.docx,.pptx,.txt,.md,.markdown,application/pdf,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation';
+const ACCEPT='.pdf,.doc,.docx,.pptx,.txt,.md,.markdown,application/msword,application/pdf,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation';
 
 export const formatSize=bytes=>bytes<1024?`${bytes} B`:bytes<1024*1024?`${Math.round(bytes/1024)} KB`:`${(bytes/1024/1024).toFixed(1)} MB`;
 const count=n=>n.toLocaleString('en-US');
@@ -17,6 +17,7 @@ const errorText=e=>e.response?.data?.error||(e.code==='ECONNABORTED'?'The upload
 export default function MaterialUpload({onExtracted,onCleared,disabled}){
   const [file,setFile]=useState(null),[phase,setPhase]=useState('idle'),[progress,setProgress]=useState(0),[error,setError]=useState(''),[material,setMaterial]=useState(null),[dragging,setDragging]=useState(false);
   const input=useRef(null),abort=useRef(null);
+  useEffect(()=>()=>{abort.current?.abort();abort.current=null;},[]);
   const busy=phase==='uploading'||phase==='extracting';
   async function choose(next){
     if(!next||busy)return;
@@ -26,21 +27,24 @@ export default function MaterialUpload({onExtracted,onCleared,disabled}){
     const controller=new AbortController();abort.current=controller;setPhase('uploading');
     try{
       const {data}=await api.extract(next,{signal:controller.signal,onUploadProgress:e=>{
+        if(controller.signal.aborted||abort.current!==controller)return;
         if(e.total)setProgress(Math.round(e.loaded/e.total*100));
         if(!e.total||e.loaded>=e.total)setPhase('extracting');
       }});
+      if(controller.signal.aborted||abort.current!==controller)return;
       setMaterial(data.material);setPhase('done');onExtracted(data.material);
     }catch(e){
+      if(abort.current!==controller)return;
       if(controller.signal.aborted){setPhase('idle');setFile(null);return;}
       setPhase('error');setError(errorText(e));
-    }finally{abort.current=null;if(input.current)input.current.value='';}
+    }finally{if(abort.current===controller){abort.current=null;if(input.current)input.current.value='';}}
   }
-  function clear(){abort.current?.abort();setFile(null);setMaterial(null);setError('');setPhase('idle');if(input.current)input.current.value='';if(material)onCleared();}
+  function clear(){abort.current?.abort();abort.current=null;setFile(null);setMaterial(null);setError('');setPhase('idle');if(input.current)input.current.value='';if(material)onCleared();}
   const drop=e=>{e.preventDefault();setDragging(false);if(!disabled)choose(e.dataTransfer.files?.[0]);};
   const cut=material?.truncation;
   return <div className="oral-upload">
     <span className="oral-upload-label" id="oral-upload-label">Upload study material</span>
-    <p className="oral-hint" id="oral-upload-formats">PDF, Word (.docx), PowerPoint (.pptx), Markdown or plain text · up to 4 MB. Scanned PDFs, images and older .doc or .ppt files cannot be read yet.</p>
+    <p className="oral-hint" id="oral-upload-formats">PDF, Word (.doc or .docx), PowerPoint (.pptx), Markdown or plain text · up to 4 MB. Scanned PDFs, images and older .ppt files cannot be read yet.</p>
     {!file&&<label className={`oral-dropzone ${dragging?'is-dragging':''}`} onDragOver={e=>{e.preventDefault();setDragging(true);}} onDragLeave={()=>setDragging(false)} onDrop={drop}>
       <UploadCloud size={28} aria-hidden="true"/>
       <span><strong>Choose a file</strong> or drag it here</span>

@@ -128,6 +128,7 @@ export const adminService = {
 export const studentService = {
   getPredictionData: (options = {}) => api.get('/student/prediction-data', options),
   saveScenario: (enrollmentId, data) => api.put(`/student/scenarios/${enrollmentId}`, data),
+  applyScenarioActual: (enrollmentId, revision) => api.post(`/student/scenarios/${enrollmentId}/actual`, {confirm:true,revision}),
   getScenario: (enrollmentId, options = {}) => api.get(`/student/scenarios/${enrollmentId}`, options),
   getScenarioPrediction: (enrollmentId, options = {}) => api.get(`/student/scenarios/${enrollmentId}/prediction`, options),
   deleteScenario: (enrollmentId) => api.delete(`/student/scenarios/${enrollmentId}`),
