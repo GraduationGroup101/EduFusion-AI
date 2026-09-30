@@ -4,7 +4,7 @@ import {MemoryRouter} from 'react-router-dom';
 import OralExamPage from '../pages/OralExamPage';
 import {oralExamService as api} from '../services/oralExam';
 const voice=vi.hoisted(()=>({state:'idle',error:'',mic:false,muted:false,question:'',remark:null,checkMic:vi.fn(),connect:vi.fn(),stop:vi.fn(),toggleMute:vi.fn()}));
-vi.mock('../hooks/useOralExamVoice',()=>({useOralExamVoice:()=>voice}));
+vi.mock('../hooks/useOralExamVoice',()=>({useOralExamVoice:update=>{voice.update=update;return voice;}}));
 vi.mock('../services/oralExam',()=>({oralExamService:{status:vi.fn(),materials:vi.fn(),sessions:vi.fn(),get:vi.fn(),create:vi.fn(),start:vi.fn(),end:vi.fn(),evaluate:vi.fn()}}));
 const session={id:'exam-1',material_title:'Computer networks',language:'en',status:'ready',turns:[],evaluation_status:'pending'};
 beforeEach(()=>{
@@ -57,6 +57,33 @@ it('ending an exam replaces the live view immediately and shows feedback generat
 it('refreshing an active exam offers reconnect instead of restarting the timer',async()=>{
   api.get.mockResolvedValue({data:{session:{...session,status:'active',expires_at:new Date(Date.now()+120000).toISOString(),server_now:new Date().toISOString()}}});
   open('/dashboard/oral-exam?session=exam-1');await screen.findByRole('button',{name:'Reconnect'});expect(api.start).not.toHaveBeenCalled();
+});
+it('displays the stored remaining time immediately and a delayed poll cannot add time',async()=>{
+  vi.useFakeTimers();
+  try {
+    const active={...session,status:'active',expires_at:new Date(Date.now()+120000).toISOString(),server_now:new Date().toISOString()};
+    api.get.mockResolvedValue({data:{session:active}});
+    await act(async()=>{open('/dashboard/oral-exam?session=exam-1');});
+    expect(screen.getByLabelText('Time remaining')).toHaveTextContent('2:00');
+    await act(async()=>{vi.advanceTimersByTime(10000);});
+    expect(screen.getByLabelText('Time remaining')).toHaveTextContent('1:50');
+  } finally {vi.useRealTimers();}
+});
+it('cancels in-flight status polling and never resurrects an ended exam from a late response',async()=>{
+  vi.useFakeTimers();
+  try {
+    const active={...session,status:'active',expires_at:new Date(Date.now()+120000).toISOString(),server_now:new Date().toISOString()};
+    api.get.mockResolvedValueOnce({data:{session:active}});
+    let resolvePoll;
+    api.get.mockImplementationOnce(()=>new Promise(resolve=>{resolvePoll=resolve;}));
+    await act(async()=>{open('/dashboard/oral-exam?session=exam-1');});
+    await act(async()=>{vi.advanceTimersByTime(10000);});
+    const pollOptions=api.get.mock.calls.at(-1)[1];
+    act(()=>voice.update({...active,status:'completed',evaluation_status:'ready'}));
+    await act(async()=>{resolvePoll({data:{session:active}});});
+    expect(screen.queryByRole('button',{name:'End exam'})).not.toBeInTheDocument();
+    expect(pollOptions.signal.aborted).toBe(true);
+  } finally {vi.useRealTimers();}
 });
 it('shows disabled and recoverable feedback failure states without invented scores',async()=>{
   api.get.mockResolvedValue({data:{session:{...session,status:'timed_out',evaluation_status:'failed'}}});

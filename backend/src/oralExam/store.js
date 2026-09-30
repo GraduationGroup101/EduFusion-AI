@@ -5,7 +5,7 @@ const { ownerKey } = require('../lib/owner');
 const { fail } = require('./contracts');
 const TABLE='edufusion_oral_exam_sessions';
 const TURNS='edufusion_oral_exam_turns';
-const expire = async (client=db) => client.query(`UPDATE ${TABLE} SET status='timed_out',ended_at=expires_at,termination_reason='time_limit',lease_token=NULL,lease_until=NULL,updated_at=clock_timestamp() WHERE status='active' AND expires_at<=clock_timestamp()`);
+const expire = async (client=db) => client.query(`UPDATE ${TABLE} SET status='timed_out',ended_at=expires_at,termination_reason='time_limit',lease_token=NULL,lease_until=NULL,lease_client_id=NULL,lease_client_attempt=NULL,updated_at=clock_timestamp() WHERE status='active' AND expires_at<=clock_timestamp()`);
 async function create(user,material,language,key) {
   return db.transaction(async client=>{
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',[`oral:${ownerKey(user)}`]);
@@ -44,10 +44,19 @@ async function start(user,id) {
     return (await client.query(`UPDATE ${TABLE} SET status='active',started_at=NOW(),expires_at=NOW()+INTERVAL '10 minutes',updated_at=NOW() WHERE id=$1 RETURNING *`,[id])).rows[0];
   });
 }
-async function claim(user,id) {
+async function claim(user,id,clientId=null,attempt=null) {
   await expire();
   const token=randomUUID();
-  const row=(await db.query(`UPDATE ${TABLE} SET lease_token=$3,lease_until=clock_timestamp()+INTERVAL '20 seconds' WHERE id=$1 AND owner_key=$2 AND status='active' AND (lease_until IS NULL OR lease_until<clock_timestamp()) RETURNING *`,[id,ownerKey(user),token])).rows[0];
+  // The private browser capability survives retries, including a lost welcome.
+  // The separate write token rotates atomically to fence the previous socket.
+  // Attempts from one capability are ordered: only a strictly newer attempt may
+  // reclaim, and an older or repeated attempt is refused even when the lease is
+  // free, so a delayed handshake can never replace a newer owner.
+  const row=(await db.query(`UPDATE ${TABLE} SET lease_token=$3,lease_client_id=$4,lease_client_attempt=$5,lease_until=clock_timestamp()+INTERVAL '20 seconds'
+    WHERE id=$1 AND owner_key=$2 AND status='active' AND expires_at>clock_timestamp() AND (
+      ($4::uuid IS NOT NULL AND lease_client_id=$4 AND $5::integer>COALESCE(lease_client_attempt,0))
+      OR ((lease_until IS NULL OR lease_until<clock_timestamp()) AND ($4::uuid IS NULL OR lease_client_id IS DISTINCT FROM $4))
+    ) RETURNING *`,[id,ownerKey(user),token,clientId,clientId?attempt:null])).rows[0];
   if(!row) fail(409,'Exam is ended or connected in another tab. Retry in a moment.');
   return {row,token};
 }
@@ -55,6 +64,8 @@ async function renew(id,token) {
   const row=(await db.query(`UPDATE ${TABLE} SET lease_until=clock_timestamp()+INTERVAL '20 seconds' WHERE id=$1 AND lease_token=$2 AND status='active' AND expires_at>clock_timestamp() AND lease_until>clock_timestamp() RETURNING *,clock_timestamp() AS server_now`,[id,token])).rows[0];
   return row;
 }
+// The capability and its newest attempt are kept after release so a late,
+// older handshake from the same browser cannot claim the freed lease.
 const release=(id,token)=>db.query(`UPDATE ${TABLE} SET lease_token=NULL,lease_until=NULL WHERE id=$1 AND lease_token=$2`,[id,token]);
 async function recordAnswer(id,token,sequence,transcript) {
   return db.transaction(async client=>{
@@ -99,13 +110,13 @@ async function commit(id,token,expectedSequence,transcript,decision) {
       await client.query(`INSERT INTO ${TURNS}(id,session_id,sequence,question,concept,question_type,difficulty,citations,follow_up_reason) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
         [randomUUID(),id,expectedSequence+1,q.question,q.concept,q.question_type,q.difficulty,JSON.stringify(q.citations),q.follow_up_reason]);
     } else if(transcript!==null) {
-      await client.query(`UPDATE ${TABLE} SET status='completed',ended_at=LEAST(clock_timestamp(),expires_at),termination_reason='exam_completed',lease_token=NULL,lease_until=NULL,updated_at=clock_timestamp() WHERE id=$1`,[id]);
+      await client.query(`UPDATE ${TABLE} SET status='completed',ended_at=LEAST(clock_timestamp(),expires_at),termination_reason='exam_completed',lease_token=NULL,lease_until=NULL,lease_client_id=NULL,lease_client_attempt=NULL,updated_at=clock_timestamp() WHERE id=$1`,[id]);
     }
   });
 }
-async function finish(user,id,reason='student_ended') {
+async function finish(user,id,reason='student_ended',token=null) {
   await expire();
-  await db.query(`UPDATE ${TABLE} SET status=CASE WHEN status='ready' THEN 'aborted' ELSE 'completed' END,ended_at=CASE WHEN expires_at IS NULL THEN clock_timestamp() ELSE LEAST(clock_timestamp(),expires_at) END,termination_reason=$3,lease_token=NULL,lease_until=NULL,updated_at=clock_timestamp() WHERE id=$1 AND owner_key=$2 AND status IN ('ready','active')`,[id,ownerKey(user),reason]);
+  await db.query(`UPDATE ${TABLE} SET status=CASE WHEN status='ready' THEN 'aborted' ELSE 'completed' END,ended_at=CASE WHEN expires_at IS NULL THEN clock_timestamp() ELSE LEAST(clock_timestamp(),expires_at) END,termination_reason=$3,lease_token=NULL,lease_until=NULL,lease_client_id=NULL,lease_client_attempt=NULL,updated_at=clock_timestamp() WHERE id=$1 AND owner_key=$2 AND status IN ('ready','active') AND ($4::uuid IS NULL OR lease_token=$4)`,[id,ownerKey(user),reason,token]);
   return get(user,id);
 }
 async function saveEvaluation(id,evaluation) {

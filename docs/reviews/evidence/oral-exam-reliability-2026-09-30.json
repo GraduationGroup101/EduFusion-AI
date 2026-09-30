@@ -1,0 +1,405 @@
+{
+  "environment": {
+    "scope": "localhost isolated PGlite / real React, HTTP, WebSocket and audio worklet",
+    "providers": "deterministic fake STT/Groq/TTS",
+    "microphone": "Chrome synthetic device",
+    "productionVerified": false
+  },
+  "baseline": {
+    "captured_at": "2026-09-29T21:49:50.405Z",
+    "duration_seconds": 504.271,
+    "opens": 1,
+    "closes": 0,
+    "errors": 0,
+    "timer": "1:36",
+    "note": "Unmodified runtime; fast fixture bypasses production model turn cap"
+  },
+  "previous_policy": {
+    "note": "Old claim policy comparison, not an exact production deployment replay",
+    "fault": {
+      "at": "2026-09-29T23:29:57.407Z",
+      "event": "intentional_network_interruption"
+    },
+    "closes": [
+      {
+        "at": "2026-09-29T23:29:57.418Z",
+        "event": "close",
+        "connection": "e37aadaa-7548-4af6-ac84-12b241e8c3cd",
+        "code": 1006,
+        "reason": ""
+      },
+      {
+        "at": "2026-09-29T23:29:58.488Z",
+        "event": "close",
+        "connection": "f225a6dc-9234-4dba-bf00-6fa3738a948b",
+        "code": 4429,
+        "reason": "Session unavailable"
+      },
+      {
+        "at": "2026-09-29T23:30:00.122Z",
+        "event": "close",
+        "connection": "13fb90e8-e3bf-4a7f-96bf-4ea1493418e5",
+        "code": 4429,
+        "reason": "Session unavailable"
+      },
+      {
+        "at": "2026-09-29T23:30:03.402Z",
+        "event": "close",
+        "connection": "202c92dd-eb74-4f03-b0ad-cacf91eade0c",
+        "code": 4429,
+        "reason": "Session unavailable"
+      },
+      {
+        "at": "2026-09-29T23:30:09.694Z",
+        "event": "close",
+        "connection": "7e7c0e1d-d1c5-4b32-9ac6-1a296fa58461",
+        "code": 4429,
+        "reason": "Session unavailable"
+      },
+      {
+        "at": "2026-09-29T23:30:17.899Z",
+        "event": "close",
+        "connection": "3488e641-f7f1-49f2-bc6d-f9e4c79a556d",
+        "code": 4429,
+        "reason": "Session unavailable"
+      },
+      {
+        "at": "2026-09-29T23:30:26.161Z",
+        "event": "close",
+        "connection": "5d3810ff-b6b9-4889-a9e3-cc217d888225",
+        "code": 4429,
+        "reason": "Session unavailable"
+      }
+    ],
+    "refused_attempts": [
+      {
+        "at": "2026-09-29T23:29:58.475Z",
+        "type": "error",
+        "message": "This exam is connected elsewhere. Retrying shortly; the timer continues."
+      },
+      {
+        "at": "2026-09-29T23:30:00.116Z",
+        "type": "error",
+        "message": "This exam is connected elsewhere. Retrying shortly; the timer continues."
+      },
+      {
+        "at": "2026-09-29T23:30:03.394Z",
+        "type": "error",
+        "message": "This exam is connected elsewhere. Retrying shortly; the timer continues."
+      },
+      {
+        "at": "2026-09-29T23:30:09.687Z",
+        "type": "error",
+        "message": "This exam is connected elsewhere. Retrying shortly; the timer continues."
+      },
+      {
+        "at": "2026-09-29T23:30:17.896Z",
+        "type": "error",
+        "message": "This exam is connected elsewhere. Retrying shortly; the timer continues."
+      },
+      {
+        "at": "2026-09-29T23:30:26.152Z",
+        "type": "error",
+        "message": "This exam is connected elsewhere. Retrying shortly; the timer continues."
+      }
+    ],
+    "server_lifecycle": [
+      {
+        "event": "oral_exam.claim",
+        "at": "2026-09-29T23:25:57.036Z",
+        "session": "a5c5dcd6-6c8d-4da8-a744-909fd1528ff2",
+        "connection": "ec3a89ac-9161-40ed-90f8-45659ed530ab",
+        "phase": "authenticating"
+      },
+      {
+        "event": "oral_exam.welcome",
+        "at": "2026-09-29T23:25:57.052Z",
+        "session": "a5c5dcd6-6c8d-4da8-a744-909fd1528ff2",
+        "connection": "ec3a89ac-9161-40ed-90f8-45659ed530ab",
+        "phase": "authenticating",
+        "auth_remaining_seconds": 86368
+      },
+      {
+        "event": "oral_exam.ownership_conflict",
+        "at": "2026-09-29T23:29:58.471Z",
+        "session": "a5c5dcd6-6c8d-4da8-a744-909fd1528ff2",
+        "connection": "8fed8c44-16b9-422d-95c9-1509bd84b28e",
+        "phase": "authenticating",
+        "error_class": "Error"
+      },
+      {
+        "event": "oral_exam.disconnect",
+        "at": "2026-09-29T23:29:58.479Z",
+        "session": "a5c5dcd6-6c8d-4da8-a744-909fd1528ff2",
+        "connection": "8fed8c44-16b9-422d-95c9-1509bd84b28e",
+        "phase": "authenticating",
+        "code": 4429,
+        "reason": "lease_busy",
+        "elapsed_ms": 36
+      },
+      {
+        "event": "oral_exam.ownership_conflict",
+        "at": "2026-09-29T23:30:00.112Z",
+        "session": "a5c5dcd6-6c8d-4da8-a744-909fd1528ff2",
+        "connection": "58104181-b028-4bd3-9548-0d2e4d0dd0cf",
+        "phase": "authenticating",
+        "error_class": "Error"
+      },
+      {
+        "event": "oral_exam.disconnect",
+        "at": "2026-09-29T23:30:00.115Z",
+        "session": "a5c5dcd6-6c8d-4da8-a744-909fd1528ff2",
+        "connection": "58104181-b028-4bd3-9548-0d2e4d0dd0cf",
+        "phase": "authenticating",
+        "code": 4429,
+        "reason": "lease_busy",
+        "elapsed_ms": 24
+      },
+      {
+        "event": "oral_exam.ownership_conflict",
+        "at": "2026-09-29T23:30:03.390Z",
+        "session": "a5c5dcd6-6c8d-4da8-a744-909fd1528ff2",
+        "connection": "e03f1f2d-9773-4263-a547-7f74df24c91b",
+        "phase": "authenticating",
+        "error_class": "Error"
+      },
+      {
+        "event": "oral_exam.disconnect",
+        "at": "2026-09-29T23:30:03.393Z",
+        "session": "a5c5dcd6-6c8d-4da8-a744-909fd1528ff2",
+        "connection": "e03f1f2d-9773-4263-a547-7f74df24c91b",
+        "phase": "authenticating",
+        "code": 4429,
+        "reason": "lease_busy",
+        "elapsed_ms": 23
+      },
+      {
+        "event": "oral_exam.ownership_conflict",
+        "at": "2026-09-29T23:30:09.683Z",
+        "session": "a5c5dcd6-6c8d-4da8-a744-909fd1528ff2",
+        "connection": "dcd1fda9-e9ad-4fe0-8468-bad32641dc88",
+        "phase": "authenticating",
+        "error_class": "Error"
+      },
+      {
+        "event": "oral_exam.disconnect",
+        "at": "2026-09-29T23:30:09.686Z",
+        "session": "a5c5dcd6-6c8d-4da8-a744-909fd1528ff2",
+        "connection": "dcd1fda9-e9ad-4fe0-8468-bad32641dc88",
+        "phase": "authenticating",
+        "code": 4429,
+        "reason": "lease_busy",
+        "elapsed_ms": 25
+      },
+      {
+        "event": "oral_exam.ownership_conflict",
+        "at": "2026-09-29T23:30:17.893Z",
+        "session": "a5c5dcd6-6c8d-4da8-a744-909fd1528ff2",
+        "connection": "b2ad4a68-f252-44fb-8547-cccec801a946",
+        "phase": "authenticating",
+        "error_class": "Error"
+      },
+      {
+        "event": "oral_exam.disconnect",
+        "at": "2026-09-29T23:30:17.895Z",
+        "session": "a5c5dcd6-6c8d-4da8-a744-909fd1528ff2",
+        "connection": "b2ad4a68-f252-44fb-8547-cccec801a946",
+        "phase": "authenticating",
+        "code": 4429,
+        "reason": "lease_busy",
+        "elapsed_ms": 22
+      },
+      {
+        "event": "oral_exam.ownership_conflict",
+        "at": "2026-09-29T23:30:26.149Z",
+        "session": "a5c5dcd6-6c8d-4da8-a744-909fd1528ff2",
+        "connection": "295ed397-856b-4a22-b941-cc3bbeda57cc",
+        "phase": "authenticating",
+        "error_class": "Error"
+      },
+      {
+        "event": "oral_exam.disconnect",
+        "at": "2026-09-29T23:30:26.151Z",
+        "session": "a5c5dcd6-6c8d-4da8-a744-909fd1528ff2",
+        "connection": "295ed397-856b-4a22-b941-cc3bbeda57cc",
+        "phase": "authenticating",
+        "code": 4429,
+        "reason": "lease_busy",
+        "elapsed_ms": 18
+      },
+      {
+        "event": "oral_exam.watchdog",
+        "at": "2026-09-29T23:30:27.366Z",
+        "session": "a5c5dcd6-6c8d-4da8-a744-909fd1528ff2",
+        "connection": "ec3a89ac-9161-40ed-90f8-45659ed530ab",
+        "phase": "listening",
+        "pong_age_ms": 30041
+      },
+      {
+        "event": "oral_exam.disconnect",
+        "at": "2026-09-29T23:30:27.368Z",
+        "session": "a5c5dcd6-6c8d-4da8-a744-909fd1528ff2",
+        "connection": "ec3a89ac-9161-40ed-90f8-45659ed530ab",
+        "phase": "listening",
+        "code": 1006,
+        "reason": "transport_lost",
+        "elapsed_ms": 270369
+      },
+      {
+        "event": "oral_exam.release",
+        "at": "2026-09-29T23:30:27.372Z",
+        "session": "a5c5dcd6-6c8d-4da8-a744-909fd1528ff2",
+        "connection": "ec3a89ac-9161-40ed-90f8-45659ed530ab",
+        "phase": "listening"
+      }
+    ]
+  },
+  "fixed": {
+    "session": "321defc3-a067-4290-8799-68fd7cbeecd2",
+    "started_at": "2026-09-30T07:30:53.340Z",
+    "expires_at": "2026-09-30T07:40:53.340Z",
+    "duration_seconds": 600,
+    "fault": {
+      "at": "2026-09-30T07:34:53.454Z",
+      "event": "intentional_network_interruption"
+    },
+    "opens": 2,
+    "closes": [
+      {
+        "at": "2026-09-30T07:34:53.460Z",
+        "event": "close",
+        "connection": "3c083d3b-8fcf-4e0b-b723-0a597f8c4a05",
+        "code": 1006,
+        "reason": ""
+      },
+      {
+        "at": "2026-09-30T07:40:53.356Z",
+        "event": "close",
+        "connection": "d4a1bb39-64c9-4993-a657-572a482887a5",
+        "code": 1005,
+        "reason": ""
+      }
+    ],
+    "exam_errors": 0,
+    "health_502s": 41,
+    "final_status": "timed_out",
+    "final_connected_clients": 0,
+    "final_lease_held": false,
+    "turn_sequences": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19
+    ],
+    "answered": 18,
+    "assessed": 18,
+    "unchanged_deadline": true,
+    "unique_sequences": true,
+    "server_lifecycle": [
+      {
+        "event": "oral_exam.claim",
+        "at": "2026-09-30T07:30:53.376Z",
+        "session": "321defc3-a067-4290-8799-68fd7cbeecd2",
+        "connection": "9bd4b932-6d28-4e92-af1e-100ef5871bea",
+        "phase": "authenticating"
+      },
+      {
+        "event": "oral_exam.welcome",
+        "at": "2026-09-30T07:30:53.380Z",
+        "session": "321defc3-a067-4290-8799-68fd7cbeecd2",
+        "connection": "9bd4b932-6d28-4e92-af1e-100ef5871bea",
+        "phase": "authenticating",
+        "auth_remaining_seconds": 86391
+      },
+      {
+        "event": "oral_exam.reconnect",
+        "at": "2026-09-30T07:34:54.431Z",
+        "session": "321defc3-a067-4290-8799-68fd7cbeecd2",
+        "connection": "f8129164-2a82-4f4d-a7c7-572a4a9f0536",
+        "phase": "authenticating"
+      },
+      {
+        "event": "oral_exam.release",
+        "at": "2026-09-30T07:34:54.433Z",
+        "session": "321defc3-a067-4290-8799-68fd7cbeecd2",
+        "connection": "9bd4b932-6d28-4e92-af1e-100ef5871bea",
+        "phase": "listening"
+      },
+      {
+        "event": "oral_exam.welcome",
+        "at": "2026-09-30T07:34:54.437Z",
+        "session": "321defc3-a067-4290-8799-68fd7cbeecd2",
+        "connection": "f8129164-2a82-4f4d-a7c7-572a4a9f0536",
+        "phase": "authenticating",
+        "auth_remaining_seconds": 86150
+      },
+      {
+        "event": "oral_exam.disconnect",
+        "at": "2026-09-30T07:34:54.440Z",
+        "session": "321defc3-a067-4290-8799-68fd7cbeecd2",
+        "connection": "9bd4b932-6d28-4e92-af1e-100ef5871bea",
+        "phase": "listening",
+        "code": 4001,
+        "reason": "resumed",
+        "elapsed_ms": 241073
+      },
+      {
+        "event": "oral_exam.ownership_conflict",
+        "at": "2026-09-30T07:40:25.702Z",
+        "session": "321defc3-a067-4290-8799-68fd7cbeecd2",
+        "connection": "6c737bb6-e6ef-4a4c-9dba-59ea48dfb344",
+        "phase": "authenticating",
+        "error_class": "Error"
+      },
+      {
+        "event": "oral_exam.disconnect",
+        "at": "2026-09-30T07:40:25.704Z",
+        "session": "321defc3-a067-4290-8799-68fd7cbeecd2",
+        "connection": "6c737bb6-e6ef-4a4c-9dba-59ea48dfb344",
+        "phase": "authenticating",
+        "code": 4429,
+        "reason": "lease_busy",
+        "elapsed_ms": 19
+      },
+      {
+        "event": "oral_exam.disconnect",
+        "at": "2026-09-30T07:40:53.399Z",
+        "session": "321defc3-a067-4290-8799-68fd7cbeecd2",
+        "connection": "f8129164-2a82-4f4d-a7c7-572a4a9f0536",
+        "phase": "ended",
+        "code": 1005,
+        "reason": "closed",
+        "elapsed_ms": 358982
+      },
+      {
+        "event": "oral_exam.release",
+        "at": "2026-09-30T07:40:53.400Z",
+        "session": "321defc3-a067-4290-8799-68fd7cbeecd2",
+        "connection": "f8129164-2a82-4f4d-a7c7-572a4a9f0536",
+        "phase": "ended"
+      }
+    ]
+  },
+  "checks": {
+    "backend_tests": 97,
+    "frontend_tests": 60,
+    "lint": "passed",
+    "production_build": "passed",
+    "whitespace": "passed"
+  }
+}

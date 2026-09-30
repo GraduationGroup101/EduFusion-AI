@@ -32,11 +32,19 @@ export default function OralExamPage(){
   // True from the moment the student ends the exam until the gateway confirms
   // it, so the live view is replaced immediately rather than after feedback.
   const [ending,setEnding]=useState(false);
-  const requestKey=useRef(null),clock=useRef(null),alive=useRef(true),evaluating=useRef(null);
+  const requestKey=useRef(null),clock=useRef(null),alive=useRef(true),sessionState=useRef(null),evaluating=useRef(null);
   const update=useCallback(snapshot=>{
     if(!alive.current)return;
-    if(snapshot.expires_at&&snapshot.server_now)clock.current={at:performance.now(),seconds:Math.max(0,(new Date(snapshot.expires_at)-new Date(snapshot.server_now))/1000)};
-    setSession(previous=>previous?.id===snapshot.id?{...previous,...snapshot}:snapshot);
+    const previous=sessionState.current;
+    if(previous?.id===snapshot.id&&terminal(previous)&&!terminal(snapshot))return;
+    if(snapshot.expires_at&&snapshot.server_now){
+      const at=performance.now(),candidate=Math.max(0,(new Date(snapshot.expires_at)-new Date(snapshot.server_now))/1000);
+      const before=clock.current;
+      const seconds=before?.id===snapshot.id&&before.expiresAt===snapshot.expires_at?Math.max(0,Math.min(candidate,before.seconds-(at-before.at)/1000)):candidate;
+      clock.current={id:snapshot.id,expiresAt:snapshot.expires_at,at,seconds};setRemaining(Math.ceil(seconds));
+    }
+    const next=previous?.id===snapshot.id?{...previous,...snapshot}:snapshot;
+    sessionState.current=next;setSession(next);
   },[]);
   const voice=useOralExamVoice(update);
   useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
@@ -67,8 +75,15 @@ export default function OralExamPage(){
   useEffect(()=>{
     if(session?.status!=='active')return;
     const timer=setInterval(()=>{if(clock.current)setRemaining(Math.max(0,Math.ceil(clock.current.seconds-(performance.now()-clock.current.at)/1000)));},250);
-    const poll=setInterval(()=>api.get(session.id).then(({data})=>update(data.session)).catch(()=>{}),10000);
-    return()=>{clearInterval(timer);clearInterval(poll);};
+    let cancelled=false,pollTimer,controller;
+    const poll=async()=>{
+      controller=new AbortController();
+      try{const {data}=await api.get(session.id,{signal:controller.signal});if(!cancelled)update(data.session);}
+      catch{/* Socket recovery and the local clock continue through HTTP outages. */}
+      finally{if(!cancelled)pollTimer=setTimeout(poll,10000);}
+    };
+    pollTimer=setTimeout(poll,10000);
+    return()=>{cancelled=true;controller?.abort();clearInterval(timer);clearTimeout(pollTimer);};
   },[session?.id,session?.status,update]);
   useEffect(()=>{if(terminal(session))voice.stop();},[session?.status,voice.stop]);
   // One evaluation request at a time, whether it comes from the automatic
