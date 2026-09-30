@@ -93,21 +93,27 @@ function consecutiveFollowUps(session) {
 }
 // Validates a non-answer decision: nothing scored, nothing advanced, and a
 // reply that does not copy the evidence.
-function checkControl(value,evidence,expected) {
+function checkControl(value,evidence,expected,question='') {
   if(expected&&value.intent!==expected)throw new ModelValidationError('unexpected_intent');
   if(value.assessment||value.next)throw new ModelValidationError('control_intent_with_progress');
   if(['clarify','dont_know'].includes(value.intent)&&!value.reply)throw new ModelValidationError('missing_reply');
-  if(value.reply&&conversation.leaks(value.reply,evidence))throw new ModelValidationError('reply_reveals_evidence');
+  if(value.reply&&conversation.leaks(value.reply,evidence,question))throw new ModelValidationError('reply_reveals_evidence');
   return value;
 }
-async function next(session,transcript,signal) {
+// forceAnswer: the student has used up the repeat/clarify/nudge allowance for
+// this question, so the response must be assessed as their answer. A control
+// decision is rejected here and never reaches the store.
+async function next(session,transcript,signal,{forceAnswer=false}={}) {
   const evidence=evidenceFor(session,transcript);
   const remaining=Math.max(0,Math.floor((new Date(session.expires_at)-new Date(session.server_now||Date.now()))/1000));
   const current=session.turns.at(-1);
-  const format={intent:transcript===null?'answer':'answer | repeat | clarify | dont_know | unclear',reply:'Short message for clarify or dont_know, otherwise null',
+  const format={intent:transcript===null||forceAnswer?'answer':'answer | repeat | clarify | dont_know | unclear',reply:'Short message for clarify or dont_know, otherwise null',
     assessment:transcript===null?null:{understanding:0,accuracy:0,completeness:0,communication:0,feedback:'Concise feedback',strengths:[],improvements:[]},
     next:{question:'One question',concept:'Topic',question_type:transcript===null?'initial':'follow_up',difficulty:'foundation',citations:['evidence chunk id'],follow_up_reason:'Brief pedagogical label, no reasoning trace'}};
-  return jsonModel([{role:'system',content:SYSTEM},{role:'user',content:JSON.stringify({task:transcript===null?'Choose the first question.':'Classify the student response. If it is an answer, assess it (0–100 dimensions) and choose the next question; next may be null to end the exam. Otherwise return the intent with a reply and no assessment or next question.',format,language:session.language,remaining_seconds:remaining,
+  const task=transcript===null?'Choose the first question.'
+    :forceAnswer?'The student has used all repeat, clarification and hint allowances for this question. Treat this response as their answer of record: intent must be "answer", assess it exactly as it stands (a non-answer scores low, with brief encouraging feedback), and choose the next question; next may be null to end the exam.'
+    :'Classify the student response. If it is an answer, assess it (0–100 dimensions) and choose the next question; next may be null to end the exam. Otherwise return the intent with a reply and no assessment or next question.';
+  return jsonModel([{role:'system',content:SYSTEM},{role:'user',content:JSON.stringify({task,format,language:session.language,remaining_seconds:remaining,control_requests_exhausted:Boolean(forceAnswer),
     evidence,covered:session.turns.map(t=>t.concept),consecutive_follow_ups:consecutiveFollowUps(session),
     current_question:current?{question:current.question,concept:current.concept,exchanges_so_far:publicExchanges(current)}:null,
     history:session.turns.slice(-8).map(t=>({question:t.question,answer:t.transcript,assessment:t.assessment})),student_response:transcript})}],
@@ -115,7 +121,8 @@ async function next(session,transcript,signal) {
     if(transcript===null) {
       if(value.intent!=='answer'||value.assessment!==null||!value.next)throw new ModelValidationError('invalid_initial_decision');
     } else if(value.intent!=='answer') {
-      return checkControl(value,evidence);
+      if(forceAnswer)throw new ModelValidationError('control_exhausted_not_assessed');
+      return checkControl(value,evidence,undefined,current?.question);
     } else if(!value.assessment)throw new ModelValidationError('missing_assessment');
     if(!session.turns.length&&!value.next)throw new ModelValidationError('missing_initial_question');
     if(value.next?.citations.some(id=>!evidence.some(c=>c.id===id)))throw new ModelValidationError('ungrounded_citation');
@@ -137,7 +144,7 @@ async function reply(session,transcript,intent,signal) {
   return jsonModel([{role:'system',content:SYSTEM},{role:'user',content:JSON.stringify({task,language:session.language,evidence,
     current_question:{question:current.question,concept:current.concept,exchanges_so_far:publicExchanges(current)},student_response:transcript})}],
   {operation:'conversation_reply',schemaName:'oral_exam_decision',schema:decisionJsonSchema,contract:decision,signal,expiresAt:session.expires_at,
-    validate:value=>checkControl(value,evidence,intent)});
+    validate:value=>checkControl(value,evidence,intent,current.question)});
 }
 const evaluations=new Map();
 // Idempotent: concurrent callers share one attempt, a ready report is never

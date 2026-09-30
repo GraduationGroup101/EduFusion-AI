@@ -104,13 +104,26 @@ function attachRealtime(server,dependencies={}) {
         const turn=session.turns.at(-1);
         // Obvious control phrases are handled without the model; everything
         // else is classified by the examiner as part of its decision.
-        const intent=transcript===null?'answer':conversation.resolve(conversation.classify(transcript),turn?.exchanges);
+        const heard=transcript===null?null:conversation.classify(transcript);
+        const intent=transcript===null?'answer':conversation.resolve(heard,turn?.exchanges);
         if(intent!=='answer'){await converse(intent,transcript);return;}
+        // A recognised request past its allowance is the answer of record: the
+        // model is told so and must assess it rather than answer with a reply.
+        let forceAnswer=transcript!==null&&heard!==null;
         if(transcript!==null)await store.recordAnswer(session.id,token,turn.sequence,transcript);
-        const decision=await model.next(session,transcript,abort.signal);
+        let decision=await model.next(session,transcript,abort.signal,{forceAnswer});
         if(abort.signal.aborted||closed)return;
-        const modelIntent=transcript===null?'answer':conversation.resolve(decision.intent||'answer',turn?.exchanges);
-        if(modelIntent!=='answer'){await converse(modelIntent,transcript,decision.reply??null);return;}
+        if(transcript!==null&&decision.intent&&decision.intent!=='answer') {
+          const modelIntent=conversation.resolve(decision.intent,turn?.exchanges);
+          if(modelIntent!=='answer'){await converse(modelIntent,transcript,decision.reply??null);return;}
+          if(forceAnswer)throw new Error('Exhausted control request was not assessed');
+          // The model classified a request whose allowance is used up: ask again
+          // for an assessment. A control decision is never committed as an answer.
+          forceAnswer=true;
+          decision=await model.next(session,transcript,abort.signal,{forceAnswer});
+          if(abort.signal.aborted||closed)return;
+        }
+        if(transcript!==null&&(decision.intent&&decision.intent!=='answer'||!decision.assessment))throw new Error('Answer was not assessed');
         await store.commit(session.id,token,turn?.sequence||0,transcript,decision);
         session=await store.get(user,session.id);
         if(!decision.next){await finish();return;}

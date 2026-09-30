@@ -100,5 +100,6 @@ Frontend (Vitest):
 
 - The deterministic vocabulary is a safety net; unusual phrasings rely on the model's `intent`. Both paths are bounded by the same limits.
 - The 1.5 s VAD commit is unchanged: a long mid-answer pause still commits a partial transcript. That is an existing capture behaviour, not changed here.
-- The leak guard is lexical (eight-word overlap). It stops quoting, not every possible paraphrase; the prompt forbids hints and the review shows every reply.
+- The leak guard is lexical: eight consecutive evidence words, or three consecutive evidence words the question itself does not contain. It catches quoting and short exact answers such as "consulting its routing table", not one- or two-word fragments or every paraphrase; the prompt forbids hints and the review shows every reply.
+- Review follow-up (2026-09-30): an exhausted request ("I don't know" after the nudge) is sent to the model with `forceAnswer`; a control decision is rejected there and `store.commit` refuses an unassessed answer, so it can no longer end the exam. `POST /end` now returns before the report is generated and the page switches to the review with "Generating feedback…" at once.
 - Physical-microphone verification of the spoken replies in both languages remains manual.

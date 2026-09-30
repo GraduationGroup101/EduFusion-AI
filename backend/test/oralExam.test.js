@@ -37,7 +37,7 @@ before(async()=>{
   await require('../scripts/migrate').migrate();
   await database.query("INSERT INTO students(id_student,student_name,pin_hash) VALUES(900,'Oral student','hash'),(901,'Other student','hash')");
   server=app.listen(0,'127.0.0.1');await once(server,'listening');
-  realtime=attachRealtime(server,{examiner:{...examiner,next:async(_s,text)=>nextOverride?nextOverride(_s,text):({assessment:text===null?null:assessment,next:text===null?question:{...question,question:'Why is path selection useful?',question_type:'follow_up'}}),
+  realtime=attachRealtime(server,{examiner:{...examiner,next:async(_s,text,signal,options)=>nextOverride?nextOverride(_s,text,signal,options):({assessment:text===null?null:assessment,next:text===null?question:{...question,question:'Why is path selection useful?',question_type:'follow_up'}}),
     reply:async(_s,text,intent)=>replyOverride?replyOverride(_s,text,intent):({intent,reply:intent==='clarify'?'In other words, what job does this device do for packets?':'No problem. Share anything you remember about this device.',assessment:null,next:null})},voice:{
     speak:async()=>Buffer.from('ID3fake-test-audio'),
     transcriber:({onFinal})=>{finalizeSpeech=onFinal;return {opened:Promise.resolve(),close(){},send(){return true;}};},
@@ -294,6 +294,73 @@ test('Arabic control phrases are handled in Arabic and bounded the same way',asy
     assert.equal(+new Date(saved.expires_at),+new Date(started.expires_at));
     c.ws.terminate();await once(c.ws,'close');await store.finish(user,a.id);
   } finally {nextOverride=undefined;replyOverride=undefined;}
+});
+test('a second "I don\'t know" after the nudge never ends the exam, even when the model still returns dont_know',async()=>{
+  await database.query("UPDATE edufusion_oral_exam_sessions SET created_at=NOW()-INTERVAL '2 days'");
+  const a=await create();const started=await store.start(user,a.id);
+  const calls=[];
+  nextOverride=async(_session,text,_signal,options={})=>{
+    calls.push({text,forceAnswer:Boolean(options.forceAnswer)});
+    if(text===null)return {intent:'answer',reply:null,assessment:null,next:question};
+    // The model insists on dont_know until it is told the allowance is used up.
+    if(!options.forceAnswer)return {intent:'dont_know',reply:'Take your time.',assessment:null,next:null};
+    return {intent:'answer',reply:null,assessment:{...assessment,accuracy:5,completeness:0},next:{...question,question:'What is a routing table?',question_type:'next_topic'}};
+  };
+  try {
+    const c=await socket(a.id);await c.until(e=>e.type==='audio');
+    c.ws.send(JSON.stringify({type:'played',sequence:1}));await c.until(e=>e.type==='state'&&e.state==='listening');
+    const nudged=await say(c,"I don't know.");
+    assert.equal(nudged.kind,'nudge');assert.equal(nudged.sequence,1);
+    const advanced=await say(c,"I don't know.");
+    assert.equal(advanced.sequence,2);assert.equal(advanced.kind,'question');assert.equal(advanced.question,'What is a routing table?');
+    assert.deepEqual(calls,[{text:null,forceAnswer:false},{text:"I don't know.",forceAnswer:true}]);
+    const saved=await store.get(user,a.id);
+    assert.equal(saved.status,'active');assert.equal(saved.turns.length,2);
+    assert.equal(saved.turns[0].transcript,"I don't know.");assert.equal(saved.turns[0].assessment.completeness,0);
+    assert.equal(+new Date(saved.expires_at),+new Date(started.expires_at));
+    // A long utterance the model classifies as dont_know gets the one nudge on
+    // the new question; the next one is past its allowance, so it is re-asked
+    // with the flag and assessed, never committed as a control decision.
+    const longer='Honestly I really do not know anything about this one at all I am completely lost here';
+    const nudgedAgain=await say(c,longer);
+    assert.equal(nudgedAgain.sequence,2);assert.equal(nudgedAgain.kind,'nudge');assert.equal(nudgedAgain.remark,'Take your time.');
+    const again=await say(c,longer);
+    assert.equal(again.sequence,3);
+    assert.deepEqual(calls.slice(2),[{text:longer,forceAnswer:false},{text:longer,forceAnswer:false},{text:longer,forceAnswer:true}]);
+    assert.equal((await store.get(user,a.id)).status,'active');
+    c.ws.terminate();await once(c.ws,'close');await store.finish(user,a.id);
+  } finally {nextOverride=undefined;}
+});
+test('the store refuses to save an unassessed answer or a control decision as an answer',async()=>{
+  const a=await create();await store.start(user,a.id);const lease=await store.claim(user,a.id);
+  await store.commit(a.id,lease.token,0,null,{intent:'answer',reply:null,assessment:null,next:question});
+  await assert.rejects(()=>store.commit(a.id,lease.token,1,"I don't know",{intent:'dont_know',reply:'Take your time.',assessment:null,next:null}),{statusCode:409});
+  await assert.rejects(()=>store.commit(a.id,lease.token,1,'A router forwards packets.',{intent:'answer',reply:null,assessment:null,next:null}),{statusCode:409});
+  const saved=await store.get(user,a.id);
+  assert.equal(saved.status,'active');assert.equal(saved.turns.length,1);assert.equal(saved.turns[0].assessment,null);
+  await store.finish(user,a.id);
+});
+test('ending an exam responds before feedback is generated and the report still arrives',async()=>{
+  await database.query("UPDATE edufusion_oral_exam_sessions SET created_at=NOW()-INTERVAL '2 days'");
+  const a=await create();await store.start(user,a.id);const lease=await store.claim(user,a.id);
+  await store.commit(a.id,lease.token,0,null,{assessment:null,next:question});
+  await store.commit(a.id,lease.token,1,'A router selects packet routes.',{assessment,next:null});
+  await store.release(a.id,lease.token);
+  const report={understanding:80,accuracy:80,completeness:75,communication:90,strengths:['Path selection'],areasForImprovement:['Add detail'],topicsCovered:['Routing'],summary:'You explained the core idea.'};
+  let release;const gate=new Promise(resolve=>{release=resolve;});
+  global.fetch=async()=>{await gate;return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(report)}}]}));};
+  try {
+    const startedAt=Date.now();
+    const ended=await api('post',`/sessions/${a.id}/end`);
+    assert.ok(Date.now()-startedAt<1500);
+    assert.equal(ended.status,200);assert.equal(ended.body.session.status,'completed');
+    assert.deepEqual(ended.body.evaluation,{status:'pending'});assert.equal(ended.body.session.evaluation_status,'pending');
+    release();
+    for(let i=0;i<100&&(await store.get(user,a.id)).evaluation_status!=='ready';i++)await new Promise(r=>setTimeout(r,20));
+    const saved=await store.get(user,a.id);
+    assert.equal(saved.evaluation_status,'ready');assert.equal(saved.evaluation.score,80);
+    assert.deepEqual((await api('post',`/sessions/${a.id}/end`)).body.evaluation,{status:'ready',cached:true});
+  } finally {global.fetch=original.fetch;}
 });
 test('feedback retry reports each outcome, stays idempotent and never touches saved answers',async()=>{
   await database.query("UPDATE edufusion_oral_exam_sessions SET created_at=NOW()-INTERVAL '2 days'");

@@ -104,12 +104,20 @@ function reply(intent,language,question,modelReply=null) {
 const spoken=(kind,text,question)=>kind==='repeat'?`${text} ${question}`:text;
 
 // A clarification or nudge must not quote the material it is examining.
-// Copying eight consecutive words of evidence is treated as revealing it.
-function leaks(text,chunks,size=8) {
-  const grams=value=>{const w=words(normalize(value));const set=new Set();for(let i=0;i+size<=w.length;i++)set.add(w.slice(i,i+size).join(' '));return set;};
-  const found=grams(text);
-  if(!found.size)return false;
-  return chunks.some(chunk=>[...grams(chunk.text)].some(gram=>found.has(gram)));
+// Two rules: any eight consecutive words of evidence, or any three consecutive
+// evidence words that the question itself does not contain (so a short exact
+// answer such as "consulting its routing table" is caught, while restating
+// the question's own words is allowed). Trigrams made only of function words
+// are ignored.
+const STOPWORDS=new Set(['the','a','an','of','in','on','to','and','or','is','are','it','its','this','that','for','by','with','as','at','be','do','does','what','which','how','why','you','your','we','they','من','في','على','و','او','هو','هي','هذا','هذه','ما','ماذا','كيف','لماذا','التي','الذي','عن','الى','ان','هل']);
+const grams=(value,size)=>{const w=words(normalize(value));const set=new Set();for(let i=0;i+size<=w.length;i++)set.add(w.slice(i,i+size).join(' '));return set;};
+function leaks(text,chunks,question='') {
+  const long=grams(text,8);
+  if(long.size&&chunks.some(chunk=>[...grams(chunk.text,8)].some(gram=>long.has(gram))))return true;
+  const allowed=grams(question,3);
+  const short=[...grams(text,3)].filter(gram=>!allowed.has(gram)&&gram.split(' ').some(token=>!STOPWORDS.has(token)));
+  if(!short.length)return false;
+  return chunks.some(chunk=>{const evidence=grams(chunk.text,3);return short.some(gram=>evidence.has(gram));});
 }
 
 module.exports={INTENTS,KIND,LIMITS,normalize,classify,resolve,reply,spoken,leaks};

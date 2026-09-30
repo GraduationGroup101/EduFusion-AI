@@ -53,11 +53,18 @@ test('spoken replies exist in both languages and a repeat re-reads the question'
   assert.equal(conversation.reply('clarify','en','Q',' A model rephrasing '),' A model rephrasing ');
   assert.match(conversation.reply('unclear','ar','Q'),/لم أسمع/);
 });
-test('a clarification that copies the evidence is detected as a leak',()=>{
+test('a clarification that copies the evidence is detected as a leak, including short exact answers',()=>{
   const chunks=[{id:'c1',text:'A router selects the best path for a packet by consulting its routing table and forwarding the packet to the next hop.'}];
-  assert.equal(conversation.leaks('The question asks what job this device does when a packet arrives.',chunks),false);
-  assert.equal(conversation.leaks('Remember: a router selects the best path for a packet by consulting its routing table.',chunks),true);
-  assert.equal(conversation.leaks('',chunks),false);
+  const q='What does a router do when a packet arrives?';
+  assert.equal(conversation.leaks('The question asks what job this device does when a packet arrives.',chunks,q),false);
+  assert.equal(conversation.leaks('In other words: what does a router do with an incoming packet?',chunks,q),false);
+  assert.equal(conversation.leaks('Remember: a router selects the best path for a packet by consulting its routing table.',chunks,q),true);
+  // Fewer than eight words, but an exact answer fragment the question does not contain.
+  assert.equal(conversation.leaks('Think about consulting its routing table.',chunks,q),true);
+  assert.equal(conversation.leaks('Hint: the next hop.',chunks,q),true);
+  assert.equal(conversation.leaks('Hint: next hop.',chunks,q),false); // two words cannot be judged lexically
+  assert.equal(conversation.leaks('It forwards the packet to the next hop, remember?',chunks,q),true);
+  assert.equal(conversation.leaks('',chunks,q),false);
 });
 
 const question={question:'What does a router do?',concept:'Routing',question_type:'initial',difficulty:'foundation',citations:['text-1'],follow_up_reason:''};
@@ -109,6 +116,17 @@ test('reply generation asks only about the current question and rejects the requ
   assert.equal((await examiner.reply(answered(),'I do not understand','clarify')).reply,'In simpler words, what is its role?');assert.equal(m.calls(),2);
   m=mock([reply({intent:'clarify',reply:`Well, ${evidenceText}`,assessment:null,next:null})]);
   await assert.rejects(()=>examiner.reply(answered(),'I do not understand','clarify'),{code:'reply_reveals_evidence'});assert.equal(m.calls(),2);
+});
+test('once requests are exhausted the model must assess the response; a control decision is rejected and retried',async()=>{
+  const m=mock([reply({intent:'dont_know',reply:'Take your time.',assessment:null,next:null}),reply({intent:'answer',reply:null,assessment,next:{...question,question:'What is a routing table?',question_type:'next_topic'}})]);
+  const decided=await examiner.next(answered(),"I don't know",undefined,{forceAnswer:true});
+  assert.equal(decided.intent,'answer');assert.equal(decided.next.question,'What is a routing table?');assert.equal(m.calls(),2);
+  const user=JSON.parse(m.bodies[0].messages[1].content);
+  assert.equal(user.control_requests_exhausted,true);assert.match(user.task,/answer of record/);assert.equal(user.format.intent,'answer');
+  mock([reply({intent:'dont_know',reply:'Take your time.',assessment:null,next:null})]);
+  await assert.rejects(()=>examiner.next(answered(),"I don't know",undefined,{forceAnswer:true}),{code:'control_exhausted_not_assessed'});
+  const relaxed=mock([reply({intent:'dont_know',reply:'Take your time.',assessment:null,next:null})]);
+  assert.equal((await examiner.next(answered(),"Honestly I have no clue at all what the answer might be here")).intent,'dont_know');assert.equal(relaxed.calls(),1);
 });
 test('evaluation failures map to safe reason codes',()=>{
   assert.equal(examiner.failureCode(Object.assign(new Error(),{name:'ZodError'})),'invalid_model_output');

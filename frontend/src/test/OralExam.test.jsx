@@ -34,6 +34,26 @@ it('starts with authoritative time and ends into a persisted results view',async
   expect(screen.getByLabelText('Time remaining')).toHaveTextContent('10:00');
   fireEvent.click(screen.getByRole('button',{name:'End exam'}));await screen.findByText('Good understanding of routing.');expect(screen.getByText('82')).toBeInTheDocument();expect(voice.stop).toHaveBeenCalled();
 });
+it('ending an exam replaces the live view immediately and shows feedback generating until the report arrives',async()=>{
+  const active={...session,status:'active',expires_at:new Date(Date.now()+600000).toISOString(),server_now:new Date().toISOString(),turns:[{id:'t1',sequence:1,question:'What does a router do?',concept:'Routing',transcript:'It selects paths.'}]};
+  api.get.mockResolvedValue({data:{session:active}});
+  let finishEnd;api.end.mockImplementationOnce(()=>new Promise(resolve=>{finishEnd=resolve;}));
+  let finishEvaluate;api.evaluate.mockImplementationOnce(()=>new Promise(resolve=>{finishEvaluate=resolve;}));
+  open('/dashboard/oral-exam?session=exam-1');
+  fireEvent.click(await screen.findByRole('button',{name:'End exam'}));
+  // Before /end responds: the live panel is gone and the review shows progress.
+  await screen.findByText('Your exam has ended.');
+  expect(screen.queryByRole('button',{name:'End exam'})).toBeNull();
+  expect(screen.queryByLabelText('Time remaining')).toBeNull();
+  expect(screen.getByRole('button',{name:'Generating feedback…'})).toBeDisabled();
+  expect(voice.stop).toHaveBeenCalled();
+  await act(async()=>finishEnd({data:{session:{...active,status:'completed',evaluation_status:'pending'},evaluation:{status:'pending'}}}));
+  await waitFor(()=>expect(api.evaluate).toHaveBeenCalledTimes(1));
+  expect(screen.getByRole('button',{name:'Generating feedback…'})).toBeDisabled();
+  await act(async()=>finishEvaluate({data:{session:{...active,status:'completed',evaluation_status:'ready',evaluation:{score:64,understanding:60,accuracy:65,completeness:60,communication:75,strengths:['Basics'],areasForImprovement:['Detail'],topicsCovered:['Routing'],summary:'A fair start.'}},evaluation:{status:'ready'}}}));
+  await screen.findByText('A fair start.');expect(screen.getByText('64')).toBeInTheDocument();
+  expect(api.start).not.toHaveBeenCalled();expect(api.end).toHaveBeenCalledTimes(1);
+});
 it('refreshing an active exam offers reconnect instead of restarting the timer',async()=>{
   api.get.mockResolvedValue({data:{session:{...session,status:'active',expires_at:new Date(Date.now()+120000).toISOString(),server_now:new Date().toISOString()}}});
   open('/dashboard/oral-exam?session=exam-1');await screen.findByRole('button',{name:'Reconnect'});expect(api.start).not.toHaveBeenCalled();

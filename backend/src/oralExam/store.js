@@ -88,6 +88,9 @@ async function commit(id,token,expectedSequence,transcript,decision) {
     const last=turns.at(-1);
     if((last?.sequence||0)!==expectedSequence) fail(409,'The exam has already advanced');
     if(last && transcript!==null) {
+      // An answer is only committed with its assessment; a control decision
+      // (repeat, clarify, don't know) must never end or advance the exam here.
+      if(!decision.assessment||(decision.intent&&decision.intent!=='answer')) fail(409,'An answer must be assessed before it is saved');
       if(last.assessment||(last.transcript!==null&&last.transcript!==transcript)) fail(409,'This answer is already saved');
       await client.query(`UPDATE ${TURNS} SET transcript=$2,assessment=$3,answered_at=COALESCE(answered_at,clock_timestamp()) WHERE id=$1`,[last.id,transcript,decision.assessment]);
     } else if(last) fail(409,'Answer the current question first');
