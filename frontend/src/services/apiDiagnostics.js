@@ -8,5 +8,8 @@ export const reportApiFailure = (error) => {
     : 'request_rejected';
   // Axios errors contain request bodies and Bearer headers. Never log the error
   // object, URL query, response body or credentials from its config.
-  console.warn('API request failed:', { category, status: status || null });
+  const services=['oral-exam','lecture-scribe','lecture-study','chatbot','question-generator','student','auth','dashboard','admin','services'];
+  let service='unknown';
+  try {service=new URL(error.config?.url||'',window.location.origin).pathname.split('/').find(part=>services.includes(part))||'unknown';}catch { /* Never print arbitrary URLs. */ }
+  console.warn('API request failed:', { category, status: status || null, service });
 };

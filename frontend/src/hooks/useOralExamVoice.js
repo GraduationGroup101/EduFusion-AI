@@ -1,9 +1,12 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {socketUrl} from '../services/oralExam';
+import {oralLifecycle} from '../services/oralExamDiagnostics';
 
 export function useOralExamVoice(onSession) {
   const [state,setState]=useState('idle'),[error,setError]=useState(''),[mic,setMic]=useState(false),[muted,setMuted]=useState(false),[question,setQuestion]=useState('');
   const runtime=useRef({}),onSessionRef=useRef(onSession);onSessionRef.current=onSession;
+  // A per-mounted-page capability; never shared through storage with other tabs.
+  const resume=useRef({});
   const stop=useCallback(()=>{
     const r=runtime.current;r.stopped=true;clearTimeout(r.retry);clearTimeout(r.deadline);clearTimeout(r.watchdog);r.socket?.close();r.source?.stop();
     r.stream?.getTracks().forEach(t=>t.stop());r.capture?.disconnect();r.input?.disconnect();r.context?.close().catch(()=>{});
@@ -32,24 +35,49 @@ export function useOralExamVoice(onSession) {
   },[stop]);
   const connect=useCallback(session=>{
     const r=runtime.current;if(!r.context||r.stopped)return;
+    clearTimeout(r.retry);clearTimeout(r.watchdog);
+    const previous=r.socket;r.socket=null;previous?.close();r.source?.stop();
+    r.connectionGeneration=(r.connectionGeneration||0)+1;
+    const generation=r.connectionGeneration;
+    const active=()=>runtime.current===r&&!r.stopped&&r.connectionGeneration===generation&&r.phase!=='ended';
+    if(resume.current.sessionId!==session.id)resume.current={sessionId:session.id,key:crypto.randomUUID()};
     r.sessionId=session.id;r.attempts=0;setError('');
     function deadline(snapshot){
       clearTimeout(r.deadline);
       const remaining=Math.max(0,new Date(snapshot.expires_at)-new Date(snapshot.server_now));
-      r.deadline=setTimeout(()=>{r.phase='ended';r.source?.stop();r.stream?.getTracks().forEach(t=>t.stop());r.socket?.close();setState('ended');onSessionRef.current({...snapshot,status:'timed_out'});},remaining);
+      r.deadline=setTimeout(()=>{if(!active())return;r.phase='ended';clearTimeout(r.retry);clearTimeout(r.watchdog);r.source?.stop();r.stream?.getTracks().forEach(t=>t.stop());r.socket?.close();setState('ended');onSessionRef.current({...snapshot,status:'timed_out'});},remaining);
     }
     deadline(session);
     function dial(){
-      if(r.stopped)return;
+      if(!active())return;
       setState('connecting');r.phase='connecting';
-      const ws=new WebSocket(socketUrl());r.socket=ws;
-      const watch=()=>{clearTimeout(r.watchdog);r.watchdog=setTimeout(()=>ws.close(),20000);};watch();
-      ws.onopen=()=>ws.send(JSON.stringify({type:'hello',token:localStorage.getItem('token'),sessionId:r.sessionId}));
+      const ws=new WebSocket(socketUrl()),instance=crypto.randomUUID();r.socket=ws;
+      const current=()=>active()&&r.socket===ws;
+      const log=(event,fields={})=>oralLifecycle(event,{session:r.sessionId,connection:instance,...fields});
+      log('connect',{attempt:r.attempts});
+      function disconnected(code,reason){
+        if(!current())return;
+        clearTimeout(r.watchdog);r.socket=null;r.source?.stop();
+        log('disconnect',{code,reason});
+        if(r.deviceLost){r.phase='error';setState('error');return;}
+        r.phase='reconnecting';setState('reconnecting');
+        if([4001,4401,4403,4409].includes(code)||r.attempts>=6){
+          setError(code===4401?'Your sign-in expired. Sign in again to recover your exam.':[4001,4409].includes(code)?'Another connection now owns this exam. Close other exam tabs, then reconnect. The timer continues.':'Connection lost. Reconnect to recover your exam. The timer continues.');setState('error');return;
+        }
+        const delay=Math.min(8000,750*2**r.attempts++)+Math.random()*300;
+        log('reconnect',{attempt:r.attempts,delay_ms:Math.round(delay)});
+        r.retry=setTimeout(dial,delay);
+      }
+      const watch=()=>{clearTimeout(r.watchdog);r.watchdog=setTimeout(()=>{
+        if(!current())return;
+        log('watchdog');disconnected(4000,'heartbeat_timeout');ws.close(4000,'Heartbeat timeout');
+      },20000);};watch();
+      ws.onopen=()=>{if(current())ws.send(JSON.stringify({type:'hello',token:localStorage.getItem('token'),sessionId:r.sessionId,connectionKey:resume.current.key}));else ws.close();};
       ws.onmessage=async event=>{
-        if(r.stopped||r.socket!==ws)return;
+        if(!current())return;
         try{
           const msg=JSON.parse(event.data);watch();
-          if(msg.type==='welcome'){r.attempts=0;setError('');onSessionRef.current(msg.session);deadline(msg.session);}
+          if(msg.type==='welcome'){r.attempts=0;setError('');log('welcome',{server_connection:msg.connectionId});onSessionRef.current(msg.session);deadline(msg.session);}
           if(msg.type==='clock'){onSessionRef.current({id:r.sessionId,...msg});}
           if(msg.type==='state'){r.phase=msg.state;setState(msg.state);}
           if(msg.type==='question')setQuestion(msg.question);
@@ -58,25 +86,18 @@ export function useOralExamVoice(onSession) {
           if(msg.type==='audio'){
             const buffer=Uint8Array.from(atob(msg.audio),c=>c.charCodeAt(0)).buffer;
             const decoded=await r.context.decodeAudioData(buffer);
-            if(r.stopped||r.socket!==ws||r.phase!=='speaking')return;
+            if(!current()||r.phase!=='speaking')return;
             await r.context.resume();
-            if(r.stopped||r.socket!==ws)return;
+            if(!current())return;
             if(r.context.state!=='running')throw new Error('Audio playback is blocked');
             r.source=r.context.createBufferSource();r.source.buffer=decoded;r.source.connect(r.context.destination);
-            r.source.onended=()=>{if(!r.stopped&&r.phase==='speaking'&&ws.readyState===1)ws.send(JSON.stringify({type:'played',sequence:msg.sequence}));};
+            r.source.onended=()=>{if(current()&&r.phase==='speaking'&&ws.readyState===1)ws.send(JSON.stringify({type:'played',sequence:msg.sequence}));};
             r.source.start();
           }
-        }catch{if(!r.stopped){setError('Audio could not play. Reconnect to hear the question again.');setState('error');r.phase='error';}}
+        }catch{if(current()){log('playback_failure');setError('Audio could not play. Reconnect to hear the question again.');setState('error');r.phase='error';}}
       };
       ws.onerror=()=>{};
-      ws.onclose=event=>{
-        clearTimeout(r.watchdog);r.source?.stop();
-        if(r.stopped||r.phase==='ended')return;
-        if(r.deviceLost){r.phase='error';setState('error');return;}
-        r.phase='reconnecting';setState('reconnecting');
-        if([4401,4403,4409].includes(event.code)||r.attempts>=6){setError('Connection lost. Close other exam tabs, then reconnect. The exam timer continues.');setState('error');return;}
-        r.retry=setTimeout(dial,Math.min(8000,750*2**r.attempts++)+Math.random()*300);
-      };
+      ws.onclose=event=>disconnected(event.code,event.reason);
     }
     dial();
   },[stop]);

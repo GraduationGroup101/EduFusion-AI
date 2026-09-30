@@ -81,7 +81,7 @@ before(async () => {
 after(async () => { if(server) await new Promise((resolve) => { server.close(resolve); server.closeAllConnections(); }); global.fetch=originalFetch;pool.query=originalQuery;pool.connect=originalConnect;await database.close();await pool.end(); });
 
 test('migrations are repeatable and new student PINs are hashes',async()=>{
-  assert.equal((await database.query('SELECT COUNT(*)::int AS n FROM edufusion_schema_migrations')).rows[0].n,6);
+  assert.equal((await database.query('SELECT COUNT(*)::int AS n FROM edufusion_schema_migrations')).rows[0].n,7);
   const student=(await database.query('SELECT * FROM students WHERE id_student=123')).rows[0];
   assert.notEqual(student.pin_hash,'abcd1234');assert.equal(await bcrypt.compare('abcd1234',student.pin_hash),true);
   const login=await request(server).post('/api/auth/login').send({username:'123',password:'abcd1234'});
