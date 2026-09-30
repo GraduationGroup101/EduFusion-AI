@@ -130,10 +130,14 @@ test('rapid reconnects recover a lost welcome while rotating every write lease',
     await first.until(e=>e.type==='question');
     const before=await store.get(user,row.id);
     for(let i=0;i<3;i++){
+      // Client close and server close are separate events. Observe the server's
+      // cleanup before asserting its client registry, on fast Linux runners too.
+      const retired=Promise.all([...realtime.wss.clients].map(client=>client.readyState===WebSocket.CLOSED?Promise.resolve():once(client,'close')));
       const next=await connect(row.id,key);clients.push(next);
       await next.until(e=>e.type==='welcome');
       await next.until(e=>e.type==='question');
       await clients[clients.length-2].closed;
+      await retired;
     }
     const after=await store.get(user,row.id);
     assert.equal(after.turns.length,1);assert.equal(+new Date(after.expires_at),+new Date(before.expires_at));
