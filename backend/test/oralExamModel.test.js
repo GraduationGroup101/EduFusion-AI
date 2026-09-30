@@ -9,7 +9,7 @@ process.env.GROQ_API_KEY='test-only';
 process.env.ORAL_EXAM_MODEL='openai/gpt-oss-120b';
 after(()=>{global.fetch=originalFetch;console.error=originalError;});
 const question={question:'What does a router do?',concept:'Routing',question_type:'initial',difficulty:'foundation',citations:['text-1'],follow_up_reason:''};
-const decision={assessment:null,next:question};
+const decision={intent:'answer',reply:null,assessment:null,next:question};
 const report={understanding:80,accuracy:80,completeness:75,communication:90,strengths:['Path selection'],areasForImprovement:['Add detail'],topicsCovered:['Routing'],summary:'You explained the core idea.'};
 const session=()=>({language:'en',expires_at:new Date(Date.now()+60000),server_now:new Date(),turns:[],context:{chunks:[{id:'text-1',section:'Network',text:'Routers select paths for packets.'}]}});
 const reply=value=>new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(value)}}]}));

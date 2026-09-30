@@ -63,7 +63,7 @@ after(async()=>{
   await academic.close();await core.pool.end();
 });
 test('learning migrations are isolated and repeatable; disabled feature leaves old endpoints available',async()=>{
-  assert.equal((await academic.query('SELECT COUNT(*)::int n FROM edufusion_schema_migrations')).rows[0].n,6);
+  assert.equal((await academic.query('SELECT COUNT(*)::int n FROM edufusion_schema_migrations')).rows[0].n,9);
   assert.equal((await learning.query('SELECT COUNT(*)::int n FROM study_schema_migrations')).rows[0].n,3);
   process.env.LECTURE_STUDY_ENABLED='false';
   try{

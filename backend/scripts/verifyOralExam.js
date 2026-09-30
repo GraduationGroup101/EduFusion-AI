@@ -8,6 +8,13 @@ process.env.FRONTEND_URL='http://localhost:3110';
 for(const key of ['GROQ_API_KEY','ELEVENLABS_API_KEY','ELEVENLABS_EN_VOICE_ID','ELEVENLABS_AR_VOICE_ID'])process.env[key]='test-only';
 const db=require('../src/db');
 const examiner=require('../src/oralExam/examiner');
+const store=require('../src/oralExam/store');
+const answerBytes=process.env.ORAL_EXAM_FIXTURE_SLOW_ANSWERS==='true'?960000:96000;
+// Compare the old lease policy using the same runtime and fault proxy. This is
+// strictly an isolated test switch, never a production configuration option.
+if(process.env.ORAL_EXAM_FIXTURE_LEGACY_CLAIM==='true'){
+  const claim=store.claim;store.claim=(user,id)=>claim(user,id);
+}
 const report={understanding:85,accuracy:80,completeness:75,communication:90,strengths:['Explained how routers select paths'],areasForImprovement:['Describe packet forwarding in more detail'],topicsCovered:['Routing'],summary:'You connected path selection to efficient delivery. Practise explaining the steps a packet takes through a router.'};
 const assessment={understanding:85,accuracy:80,completeness:75,communication:90,feedback:'You identified path selection correctly.',strengths:report.strengths,improvements:report.areasForImprovement};
 // A short WAV tone exercises actual browser decoding/playback without paid TTS.
@@ -22,8 +29,17 @@ async function main(){
   const app=require('../src/app');
   const server=app.listen(5000,'127.0.0.1',()=>console.log('Isolated Oral Exam fixture: http://localhost:5000; student 99001 / fixture-pin'));
   const realtime=require('../src/oralExam/realtime').attachRealtime(server,{examiner:{...examiner,next:async(session,text)=>({assessment:text===null?null:assessment,next:{question:text===null?'What is the role of a router in a computer network?':'How does a router decide where to forward a packet?',concept:'Routing',question_type:text===null?'initial':'follow_up',difficulty:'foundation',citations:[session.context.chunks[0].id],follow_up_reason:text===null?'':'Probe packet forwarding'}})},voice:{speak:async()=>wav(),transcriber:({onFinal})=>{
-    let bytes=0,done=false;return {opened:Promise.resolve(),close(){done=true;},send(chunk){bytes+=chunk.length;if(bytes>=96000&&!done){done=true;onFinal('A router chooses a path and forwards packets between networks.');}return true;}};
+    let bytes=0,done=false;return {opened:Promise.resolve(),close(){done=true;},send(chunk){bytes+=chunk.length;if(bytes>=answerBytes&&!done){done=true;onFinal('A router chooses a path and forwards packets between networks.');}return true;}};
   }}});
+  // Safe local-only ownership snapshots for long-duration fault verification.
+  app.get('/__fixture/session/:id',async(req,res)=>{
+    try {
+      const session=await store.get({id_student:99001},req.params.id);
+      res.json({id:session.id,status:session.status,started_at:session.started_at,expires_at:session.expires_at,server_now:session.server_now,
+        lease_until:session.lease_until,leased:Boolean(session.lease_token),has_client_key:Boolean(session.lease_client_id),
+        connected_clients:realtime.wss.clients.size,turns:session.turns.map(t=>({sequence:t.sequence,answered:Boolean(t.transcript),assessed:Boolean(t.assessment)}))});
+    }catch{res.status(404).json({error:'Fixture session not found'});}
+  });
   const close=()=>{realtime.close();server.close(async()=>{await database.close();await db.pool.end();});};process.once('SIGINT',close);process.once('SIGTERM',close);
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

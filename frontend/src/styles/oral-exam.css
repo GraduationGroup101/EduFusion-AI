@@ -9,6 +9,10 @@
 .oral-setup textarea{resize:vertical}.oral-exam-page :focus-visible{outline:3px solid #087f75;outline-offset:3px}.oral-hint{font-size:13px!important;font-weight:400;color:#5e736d!important}
 .oral-guide{border-radius:14px;padding:28px;background:#f2f7f4;align-self:start}.oral-guide h3{font-size:22px;margin-top:24px}.oral-guide ol{padding-left:20px;margin:24px 0}.oral-guide li{margin:12px 0;font-size:14px}
 .oral-notice{background:#fff3eb;border:1px solid #ecc5a5;color:#7c4320;padding:16px;border-radius:12px;overflow-wrap:anywhere}
+.oral-remark{max-width:760px;margin:0 auto 12px;padding:12px 16px;border-radius:12px;background:#f2f7f4;color:#2f4a44!important;font-size:15px;line-height:1.6}
+.oral-remark-kind{display:block;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#087f75;margin-bottom:4px}
+.oral-exchange{border-left:3px solid #d8e5e1;padding-left:12px;margin:8px 0;font-size:14px}.oral-exchange q{font-style:italic}
+.oral-feedback-state{display:grid;gap:12px;justify-items:start;padding:20px;border-radius:12px;background:#f2f7f4;margin:16px 0}.oral-feedback-state.is-failed{background:#fff3eb;border:1px solid #ecc5a5}.oral-feedback-state p{margin:0}
 .oral-ready{max-width:800px;width:100%;margin:auto}.oral-ready-facts{display:flex;gap:24px;flex-wrap:wrap;padding:24px 0}.oral-ready-facts svg{width:20px}.oral-actions{display:flex;justify-content:center;flex-wrap:wrap;gap:12px;margin-top:30px}.oral-ready .oral-actions{justify-content:flex-start}
 .oral-exam-page button{min-height:44px}.oral-exam-page .button-primary,.oral-exam-page .btn-secondary{display:inline-flex;align-items:center;justify-content:center;gap:8px}.oral-exam-page button:disabled{opacity:.5;cursor:not-allowed}
 .oral-live{text-align:center;min-height:510px}.oral-live-top{display:flex;justify-content:space-between;text-align:left;align-items:center;gap:16px;font-size:14px}.oral-live-top>span:first-child{min-width:0;overflow-wrap:anywhere}.oral-timer{font-variant-numeric:tabular-nums;font-size:20px;background:#f0f7f4;padding:10px 16px;border-radius:12px}.oral-timer.is-ending{background:#fff0e7;color:#974526}

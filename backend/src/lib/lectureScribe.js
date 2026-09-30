@@ -1,3 +1,5 @@
+const { createHash } = require('node:crypto');
+const { ownerKey } = require('./owner');
 const CURRENT_LECTURESCRIBE_BASE = 'https://lecturescribe-ai.onrender.com';
 // The retired self-hosted domain may linger in a dashboard environment variable
 // after a deploy; never let it override the working Render service.
@@ -21,7 +23,14 @@ const videoId = (value) => {
 };
 
 // The provider limits public callers per IP; a shared key identifies this
-// gateway (which submits for every student from one address) as trusted.
-const gatewayHeaders = (env = process.env) => (env.LECTURESCRIBE_GATEWAY_KEY ? { 'X-Gateway-Key': env.LECTURESCRIBE_GATEWAY_KEY } : {});
+// gateway (which submits for every student from one address) as trusted, and
+// the account key lets the provider limit each student individually. Only an
+// opaque digest of the account is sent, never a student ID.
+const gatewayHeaders = (user, env = process.env) => {
+  if (!env.LECTURESCRIBE_GATEWAY_KEY) return {};
+  const headers = { 'X-Gateway-Key': env.LECTURESCRIBE_GATEWAY_KEY };
+  if (user) headers['X-Gateway-User'] = createHash('sha256').update(ownerKey(user)).digest('hex').slice(0, 40);
+  return headers;
+};
 
 module.exports = { CURRENT_LECTURESCRIBE_BASE, LECTURESCRIBE_BASE, resolveLectureScribeBase, videoId, gatewayHeaders };

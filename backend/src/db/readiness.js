@@ -15,6 +15,7 @@ const assertDatabaseReady = async () => {
   // Check the live student schema too: a ledger alone cannot detect drift.
   await readQuery('SELECT id_student, student_name, pin_hash, pin_format, created_at FROM students LIMIT 0');
   await readQuery('SELECT 1 FROM edufusion_clock_commands LIMIT 1');
+  await readQuery('SELECT lease_client_id, lease_client_attempt FROM edufusion_oral_exam_sessions LIMIT 0');
 };
 
 module.exports = { assertDatabaseReady };
