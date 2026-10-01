@@ -1,6 +1,12 @@
 const { Pool } = require('pg');
 
-const DEFAULT_CHATBOT_URL = 'https://final-iug-chat-botv2.onrender.com';
+const DEFAULT_CHATBOT_URL = 'https://final-iug-chat-botv3.onrender.com';
+// A stale repository variable must not keep pinging a deleted chatbot service.
+const RETIRED_CHATBOT_URLS = new Set(['https://iug-chatbot.onrender.com', 'https://final-iug-chat-botv2.onrender.com']);
+const chatbotBase = (value = process.env.CHATBOT_API_URL) => {
+  const configured = String(value || DEFAULT_CHATBOT_URL).replace(/\/+$/, '');
+  return RETIRED_CHATBOT_URLS.has(configured) ? DEFAULT_CHATBOT_URL : configured;
+};
 const DEFAULT_EDUPREDICT_URL = 'https://edupredict-api-6ob5.onrender.com';
 const { LECTURESCRIBE_BASE } = require('../src/lib/lectureScribe');
 const REQUEST_TIMEOUT_MS = Number(process.env.KEEP_ALIVE_TIMEOUT_MS || 90000);
@@ -15,7 +21,7 @@ const endpoints = [
     name: 'chatbot',
     url: healthUrl(
       process.env.CHATBOT_HEALTH_URL,
-      process.env.CHATBOT_API_URL || DEFAULT_CHATBOT_URL,
+      chatbotBase(),
       '/live'
     ),
   },

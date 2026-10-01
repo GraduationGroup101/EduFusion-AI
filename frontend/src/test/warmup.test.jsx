@@ -3,7 +3,7 @@ import {beforeEach,expect,it,vi} from 'vitest';
 import api from '../services/api';
 import {AuthProvider,useAuth} from '../context/AuthContext';
 import {resetWarmup,warmServices} from '../services/warmup';
-const targets=[{name:'lecturescribe',url:'https://lecturescribe-ai.onrender.com/health'},{name:'chatbot',url:'https://final-iug-chat-botv2.onrender.com/live'}];
+const targets=[{name:'lecturescribe',url:'https://lecturescribe-ai.onrender.com/health'},{name:'chatbot',url:'https://final-iug-chat-botv3.onrender.com/live'}];
 let requests=[];
 beforeEach(()=>{
   requests=[];resetWarmup();
@@ -22,7 +22,7 @@ it('wakes the transcription and chatbot services from the browser once a session
   await waitFor(()=>expect(requests).toContain('/services/warm-up'));
   await waitFor(()=>expect(fetch).toHaveBeenCalledTimes(2));
   expect(fetch).toHaveBeenCalledWith('https://lecturescribe-ai.onrender.com/health',expect.objectContaining({mode:'no-cors',credentials:'omit'}));
-  expect(fetch).toHaveBeenCalledWith('https://final-iug-chat-botv2.onrender.com/live',expect.objectContaining({mode:'no-cors'}));
+  expect(fetch).toHaveBeenCalledWith('https://final-iug-chat-botv3.onrender.com/live',expect.objectContaining({mode:'no-cors'}));
   expect(await warmServices()).toEqual([]);
   expect(requests.filter(url=>url==='/services/warm-up')).toHaveLength(1);
 });

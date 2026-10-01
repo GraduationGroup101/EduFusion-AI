@@ -3,7 +3,7 @@ const { after, before, test } = require('node:test');
 const express = require('express');
 
 const originalChatbotApiUrl = process.env.CHATBOT_API_URL;
-process.env.CHATBOT_API_URL = 'https://iug-chatbot.onrender.com/';
+process.env.CHATBOT_API_URL = 'https://final-iug-chat-botv2.onrender.com/';
 
 const originalFetch = global.fetch;
 const storePath = require.resolve('../src/db/appStore');
@@ -110,7 +110,7 @@ test('proxies chat to the current guest API and forwards completed history', asy
   });
 
   const firstUpstream = JSON.parse(upstreamCalls.at(-1).options.body);
-  assert.equal(upstreamCalls.at(-1).url, 'https://final-iug-chat-botv2.onrender.com/api/chat/guest');
+  assert.equal(upstreamCalls.at(-1).url, 'https://final-iug-chat-botv3.onrender.com/api/chat/guest');
   assert.match(firstUpstream.conversation_id, /^[a-f0-9]{64}$/);
   assert.deepEqual(firstUpstream.history, []);
 
@@ -154,5 +154,5 @@ test('reports live status from the current chatbot', async () => {
     status: 'online',
     upstream: { status: 'alive' },
   });
-  assert.equal(upstreamCalls.at(-1).url, 'https://final-iug-chat-botv2.onrender.com/live');
+  assert.equal(upstreamCalls.at(-1).url, 'https://final-iug-chat-botv3.onrender.com/live');
 });
