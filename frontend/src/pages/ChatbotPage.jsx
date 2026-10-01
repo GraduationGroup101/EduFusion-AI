@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { chatbotService } from '../services/api';
 import { Send, Trash2, Bot, User, MessageSquare, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
+import MarkdownText from '../components/ui/MarkdownText';
 
 const CHAT_SESSION_STORAGE_PREFIX = 'edufusion_chatbot_session_id';
 
@@ -58,7 +59,7 @@ const TypingDots = () => (
 const WakingUp = () => (
   <div className="flex items-center gap-2 text-xs text-accent/60 font-mono">
     <RefreshCw className="w-3 h-3 animate-spin" />
-    <span>جاري تشغيل الخدمة، قد يستغرق حتى 30 ثانية…</span>
+    <span>Waking up the assistant — this can take up to 30 seconds…</span>
   </div>
 );
 
@@ -83,7 +84,9 @@ const MessageBubble = ({ msg }) => {
       >
         {msg.content === '__typing__' ? <TypingDots /> :
          isWaking ? <WakingUp /> : (
-          <p className="whitespace-pre-wrap">{msg.content}</p>
+          isUser
+            ? <p dir="auto" className="whitespace-pre-wrap" style={{ unicodeBidi: 'plaintext' }}>{msg.content}</p>
+            : <MarkdownText text={msg.content} compact />
         )}
         {msg.sources && msg.sources.length > 0 && (
           <div className="mt-2 pt-2 border-t border-light-accent/10">
@@ -111,13 +114,12 @@ export default function ChatbotPage() {
     const loadCachedHistory = async () => {
       try {
         const { data } = await chatbotService.getHistory(sessionId);
+        // A question sent while the history was still loading must survive it.
         if (!cancelled) {
-          setMessages(normalizeCachedMessages(data, sessionId));
+          setMessages(prev => [...normalizeCachedMessages(data, sessionId), ...prev]);
         }
       } catch {
-        if (!cancelled) {
-          setMessages([]);
-        }
+        // No saved history: keep whatever the student has already sent.
       } finally {
         if (!cancelled) {
           setHistoryLoading(false);
@@ -178,7 +180,7 @@ export default function ChatbotPage() {
         ...prev.filter(m => m.id !== 'typing'),
         {
           role: 'assistant',
-          content: data.answer || 'لم يصل رد نصي من خدمة البوت.',
+          content: data.answer || 'The assistant did not return an answer. Please try again.',
           sources: data.top_chunks,
           id: Date.now() + 1,
         }
@@ -189,7 +191,7 @@ export default function ChatbotPage() {
       setMessages(prev => prev.filter(m => m.id !== 'typing'));
 
       const serverMsg = err.response?.data?.error;
-      const displayMsg = serverMsg || 'الخدمة غير متاحة حالياً، حاول مجدداً بعد لحظة.';
+      const displayMsg = serverMsg || 'The assistant is unavailable right now. Please try again in a moment.';
 
       setMessages(prev => [
         ...prev,
@@ -287,7 +289,7 @@ export default function ChatbotPage() {
               placeholder="Type your question..."
               rows={1}
               style={{ resize: 'none', maxHeight: 120 }}
-              className="w-full bg-surface/50 border border-border rounded-xl px-4 py-3 text-light-accent placeholder-light-accent/25 focus:outline-none focus:border-accent transition-colors text-sm leading-relaxed"
+              className="w-full bg-surface/50 border border-border rounded-xl px-4 py-3 text-light-accent placeholder-light-accent/25 focus:outline-none focus:border-secondary transition-colors text-sm leading-relaxed"
               onInput={e => {
                 e.target.style.height = 'auto';
                 e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';

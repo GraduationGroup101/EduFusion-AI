@@ -37,3 +37,31 @@ jobs:
           CHATBOT_API_URL: ${{ vars.CHATBOT_API_URL }}
           EDUPREDICT_API_URL: ${{ vars.EDUPREDICT_API_URL }}
         run: node backend/scripts/renderKeepAlive.js
+
+  lectures:
+    # Backstop for LectureScribe's completion callbacks, opted into separately (it
+    # needs the DATABASE_URL secret): settles jobs the service lost and stores the
+    # transcripts it still holds. It cannot replace the callbacks, because the
+    # service forgets finished jobs when it restarts.
+    if: ${{ vars.ENABLE_LECTURE_SYNC == 'true' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install database client
+        run: npm ci --prefix backend --omit=dev --ignore-scripts
+
+      - name: Reconcile saved lectures
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          LECTURESCRIBE_API_URL: ${{ vars.LECTURESCRIBE_API_URL }}
+          LECTURESCRIBE_GATEWAY_KEY: ${{ secrets.LECTURESCRIBE_GATEWAY_KEY }}
+          LECTURE_SYNC_BUDGET_MS: '120000'
+        run: npm run lectures:sync --prefix backend

@@ -17,6 +17,7 @@ import { adminService, questionGeneratorService } from '../services/api';
 import PageHeader from '../components/ui/PageHeader';
 import EmptyState from '../components/ui/EmptyState';
 import StatusBadge from '../components/ui/StatusBadge';
+import MarkdownText from '../components/ui/MarkdownText';
 
 export function AIToolPage() {
   const [studentId, setStudentId] = useState('');
@@ -61,7 +62,7 @@ export function AIToolPage() {
           value={studentId}
           onChange={(e) => setStudentId(e.target.value)}
           placeholder="Student ID"
-          className="bg-surface border border-border rounded-xl px-4 py-3 text-sm text-light-accent focus:outline-none focus:border-accent"
+          className="bg-surface border border-border rounded-xl px-4 py-3 text-sm text-light-accent focus:outline-none focus:border-secondary"
         />
         </label>
         <label className="field-label">Course module (optional)
@@ -69,7 +70,7 @@ export function AIToolPage() {
           value={codeModule}
           onChange={(e) => setCodeModule(e.target.value)}
           placeholder="Course module (optional)"
-          className="bg-surface border border-border rounded-xl px-4 py-3 text-sm text-light-accent focus:outline-none focus:border-accent"
+          className="bg-surface border border-border rounded-xl px-4 py-3 text-sm text-light-accent focus:outline-none focus:border-secondary"
         />
         </label>
         <label className="field-label">Presentation (optional)
@@ -77,7 +78,7 @@ export function AIToolPage() {
           value={codePresentation}
           onChange={(e) => setCodePresentation(e.target.value)}
           placeholder="Presentation (optional)"
-          className="bg-surface border border-border rounded-xl px-4 py-3 text-sm text-light-accent focus:outline-none focus:border-accent"
+          className="bg-surface border border-border rounded-xl px-4 py-3 text-sm text-light-accent focus:outline-none focus:border-secondary"
         />
         </label>
         <button disabled={loading} className="flex items-center justify-center gap-2 rounded-xl bg-secondary px-4 py-3 text-sm font-medium text-white disabled:opacity-60">
@@ -160,7 +161,7 @@ const QuestionCountControl = ({ label, value, onChange }) => {
             max="50"
             value={value}
             onChange={(e) => updateValue(e.target.value)}
-            className="w-14 h-8 rounded-lg border border-border bg-white text-center text-sm font-semibold text-light-accent focus:outline-none focus:border-accent"
+            className="w-14 h-8 rounded-lg border border-border bg-white text-center text-sm font-semibold text-light-accent focus:outline-none focus:border-secondary"
           />
           <button
             type="button"
@@ -176,8 +177,11 @@ const QuestionCountControl = ({ label, value, onChange }) => {
   );
 };
 
+const fileSize = (bytes) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`);
+
 export function QuestionGeneratorPage() {
   const fileInputRef = useRef(null);
+  const resultsRef = useRef(null);
   const [serviceStatus, setServiceStatus] = useState('checking');
   const [file, setFile] = useState(null);
   const [numMcq, setNumMcq] = useState(5);
@@ -247,6 +251,8 @@ export function QuestionGeneratorPage() {
 
       setResult(data);
       toast.success(data.message || 'Questions generated');
+      // The questions render below the form: bring them into view.
+      requestAnimationFrame(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
     } catch (err) {
       const detail = err.response?.data?.detail;
       const validationMessage = Array.isArray(detail)
@@ -306,7 +312,7 @@ export function QuestionGeneratorPage() {
                 {file ? file.name : 'Upload course file'}
               </p>
               <p className="text-xs text-light-accent/45 mt-1">
-                {file ? `${(file.size / 1024 / 1024).toFixed(2)} MB` : 'PDF, Word, PowerPoint, or text · Up to 4 MB'}
+                {file ? fileSize(file.size) : 'PDF, Word, PowerPoint, or text · Up to 4 MB'}
               </p>
             </div>
           </button>
@@ -317,6 +323,10 @@ export function QuestionGeneratorPage() {
             <QuestionCountControl label="Essay" value={numEssay} onChange={setNumEssay} />
           </div>
 
+          {!loading && (!file || totalQuestions <= 0) && (
+            <p className="text-xs text-light-accent/55">{!file ? 'Upload a course file to start.' : 'Choose at least one question.'}</p>
+          )}
+          {loading && <p role="status" className="text-xs text-light-accent/55">Reading your file and writing questions — this can take up to two minutes for longer files.</p>}
           <div className="flex flex-col sm:flex-row gap-3">
             <button
               type="submit"
@@ -357,7 +367,7 @@ export function QuestionGeneratorPage() {
       </form>
 
       {questionsText && (
-        <motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-2xl p-5 glow-border">
+        <motion.section ref={resultsRef} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-2xl p-5 glow-border scroll-mt-4">
           <div className="flex items-center justify-between gap-3 mb-4">
             <div>
               <h2 className="font-display text-lg font-semibold text-light-accent">Generated Questions</h2>
@@ -372,9 +382,7 @@ export function QuestionGeneratorPage() {
               <Copy className="w-4 h-4" />
             </button>
           </div>
-          <pre className="max-h-[520px] overflow-auto rounded-xl border border-border bg-white p-4 whitespace-pre-wrap text-sm leading-relaxed text-light-accent">
-            {questionsText}
-          </pre>
+          <MarkdownText text={questionsText} className="max-h-[620px] overflow-auto rounded-xl border border-border bg-white p-4 md:p-6 text-sm leading-7 text-light-accent" />
         </motion.section>
       )}
     </div>

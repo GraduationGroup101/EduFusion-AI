@@ -34,6 +34,22 @@ def tokens(text):
     return re.findall(r"\w+", text, re.UNICODE)
 
 
+ARABIC = re.compile("[ء-يٮ-ۓۺ-ۿ]")
+LATIN = re.compile("[A-Za-zÀ-ɏ]")
+
+
+def lecture_language(lecture, chunks):
+    """The language study material is written in: the lecture's own setting, or
+    for 'auto' the main script of its text (Arabic letters >= 30%), so a lecture
+    that opens with an English term is still Arabic."""
+    language = (lecture or {}).get("language")
+    if language in ("ar", "en"):
+        return language
+    sample = " ".join(chunk.get("text", "") for chunk in chunks[:20])
+    arabic, latin = len(ARABIC.findall(sample)), len(LATIN.findall(sample))
+    return "ar" if arabic and arabic / (arabic + latin) >= 0.3 else "en"
+
+
 def validate_citations(citations, allowed, required=True):
     if not isinstance(citations, list) or (required and not citations):
         raise ValueError("Missing source citations")
@@ -144,6 +160,7 @@ class Engine:
         for chunk in chunks:
             grouped[chunk["section"]].append(chunk)
         sections, concepts = [], []
+        language = lecture_language(context.get("lecture"), chunks)
         cached = {section["id"]: section for section in context["lecture"].get("sections", [])
                   if isinstance(section, dict) and "id" in section}
         for section_id, group in grouped.items():
@@ -157,10 +174,7 @@ class Engine:
                 except ValueError:
                     pass
             evidence = [{key: chunk[key] for key in ("id", "text")} for chunk in group]
-            result = self.generate(
-                "Summarize this entire section, preserving definitions, examples and equations. "
-                "List the main concepts and cite evidence chunk IDs.",
-                {"evidence": evidence}, SUMMARY_SCHEMA)
+            result = self.summarize(evidence, language)
             if not all(isinstance(result.get(key), str) and result[key].strip()
                        for key in ("title", "summary")):
                 raise ValueError("Invalid section summary")
@@ -178,6 +192,24 @@ class Engine:
         summary = "\n\n".join(section["title"] + "\n" + section["summary"] for section in sections)
         return {"chunks": chunks, "summary": summary, "sections": sections,
                 "concepts": list(dict.fromkeys(concepts))[:200]}
+
+    def summarize(self, evidence, language):
+        """Summarizes one section in the lecture's language. An Arabic lecture's
+        summary must be written in Arabic: a drift to English is retried once with
+        a stricter instruction, then rejected so the section is summarized again later."""
+        name = "Arabic" if language == "ar" else "English"
+        instruction = ("Write the title, summary and concepts in " + name + ", the language of this lecture; "
+                       "keep technical terms as the lecture says them. Summarize this entire section, "
+                       "preserving definitions, examples and equations. "
+                       "List the main concepts and cite evidence chunk IDs.")
+        for attempt in range(2):
+            result = self.generate(instruction, {"language": language, "evidence": evidence}, SUMMARY_SCHEMA)
+            text = " ".join(str(result.get(key, "")) for key in ("title", "summary"))
+            if language != "ar" or ARABIC.search(text):
+                return result
+            instruction = ("Your previous answer was not in Arabic. Write ONLY in Arabic; do not translate "
+                           "the lecture into English. " + instruction)
+        raise ValueError("The section summary must use the lecture language")
 
     def retrieve(self, chunks, question):
         if not chunks:
@@ -286,10 +318,7 @@ class Engine:
             chunks = [chunk for chunk in chunks if chunk["section"] == payload["section"]]
         if not chunks:
             raise ValueError("No selected lecture section")
-        language = context.get("lecture", {}).get("language", "auto")
-        if language not in ("ar", "en"):
-            first_letter = re.search("[A-Za-z\u0600-\u06ff]", chunks[0]["text"])
-            language = "ar" if first_letter and re.search("[\u0600-\u06ff]", first_letter[0]) else "en"
+        language = lecture_language(context.get("lecture"), chunks)
         grouped = collections.defaultdict(list)
         for chunk in chunks:
             grouped[chunk["section"]].append(chunk)

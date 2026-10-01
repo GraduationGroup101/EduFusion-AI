@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './context/AuthContext';
 import ProtectedRoute from './components/auth/ProtectedRoute';
@@ -19,6 +19,13 @@ const ChatbotFilesPage = namedPage(() => import('./pages/AdminPages'), 'ChatbotF
 const AIToolPage = namedPage(() => import('./pages/Placeholders'), 'AIToolPage');
 const QuestionGeneratorPage = namedPage(() => import('./pages/Placeholders'), 'QuestionGeneratorPage');
 const adminPage = (page) => <ProtectedRoute allowedRoles={['admin','advisor']}>{page}</ProtectedRoute>;
+
+// LectureScribe used to live at /dashboard/youtube. Old bookmarks and Oral Exam
+// deep links (?job=&tool=) keep their query and hash on the way to the new path.
+export function LegacyLectureScribeRedirect() {
+  const { search, hash } = useLocation();
+  return <Navigate replace to={{ pathname: '/dashboard/lecturescribe', search, hash }} />;
+}
 
 export default function App() {
   return (
@@ -47,8 +54,11 @@ export default function App() {
             <Route path="admin/chatbot-files" element={adminPage(<ChatbotFilesPage />)} />
             <Route path="ai-tool" element={adminPage(<AIToolPage />)} />
             <Route path="question-gen" element={<QuestionGeneratorPage />} />
-            <Route path="youtube" element={<LectureScribePage />} />
+            <Route path="lecturescribe" element={<LectureScribePage />} />
+            <Route path="youtube/*" element={<LegacyLectureScribeRedirect />} />
             <Route path="oral-exam" element={<OralExamPage />} />
+            {/* A mistyped workspace link lands on the dashboard, not the public homepage. */}
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Route>
 
           {/* Unknown paths land on the public home rather than a hard 404 */}

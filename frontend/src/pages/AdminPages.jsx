@@ -90,6 +90,8 @@ export function AtRiskStudentsPage() {
         </div>
         {loading ? (
           <div role="status" className="h-32 flex items-center justify-center text-light-accent/40">Loading results…</div>
+        ) : students.length === 0 && !query.trim() && !course ? (
+          <EmptyState icon={Search} title={`No ${riskLevel.toLowerCase()}-risk students right now`} description="Choose another risk level, or run the demo batch to refresh everyone's prediction." />
         ) : filteredStudents.length === 0 ? (
           <EmptyState icon={Search} title="No matching students" description="Try another student ID, course or risk level." />
         ) : (

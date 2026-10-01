@@ -1,6 +1,7 @@
 import StatusBadge from '../components/ui/StatusBadge';
 import PageHeader from '../components/ui/PageHeader';
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { dashboardService } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -9,12 +10,16 @@ import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveCo
 
 const RISK_COLORS = { HIGH: '#b42332', MEDIUM: '#ad791f', LOW: '#398461' };
 
-const StatCard = ({ icon: Icon, label, value, color, delay }) => (
+// The risk colour is a warning: it only applies when there is something at risk.
+const StatCard = ({ icon: Icon, label, value, color: requested, delay }) => {
+  const risk = requested === "#b42332" && value > 0;
+  const color = requested === "#b42332" && !risk ? "#398461" : requested;
+  return (
   <motion.div
     initial={{ opacity: 0, y: 16 }}
     animate={{ opacity: 1, y: 0 }}
     transition={{ delay }}
-    className={`glass rounded-2xl p-5 metric-card ${color === "#b42332" ? "is-risk" : ""}`}
+    className={`glass rounded-2xl p-5 metric-card ${risk ? "is-risk" : ""}`}
   >
     <div className="flex items-start justify-between">
       <div>
@@ -28,7 +33,8 @@ const StatCard = ({ icon: Icon, label, value, color, delay }) => (
       </div>
     </div>
   </motion.div>
-);
+  );
+};
 
 export default function DashboardHome() {
   const { user } = useAuth();
@@ -110,7 +116,8 @@ export default function DashboardHome() {
             </div>
           ) : (
             <div className="h-24 flex items-center justify-center text-light-accent/30 text-sm">
-              {loading ? 'Loading...' : 'No prediction yet. Ask the chatbot about your academic status.'}
+              {loading ? 'Loading...' : <span className="text-center">No prediction yet.{' '}
+                <Link to="/dashboard/my-prediction" className="font-semibold text-secondary hover:underline">See your prediction in EduPredict →</Link></span>}
             </div>
           )}
         </motion.div>
@@ -188,8 +195,8 @@ export default function DashboardHome() {
               <BarChart data={courseStats}>
                 <XAxis dataKey="name" tick={{ fill: '#193C37', fontSize: 11 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: '#087F75', fontSize: 11 }} axisLine={false} tickLine={false} />
-                <Tooltip contentStyle={{ background: '#FFFFFF', border: '1px solid #DDE6DF', borderRadius: 8, color: '#193C37', fontSize: 12 }} />
-                <Bar isAnimationActive={false} dataKey="enrollments" fill="#087F75" radius={[4, 4, 0, 0]} />
+                <Tooltip cursor={{ fill: 'rgba(8,127,117,0.06)' }} contentStyle={{ background: '#FFFFFF', border: '1px solid #DDE6DF', borderRadius: 8, color: '#193C37', fontSize: 12 }} />
+                <Bar isAnimationActive={false} dataKey="enrollments" name="Enrollments" fill="#087F75" radius={[4, 4, 0, 0]} maxBarSize={56} />
               </BarChart>
             </ResponsiveContainer>
           ) : (

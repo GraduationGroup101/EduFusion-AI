@@ -107,8 +107,8 @@ it('preselects a transcript from LectureScribe and links results back to its lec
   await waitFor(()=>expect(screen.getByLabelText('Saved lecture')).toHaveValue('transcript:job-9'));
   api.get.mockResolvedValue({data:{session:{...session,status:'completed',evaluation_status:'ready',source:{kind:'transcript',id:'job-9'},evaluation:{score:70,understanding:70,accuracy:70,completeness:70,communication:70,strengths:[],areasForImprovement:['Subnetting'],topicsCovered:['Routing'],summary:'Solid basics.'}}}});
   open('/dashboard/oral-exam?session=exam-1');
-  expect(await screen.findByRole('link',{name:/Ask this lecture/})).toHaveAttribute('href','/dashboard/youtube?job=job-9&tool=chat');
-  expect(screen.getByRole('link',{name:/Practice questions/})).toHaveAttribute('href','/dashboard/youtube?job=job-9&tool=quiz');
+  expect(await screen.findByRole('link',{name:/Ask this lecture/})).toHaveAttribute('href','/dashboard/lecturescribe?job=job-9&tool=chat');
+  expect(screen.getByRole('link',{name:/Practice questions/})).toHaveAttribute('href','/dashboard/lecturescribe?job=job-9&tool=quiz');
 });
 const turns=[{id:'t1',sequence:1,question:'What does a router do?',concept:'Routing',transcript:'It selects paths.',feedback:'Good start.',exchanges:[{kind:'repeat',transcript:'Repeat the question',reply:'Of course. Here is the question again.'},{kind:'clarification',transcript:"I don't understand",reply:'In other words, what job does this device do?'}]}];
 const report={score:71,understanding:70,accuracy:72,completeness:70,communication:75,strengths:['Path selection'],areasForImprovement:['Subnetting'],topicsCovered:['Routing'],summary:'Solid basics.'};

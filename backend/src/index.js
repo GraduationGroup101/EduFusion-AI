@@ -1,6 +1,7 @@
 require('dotenv').config();
-const { validateEnvironment } = require('./config');
+const { validateEnvironment, environmentWarnings } = require('./config');
 validateEnvironment();
+for (const warning of environmentWarnings()) console.warn(`Configuration warning: ${warning}`);
 const app = require('./app');
 const { pool } = require('./db');
 if (require.main === module) {
