@@ -1,4 +1,5 @@
 import {fireEvent,render,screen,waitFor,within} from '@testing-library/react';
+import {MemoryRouter,useLocation} from 'react-router-dom';
 import {beforeEach,expect,it,vi} from 'vitest';
 import LectureScribePage from '../pages/LectureScribePage';
 import {lectureToolsService as tools} from '../services/lectureTools';
@@ -10,13 +11,15 @@ vi.mock('../services/lectureStudy',()=>({lectureStudyService:{status:vi.fn(),lis
 vi.mock('../services/lectureTools',()=>({lectureToolsService:{status:vi.fn(),history:vi.fn(),ask:vi.fn(),clear:vi.fn(),quizzes:vi.fn(),generate:vi.fn()}}));
 vi.mock('../services/api',()=>({lectureScribeService:{health:vi.fn(),listJobs:vi.fn(),getJob:vi.fn(),getTranscript:vi.fn(),createJob:vi.fn()},studentService:{getPredictionData:vi.fn()}}));
 vi.mock('react-hot-toast',()=>({default:{success:vi.fn(),error:vi.fn()}}));
+const Where=()=>{const location=useLocation();return <output data-testid="location">{location.pathname+location.search}</output>;};
+const page=(entry='/dashboard/lecturescribe')=>render(<MemoryRouter initialEntries={[entry]}><LectureScribePage/><Where/></MemoryRouter>);
 const job={job_id:'job-1',status:'completed',submitted_at:1,title:'Networks lecture',request:{youtube_url:'https://youtu.be/abcdefghijk'},result:{cleaned_transcript_path:'/x'}};
 const quiz={id:'quiz-1',created_at:new Date().toISOString(),questions:[
   {id:'q001',type:'mcq',prompt:'What selects a path?',choices:['Router','Cable','Screen','Mouse'],answer_index:0,answer:'',explanation:'Routers select paths.'},
   {id:'q002',type:'essay',prompt:'Explain routing.',choices:[],answer_index:null,answer:'Routers choose paths.',explanation:''},
 ]};
 beforeEach(()=>{
-  vi.clearAllMocks();window.history.replaceState({},'','/dashboard/youtube');
+  vi.clearAllMocks();
   study.status.mockResolvedValue({data:{enabled:false}});
   tools.status.mockResolvedValue({data:{enabled:true}});tools.history.mockResolvedValue({data:{messages:[]}});tools.quizzes.mockResolvedValue({data:{quizzes:[]}});
   lectureScribeService.health.mockResolvedValue({data:{status:'ok'}});lectureScribeService.listJobs.mockResolvedValue({data:{jobs:[job]}});
@@ -24,7 +27,7 @@ beforeEach(()=>{
 });
 it('opens grounded lecture chat for a completed transcript without the local study library',async()=>{
   tools.ask.mockResolvedValue({data:{answer:'A router selects the path.',sources:['A router selects the best path'],covered:true}});
-  render(<LectureScribePage/>);
+  page();
   fireEvent.click(await screen.findByRole('button',{name:'Ask this lecture'}));
   const dialog=await screen.findByRole('dialog',{name:'Networks lecture'});
   fireEvent.change(within(dialog).getByLabelText('Question about this lecture'),{target:{value:'What does a router do?'}});
@@ -37,7 +40,7 @@ it('opens grounded lecture chat for a completed transcript without the local stu
 });
 it('generates and self-checks practice questions from the transcript',async()=>{
   tools.generate.mockResolvedValue({data:{quiz}});
-  render(<LectureScribePage/>);
+  page();
   fireEvent.click(await screen.findByRole('button',{name:'Generate questions'}));
   const dialog=await screen.findByRole('dialog');
   fireEvent.click(within(dialog).getByRole('button',{name:/Generate questions/}));
@@ -53,7 +56,7 @@ it('generates and self-checks practice questions from the transcript',async()=>{
 it('shows a cached transcript immediately and keeps tools hidden when the server has no model key',async()=>{
   tools.status.mockResolvedValue({data:{enabled:false}});
   lectureScribeService.createJob.mockResolvedValue({data:{...job,cached:true}});
-  render(<LectureScribePage/>);
+  page();
   fireEvent.change(await screen.findByLabelText('YouTube lecture URL'),{target:{value:'https://youtu.be/abcdefghijk'}});
   fireEvent.click(screen.getByRole('button',{name:'Create transcript'}));
   await screen.findByText('Packets travel through routers.');
@@ -62,9 +65,11 @@ it('shows a cached transcript immediately and keeps tools hidden when the server
   expect(screen.getAllByRole('button',{name:'Ask this lecture'}).every(button=>button.disabled)).toBe(true);
 });
 it('opens the lecture tools from an Oral Exam deep link',async()=>{
-  window.history.replaceState({},'','/dashboard/youtube?job=job-1&tool=quiz');
-  render(<LectureScribePage/>);
+  page('/dashboard/lecturescribe?job=job-1&tool=quiz');
   const dialog=await screen.findByRole('dialog');
   await waitFor(()=>expect(within(dialog).getByRole('button',{name:'Practice questions'})).toHaveAttribute('aria-pressed','true'));
-  expect(lectureScribeService.getJob).toHaveBeenCalledWith('job-1');
+  expect(lectureScribeService.getJob.mock.calls[0][0]).toBe('job-1');
+  // The tool is consumed once (a refresh must not reopen it); the open lecture stays in the URL.
+  await waitFor(()=>expect(screen.getByTestId('location')).toHaveTextContent('/dashboard/lecturescribe?job=job-1'));
+  expect(screen.getByTestId('location')).not.toHaveTextContent('tool=');
 });

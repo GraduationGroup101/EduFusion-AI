@@ -10,7 +10,7 @@ const learning = [
   { path: '/dashboard/oral-exam', icon: Mic, label: 'Oral Exam' },
   { path: '/dashboard/chatbot', icon: MessageSquare, label: 'Academic Chatbot' },
   { path: '/dashboard/question-gen', icon: FileQuestion, label: 'Quiz Generator' },
-  { path: '/dashboard/youtube', icon: Youtube, label: 'LectureScribe' },
+  { path: '/dashboard/lecturescribe', icon: Youtube, label: 'LectureScribe' },
 ];
 const insights = [
   { path: '/dashboard/admin/at-risk', icon: AlertTriangle, label: 'At-Risk Students' },
@@ -93,7 +93,7 @@ export default function Sidebar({ mobileOpen = false, onMobileClose, menuRef }) 
     </nav>
     <div className="sidebar-account">
       <div className="account-identity"><span className="account-avatar"><User size={17}/></span>
-        {!compact && <div className="min-w-0"><p className="truncate font-semibold">{user?.username}</p><p className="capitalize text-xs text-muted">{user?.role}</p></div>}
+        {!compact && <div className="min-w-0"><p className="truncate font-semibold">{user?.student_name || user?.username}</p><p className="truncate text-xs text-muted"><span className="capitalize">{user?.role}</span>{user?.student_name ? ` · ${user.username}` : ''}</p></div>}
       </div>
       <div className="account-actions">
         <button onClick={handleLogout} className="sidebar-link" aria-label="Sign out" title="Sign out"><LogOut size={17}/>{!compact && <span>Sign out</span>}</button>

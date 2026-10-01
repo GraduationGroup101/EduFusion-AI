@@ -9,6 +9,7 @@ export const lectureStudyService = {
   create: (body,key) => write('/lectures',body,key),
   import: (job_id,key) => write('/import',{job_id},key),
   lecture: (id,signal) => api.get(prefix + '/lectures/' + id,{signal}),
+  transcript: (id,signal) => api.get(prefix + '/lectures/' + id + '/transcript',{signal}),
   remove: (id) => api.delete(prefix + '/lectures/' + id),
   messages: (id,signal) => api.get(prefix + '/lectures/' + id + '/messages',{signal}),
   clearMessages: (id) => api.delete(prefix + '/lectures/' + id + '/messages'),

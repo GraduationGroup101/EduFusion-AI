@@ -10,6 +10,7 @@ const { LECTURESCRIBE_BASE } = require('../lib/lectureScribe');
 const db = require('../lectureStudy/database');
 const store = require('../lectureStudy/store');
 const validate = require('../lectureStudy/validation');
+const lectureLibrary = require('../lectureLibrary');
 const router = express.Router();
 router.use(authenticate);
 const wrap = (work) => async (req,res) => {
@@ -23,6 +24,16 @@ const wrap = (work) => async (req,res) => {
 };
 const jobView = ({ id,lecture_id,kind,status,stage,result,error,created_at,updated_at }) =>
   ({ id,lecture_id,kind,status,stage,result,error,created_at,updated_at });
+// Who saved each lecture, for administrators, including members who removed it
+// since (`removed_at`). Names live in the main database; if it cannot be read the
+// savers are still listed by account.
+const withMembers = async (lectures) => {
+  let owners = new Map();
+  try { owners = await lectureLibrary.describeOwners(lectures.flatMap((lecture) => (lecture.members || []).map((member) => member.owner_key))); }
+  catch (error) { console.error('Lecture owners could not be described:', error.code || error.name); }
+  return lectures.map((lecture) => ({ ...lecture, members: (lecture.members || []).map(({ owner_key, saved_at, removed_at }) =>
+    ({ ...(owners.get(owner_key) || lectureLibrary.ownerDescriptor(owner_key)), saved_at, removed_at: removed_at ?? null })) }));
+};
 const enrollment = async (user,id) => {
   if (id == null) return null;
   if (user.role !== 'student') throw Object.assign(new Error('Only your registered courses can be linked'),{statusCode:403});
@@ -45,10 +56,10 @@ router.get('/lectures',wrap(async (req,res) => {
 }));
 router.get('/admin/lectures',requireRole(['admin']),wrap(async(req,res)=>{
   const offset=integer(req.query.offset??0,'Offset',0,100000);
-  res.json({lectures:await store.listAllLectures(offset),offset});
+  res.json({lectures:await withMembers(await store.listAllLectures(offset)),offset});
 }));
 router.get('/admin/lectures/:id',requireRole(['admin']),wrap(async(req,res)=>{
-  res.json({lecture:await store.getLectureContent(validate.id(req.params.id))});
+  res.json({lecture:(await withMembers([await store.getLectureContent(validate.id(req.params.id))]))[0]});
 }));
 router.post('/lectures',aiLimiter,wrap(async (req,res) => {
   const source = validate.source(req.body);
@@ -61,12 +72,11 @@ router.post('/import',aiLimiter,wrap(async (req,res) => {
   const jobId = text(req.body.job_id,'Job ID',{max:200});
   const key = validate.requestKey(req);
   const own=await legacy.ownsJob(req.user,jobId);
-  if (!own&&req.user.role!=='admin') return res.status(404).json({error:'Job not found'});
-  const base = LECTURESCRIBE_BASE;
-  let job=own?(await legacy.listJobs(req.user)).find(job=>job.job_id===jobId):await legacy.getAnyJob(jobId);
-  let providerStatus;
+  if ((!own&&req.user.role!=='admin')||!lectureLibrary.JOB_ID.test(jobId)) return res.status(404).json({error:'Job not found'});
+  const base = LECTURESCRIBE_BASE, headers = lectureLibrary.providerHeaders(req.user);
+  let job=own?await legacy.getJob(req.user,jobId):await legacy.getAnyJob(jobId);
   if(!job&&req.user.role==='admin'){
-    providerStatus=await requestUpstream(req,base+'/jobs/'+encodeURIComponent(jobId),{},{timeoutMs:30000});
+    const providerStatus=await requestUpstream(req,base+'/jobs/'+encodeURIComponent(jobId),{headers},{timeoutMs:30000});
     if(!providerStatus.ok)return res.status(404).json({error:'Job not found'});
     job=await readJson(providerStatus);
   }
@@ -76,19 +86,35 @@ router.post('/import',aiLimiter,wrap(async (req,res) => {
   await enrollment(req.user,source.enrollment_id);
   const previous=await store.preparationReplay(req.user,source,key);
   if(previous)return res.status(previous.lecture.status==='ready'?200:202).json({...previous,job:jobView(previous.job)});
+  // A lecture already prepared (or being prepared) from this source is joined as
+  // it is: no transcript is needed, so a provider that forgot the job is no obstacle.
+  if(await store.sourceAvailable(source.source_key)){
+    const linked=await store.createLecture(req.user,source,key);
+    return res.status(linked.lecture.status==='ready'?200:202).json({...linked,job:jobView(linked.job)});
+  }
+  // EduFusion's stored copy first: the provider (ephemeral hosting) is asked only
+  // when nothing is stored, and what it finished is stored for every later reader.
+  // Only text from the fixed pipeline seeds a lecture: an older copy may be an
+  // English translation of an Arabic lecture, and this lecture is shared by everyone
+  // who saves the source, so it is prepared afresh in its own language instead.
   // Never accept transcript text or a provider URL supplied by the browser.
-  const statusResponse = providerStatus||await requestUpstream(req,base + '/jobs/' + encodeURIComponent(jobId),{}, {timeoutMs:30000});
-  if (!statusResponse.ok) return res.status(409).json({error:'The original transcript is not ready or its service is offline'});
-  const providerJob=providerStatus?job:await readJson(statusResponse);
-  if (providerJob.status !== 'completed') return res.status(409).json({error:'The original transcript is not ready or its service is offline'});
-  let response = await requestUpstream(req,base + '/jobs/' + encodeURIComponent(jobId) + '/transcript?kind=cleaned',{}, {timeoutMs:30000,maxBytes:1024*1024});
-  if (!response.ok) response = await requestUpstream(req,base + '/jobs/' + encodeURIComponent(jobId) + '/transcript?kind=raw',{}, {timeoutMs:30000,maxBytes:1024*1024});
-  if (!response.ok) throw new Error('Transcript download failed');
-  const transcript = text(await response.text(),'Transcript',{max:1024*1024});
-  const result = await store.createLecture(req.user,source,key,{transcript});
+  let {cleaned,raw,stored}=await lectureLibrary.reusableTranscripts(jobId,job);
+  if (!stored) {
+    const {job:finished,reachable}=await lectureLibrary.syncJob(jobId,{user:req.user,timeoutMs:30000});
+    if (!reachable||finished?.status!=='completed') return res.status(409).json({error:'The original transcript is not ready or its service is offline'});
+    if (lectureLibrary.formatVersionOf(finished)) {
+      // Both kinds: the spoken-language original lets the worker detect a translated formatted copy.
+      [cleaned,raw]=await Promise.all(lectureLibrary.KINDS.map((kind)=>lectureLibrary.loadTranscript(jobId,kind,{user:req.user,job:finished})));
+      if (cleaned===null&&raw===null) throw new Error('Transcript download failed');
+    }
+  }
+  const imported = cleaned===null&&raw===null ? null : {transcript:text(cleaned??raw,'Transcript',{max:1024*1024}),
+    ...(raw!==null&&raw.trim()&&raw.length<=1024*1024 ? {raw_transcript:raw} : {})};
+  const result = await store.createLecture(req.user,source,key,imported);
   res.status(result.lecture.status === 'ready' ? 200 : 202).json({...result,job:jobView(result.job)});
 }));
 router.get('/lectures/:id',wrap(async (req,res) => res.json({lecture:await store.getLecture(req.user,validate.id(req.params.id))})));
+router.get('/lectures/:id/transcript',wrap(async (req,res) => res.json({transcript:await store.getTranscript(req.user,validate.id(req.params.id))})));
 router.delete('/lectures/:id',wrap(async (req,res) => {
   await store.removeLecture(req.user,validate.id(req.params.id)); res.json({success:true});
 }));

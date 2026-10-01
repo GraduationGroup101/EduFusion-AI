@@ -16,4 +16,12 @@ const validateEnvironment = (env = process.env) => {
   if (env.PREDICTION_SEED_TIMEOUT_MS && (!/^\d+$/.test(env.PREDICTION_SEED_TIMEOUT_MS) || Number(env.PREDICTION_SEED_TIMEOUT_MS)>10000 || Number(env.PREDICTION_SEED_TIMEOUT_MS)<100)) issues.push('Invalid PREDICTION_SEED_TIMEOUT_MS');
   if (issues.length) throw new Error(issues.join('; '));
 };
-module.exports = { validateEnvironment };
+// Settings a hosted deployment runs without, at a real cost worth announcing.
+const environmentWarnings = (env = process.env) => {
+  const warnings = [];
+  if ((env.VERCEL || env.RENDER) && !String(env.LECTURESCRIBE_GATEWAY_KEY ?? '').trim()) {
+    warnings.push('LECTURESCRIBE_GATEWAY_KEY is not set: LectureScribe cannot report finished lectures (no completion callbacks), so a lecture that finishes while nobody watches can be lost when the service restarts, and every student shares its per-IP job limit');
+  }
+  return warnings;
+};
+module.exports = { validateEnvironment, environmentWarnings };

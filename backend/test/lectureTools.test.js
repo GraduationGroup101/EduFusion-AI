@@ -37,7 +37,9 @@ before(async () => {
     if (provider === 'down') return new Response('{"error":"down"}', { status: 503 });
     if (address.endsWith('/jobs') && options.method === 'POST') return new Response(JSON.stringify({ job_id: 'job-fresh', status: 'queued' }), { status: 202 });
     if (address.includes('/transcript')) return new Response(address.includes('kind=cleaned') ? transcriptText : 'raw words');
-    if (address.includes('/jobs/')) return new Response(JSON.stringify({ job_id: 'job-fresh', status: 'completed', submitted_at: 5, result: { cleaned_transcript_path: '/x.txt' } }));
+    // The provider echoes its own copy of the request; EduFusion must keep the student's.
+    if (address.includes('/jobs/')) return new Response(JSON.stringify({ job_id: 'job-fresh', status: 'completed', submitted_at: 5, language: 'auto', detected_language: 'en',
+      format_version: 'source-language-v2', request: { language: 'ar', clean: true }, result: { cleaned_transcript_path: '/srv/x.txt', raw_transcript_path: '/srv/r.txt', audio_path: '/srv/a.mp3' } }));
     return new Response('{"status":"ok"}');
   };
   server = app.listen(0, '127.0.0.1');
@@ -59,10 +61,17 @@ test('the retired LectureScribe domain is replaced by the Render service and vid
   assert.equal(videoId('https://www.youtube.com/playlist?list=PL1'), null);
 });
 
-test('a completed transcript is cached, served without the provider, and reused for another account', async () => {
+test('a completed transcript is stored when first observed, served without the provider, and reused for another account', async () => {
   let response = await request(server).post('/api/lecture-scribe/jobs').set('Authorization', auth()).send({ youtube_url: 'https://youtu.be/abcdefghijk', clean: true });
   assert.equal(response.status, 202); assert.equal(response.body.job_id, 'job-fresh');
-  assert.equal((await request(server).get('/api/lecture-scribe/jobs/job-fresh').set('Authorization', auth())).body.status, 'completed');
+  assert.equal(JSON.parse(calls.find((c) => c.options.method === 'POST').options.body).language, 'auto');
+  response = await request(server).get('/api/lecture-scribe/jobs/job-fresh').set('Authorization', auth());
+  assert.equal(response.body.status, 'completed'); assert.equal(response.body.request.language, 'auto'); assert.equal(response.body.detected_language, 'en');
+  assert.doesNotMatch(JSON.stringify(response.body), /\/srv\//);
+  // Both kinds are stored on completion, before any transcript is read.
+  assert.deepEqual((await database.query("SELECT kind, language, mode, detected_language, format_version FROM edufusion_lecture_transcripts WHERE job_id='job-fresh' ORDER BY kind")).rows,
+    [{ kind: 'cleaned', language: 'auto', mode: 'formatted', detected_language: 'en', format_version: 'source-language-v2' },
+      { kind: 'raw', language: 'auto', mode: 'formatted', detected_language: 'en', format_version: 'source-language-v2' }]);
   response = await request(server).get('/api/lecture-scribe/jobs/job-fresh/transcript?kind=cleaned').set('Authorization', auth());
   assert.equal(response.status, 200); assert.equal(response.text, transcriptText);
   provider = 'down'; calls = [];
@@ -70,14 +79,18 @@ test('a completed transcript is cached, served without the provider, and reused 
   assert.equal(response.status, 200); assert.equal(response.text, transcriptText);
   assert.equal((await request(server).get('/api/lecture-scribe/jobs/job-fresh').set('Authorization', auth())).body.status, 'completed');
   assert.equal(calls.length, 0);
-  // Another student submits the same video through a different URL form.
+  // Another student submits the same video through a different URL form; a fast
+  // request is satisfied by the stored formatted lecture.
   response = await request(server).post('/api/lecture-scribe/jobs').set('Authorization', auth(701)).send({ youtube_url: 'https://www.youtube.com/watch?v=abcdefghijk', clean: false });
   assert.equal(response.status, 200); assert.equal(response.body.cached, true); assert.equal(response.body.job_id, 'job-fresh'); assert.equal(response.body.status, 'completed');
+  assert.equal(response.body.request.clean, false); assert.equal(response.body.result.has_cleaned, true);
   assert.equal(calls.length, 0);
   assert.equal((await request(server).get('/api/lecture-scribe/jobs').set('Authorization', auth(701))).body.jobs[0].job_id, 'job-fresh');
   response = await request(server).get('/api/lecture-scribe/jobs/job-fresh/transcript?kind=cleaned').set('Authorization', auth(701));
   assert.equal(response.status, 200); assert.equal(response.text, transcriptText);
-  assert.equal((await request(server).get('/api/lecture-scribe/jobs').set('Authorization', admin())).body.jobs.map((j) => j.job_id).join(), 'job-fresh');
+  const adminList = (await request(server).get('/api/lecture-scribe/jobs').set('Authorization', admin())).body.jobs;
+  assert.equal(adminList.map((j) => j.job_id).join(), 'job-fresh');
+  assert.deepEqual(adminList[0].saved_by.map((owner) => owner.name), ['First', 'Second']); assert.equal(adminList[0].saved_count, 2);
   assert.equal((await request(server).get('/api/lecture-scribe/jobs/job-fresh/transcript').set('Authorization', admin())).status, 200);
 });
 
@@ -142,7 +155,7 @@ test('transcription keeps working on a database that has not applied the cache m
   await database.query('ALTER TABLE edufusion_lecture_transcripts RENAME TO hidden_transcripts');
   try {
     const created = await request(server).post('/api/lecture-scribe/jobs').set('Authorization', auth(701)).send({ youtube_url: 'https://youtu.be/zyxwvutsrqp' });
-    assert.equal(created.status, 202); assert.equal(created.body.cached, undefined);
+    assert.equal(created.status, 202); assert.equal(created.body.cached, false);
     const transcript = await request(server).get('/api/lecture-scribe/jobs/job-fresh/transcript?kind=raw').set('Authorization', auth());
     assert.equal(transcript.status, 200); assert.equal(transcript.text, 'raw words');
   } finally { await database.query('ALTER TABLE hidden_transcripts RENAME TO edufusion_lecture_transcripts'); }

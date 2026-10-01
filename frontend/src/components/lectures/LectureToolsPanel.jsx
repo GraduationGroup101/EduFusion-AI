@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { MessageSquare, ListChecks, Mic, Send, X, Loader2, Trash2, Sparkles } from 'lucide-react';
 import { lectureToolsService as service } from '../../services/lectureTools';
 
 const message = (error) => error.response?.data?.error || 'The lecture assistant is unavailable right now. Please try again.';
 const button = 'inline-flex items-center gap-2 border border-border px-3 py-2 text-sm hover:border-accent disabled:opacity-40';
-const input = 'w-full border border-border bg-white p-3 text-sm outline-none focus:border-accent';
+const input = 'w-full border border-border bg-white p-3 text-sm outline-none focus:border-secondary';
 const jobTitle = (job) => job?.title || job?.result?.title || job?.request?.youtube_url || 'Lecture transcript';
 
 // Chat and practice questions over one saved transcript. Unlike the optional
@@ -24,15 +25,19 @@ export default function LectureToolsPanel({ job, initialTab = 'chat', onClose })
   const panel = useRef(null);
   const alive = useRef(true);
   const log = useRef(null);
+  // The parent may pass a new onClose on every render: read it through a ref so the
+  // focus/scroll-lock effect runs once and never pulls focus away from the inputs.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
     const previous = document.activeElement;
     const overflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     panel.current?.focus();
-    const keydown = (event) => { if (event.key === 'Escape') onClose(); };
+    const keydown = (event) => { if (event.key === 'Escape') closeRef.current?.(); };
     document.addEventListener('keydown', keydown);
     return () => { document.body.style.overflow = overflow; document.removeEventListener('keydown', keydown); previous?.focus?.(); };
-  }, [onClose]);
+  }, []);
   useEffect(() => {
     alive.current = true;
     setTab(initialTab); setMessages([]); setQuizzes([]); setQuiz(null); setAnswers({}); setChecked(false); setError('');
@@ -92,7 +97,7 @@ export default function LectureToolsPanel({ job, initialTab = 'chat', onClose })
       <nav className="p-3 flex shrink-0 flex-wrap gap-2 border-b border-border" aria-label="Lecture tools">
         {[['chat', 'Ask this lecture', MessageSquare], ['quiz', 'Practice questions', ListChecks]].map(([key, label, Icon]) =>
           <button key={key} className={button + (tab === key ? ' bg-secondary text-white' : '')} aria-pressed={tab === key} onClick={() => setTab(key)}><Icon size={16}/>{label}</button>)}
-        <a className={button} href={`/dashboard/oral-exam?transcript=${encodeURIComponent(jobId)}`} onClick={onClose}><Mic size={16}/>Oral exam on this lecture</a>
+        <Link className={button} to={`/dashboard/oral-exam?transcript=${encodeURIComponent(jobId)}`} onClick={onClose}><Mic size={16}/>Oral exam on this lecture</Link>
       </nav>
       <div ref={log} className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 md:p-6 space-y-4 break-words">
         {error && <p role="alert" className="p-3 bg-red-50 text-red-700">{error}</p>}

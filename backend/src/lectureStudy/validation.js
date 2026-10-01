@@ -18,8 +18,10 @@ const source = (body) => {
   if (!/^[\w-]{11}$/.test(video || '')) throw badRequest('Invalid YouTube video ID');
   const language = body.language ?? 'auto';
   if (!['auto','ar','en'].includes(language)) throw badRequest('Unsupported language');
+  // v2: transcripts stay in the spoken language. v1 lectures may hold English
+  // translations of Arabic lectures, so new requests prepare them again.
   return { youtube_url: 'https://www.youtube.com/watch?v=' + video, language,
-    source_key: video + ':' + language + ':study-v1',
+    source_key: video + ':' + language + ':study-v2',
     enrollment_id: body.enrollment_id == null || body.enrollment_id === '' ? null : integer(body.enrollment_id, 'Enrollment', 1),
     title: body.title ? text(body.title, 'Title', { max: 200 }) : 'Lecture ' + video };
 };

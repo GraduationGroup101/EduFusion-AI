@@ -45,7 +45,7 @@ const tools = [
       "Transcribe a YouTube lecture",
       "Read, copy and revisit your notes",
     ],
-    route: "youtube",
+    route: "lecturescribe",
   },
   {
     name: "Academic Chatbot",

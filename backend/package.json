@@ -10,6 +10,7 @@
     "migrate": "node scripts/migrate.js",
     "migrate:learning": "node scripts/migrateLearning.js",
     "worker:lectures": "node scripts/lectureStudyWorker.js",
+    "lectures:sync": "node scripts/syncLectureJobs.js",
     "cleanup:learning": "node scripts/cleanupLearning.js",
     "backup:learning": "node scripts/backupLearning.js backup",
     "restore:learning": "node scripts/backupLearning.js restore",

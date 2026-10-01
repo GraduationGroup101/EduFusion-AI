@@ -1,9 +1,34 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { BookOpen, MessageSquare, ListChecks, Send, X, Loader2, RotateCcw } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { BookOpen, FileText, MessageSquare, ListChecks, Send, TextQuote, X, Loader2, RotateCcw } from 'lucide-react';
+import TranscriptView, { arabicRatio } from './TranscriptView';
 import { lectureStudyService as service } from '../../services/lectureStudy';
 const message = (error) => error.response?.data?.error || 'Unable to load this lecture. Please try again.';
+
+// Each block takes the direction of its main script: "dir=auto" alone follows the
+// first letter, which turns an Arabic paragraph that opens with "TCP" left-to-right.
+export const textDirection = (text) => arabicRatio(text) >= 0.3 ? 'rtl' : /[A-Za-z]/.test(String(text || '')) ? 'ltr' : 'auto';
+export function Paragraphs({ text, className = '' }) {
+  return <div className={'space-y-3 leading-7 break-words ' + className}>
+    {String(text || '').split(/\n\s*\n/).map((part) => part.trim()).filter(Boolean).map((part, index) =>
+      <p key={index} dir={textDirection(part)} className="whitespace-pre-wrap" style={{ textAlign: 'start' }}>{part}</p>)}
+  </div>;
+}
+// Headings, list items or bold text: spoken words never contain these markers.
+const MARKDOWN_STRUCTURE = /^(?:#{1,3} |- |\d+\. )/m;
+const MARKDOWN_BOLD = /\*\*[^*\n]+\*\*/;
+// A transcript stored without a separate formatted copy is shown once, as the original.
+// Older imports stored the formatted Markdown in both fields: that copy is shown as
+// formatted, never as the words "exactly as spoken" with literal Markdown markers.
+export const transcriptVersions = (lecture) => {
+  const raw = lecture?.raw_transcript || null, transcript = lecture?.transcript || null;
+  if (transcript && transcript === raw) {
+    return MARKDOWN_STRUCTURE.test(transcript) || MARKDOWN_BOLD.test(transcript) ? { cleaned: transcript, raw: null } : { cleaned: null, raw };
+  }
+  return { cleaned: transcript, raw };
+};
 const button = 'inline-flex items-center gap-2 border border-border px-3 py-2 text-sm hover:border-accent disabled:opacity-40';
-const input = 'w-full border border-border bg-white p-3 text-sm outline-none focus:border-accent';
+const input = 'w-full border border-border bg-white p-3 text-sm outline-none focus:border-secondary';
 
 export default function LectureWorkspace({ lectureId, initialTab='summary', onClose }) {
   const [lecture,setLecture] = useState(null);
@@ -21,10 +46,15 @@ export default function LectureWorkspace({ lectureId, initialTab='summary', onCl
   const [counts,setCounts] = useState({mcq:6,tf:3,essay:1,section:null});
   const [busy,setBusy] = useState(false);
   const [sourceId,setSourceId] = useState(null);
+  const [transcript,setTranscript] = useState({state:'idle'});
+  const transcriptRequest = useRef(null);
   const request = useRef(null);
   const alive = useRef(true);
   const panel = useRef(null);
   const generation = useRef(0);
+  // The latest close handler, so a parent re-render never re-runs the focus trap.
+  const close = useRef(onClose);
+  close.current = onClose;
   const ready = lecture?.status === 'ready';
   useEffect(() => {
     const previous = document.activeElement;
@@ -32,7 +62,7 @@ export default function LectureWorkspace({ lectureId, initialTab='summary', onCl
     document.body.style.overflow = 'hidden';
     panel.current?.focus();
     const keydown = (event) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') close.current();
       if (event.key !== 'Tab') return;
       const elements = [...panel.current.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),[tabindex="0"]')];
       const first=elements[0],last=elements.at(-1);
@@ -41,7 +71,7 @@ export default function LectureWorkspace({ lectureId, initialTab='summary', onCl
     };
     document.addEventListener('keydown',keydown);
     return () => { document.body.style.overflow=overflow;document.removeEventListener('keydown',keydown);previous?.focus(); };
-  },[onClose]);
+  },[]);
   const refresh = useCallback(async (signal) => {
     const current = generation.current;
     const {data} = await service.lecture(lectureId,signal);
@@ -66,10 +96,10 @@ export default function LectureWorkspace({ lectureId, initialTab='summary', onCl
     alive.current=true;generation.current++;
     setLecture(null);setMessages([]);setQuestion('');setPending(null);setQuiz(null);setQuizzes([]);
     setAnswers({});setAttempt(null);setAttempts([]);setError('');setTab(initialTab);request.current=null;
-    setBusy(false);setSourceId(null);setRecommendations(null);
+    setBusy(false);setSourceId(null);setRecommendations(null);setTranscript({state:'idle'});
     const controller = new AbortController();
     refresh(controller.signal).catch((error) => { if (!controller.signal.aborted) setError(message(error)); });
-    return () => {alive.current=false;generation.current++;controller.abort();};
+    return () => {alive.current=false;generation.current++;controller.abort();transcriptRequest.current?.abort();};
   },[lectureId,initialTab,refresh]);
   useEffect(() => {
     if ((!lecture || ready || lecture.status === 'failed') && (!pending || ['completed','failed','cancelled'].includes(pending.status))) return undefined;
@@ -139,6 +169,20 @@ export default function LectureWorkspace({ lectureId, initialTab='summary', onCl
     try { const {data}=await service.quiz(id);if (!alive.current) return;setQuiz(data.quiz);setAnswers({});setAttempt(null);setError(''); }
     catch (error) {if (alive.current) setError(message(error));}
   };
+  // The full transcript is large, so it is loaded once, when its tab is first opened.
+  const hasTranscript = Boolean(lecture?.has_transcript);
+  // Switching lectures aborts it (above); a late answer for another lecture is ignored.
+  useEffect(() => {
+    if (tab !== 'transcript' || !hasTranscript || transcript.state !== 'idle') return;
+    const controller = new AbortController(), current = generation.current;
+    transcriptRequest.current = controller;
+    setTranscript({state:'loading'});
+    service.transcript(lectureId,controller.signal).then(({data}) => {
+      if (alive.current && generation.current === current) setTranscript({state:'ready',...transcriptVersions(data.transcript)});
+    }).catch((error) => {
+      if (!controller.signal.aborted && alive.current && generation.current === current) setTranscript({state:'error',error:message(error)});
+    });
+  },[tab,hasTranscript,transcript.state,lectureId]);
   const cite = (id) => {setSourceId(id);setTab('sources');};
   useEffect(() => {
     if(tab==='sources'&&sourceId)document.getElementById('source-'+sourceId)?.scrollIntoView?.({block:'center',behavior:'smooth'});
@@ -154,8 +198,8 @@ export default function LectureWorkspace({ lectureId, initialTab='summary', onCl
         <button className={button} onClick={onClose} aria-label="Close lecture workspace"><X size={18}/></button>
       </header>
       <nav className="p-3 flex shrink-0 flex-wrap gap-2 border-b border-border" aria-label="Lecture tools">
-        {ready && <a className={button} href={`/dashboard/oral-exam?lecture=${lectureId}`} onClick={onClose}>Start Oral Exam</a>}
-        {[['summary','Summary',BookOpen],['chat','Lecture chat',MessageSquare],['quiz','Practice questions',ListChecks],['sources','Transcript',BookOpen]].map(([key,label,Icon]) =>
+        {ready && <Link className={button} to={`/dashboard/oral-exam?lecture=${lectureId}`} onClick={onClose}>Start Oral Exam</Link>}
+        {[['summary','Summary',BookOpen],['chat','Lecture chat',MessageSquare],['quiz','Practice questions',ListChecks],['transcript','Transcript',FileText],['sources','Sources',TextQuote]].map(([key,label,Icon]) =>
           <button key={key} className={button+(tab===key?' bg-secondary text-white':'')} aria-pressed={tab===key} onClick={() => setTab(key)}><Icon size={16}/>{label}</button>)}
       </nav>
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 md:p-6 space-y-5 break-words">
@@ -178,10 +222,10 @@ export default function LectureWorkspace({ lectureId, initialTab='summary', onCl
           {['failed','cancelled'].includes(pending.status) && <button className={button+' ml-2'} onClick={() => setPending(null)}>Dismiss</button>}
         </div>}
         {tab==='summary' && ready && <>
-          <div dir="auto" className="whitespace-pre-wrap leading-7">{lecture.summary}</div>
+          <Paragraphs text={lecture.summary}/>
           <div className="flex flex-wrap gap-2">{lecture.concepts.map((concept) => <button className={button} key={concept}
             onClick={() => {setQuestion('Explain this concept from the lecture: '+concept);setTab('chat');}}>{concept}</button>)}</div>
-          {lecture.sections.map((section) => <article key={section.id} className="border border-border p-4" dir="auto">
+          {lecture.sections.map((section) => <article key={section.id} className="border border-border p-4" dir={textDirection(section.title+' '+section.summary)}>
             <h3 className="font-bold">{section.title}</h3><p className="whitespace-pre-wrap mt-2">{section.summary}</p>{references(section.citations)}
             <div className="flex flex-wrap gap-2 mt-3">
               <button className={button} onClick={() => {setQuestion('Explain this lecture section: '+section.title);setTab('chat');}}>Explain this section</button>
@@ -203,8 +247,8 @@ export default function LectureWorkspace({ lectureId, initialTab='summary', onCl
         </>}
         {tab==='chat' && <>
           {messages.map((item) => <article key={item.id} className="space-y-3 border-b border-border pb-4">
-            <p dir="auto" className="bg-secondary/10 p-3 whitespace-pre-wrap">{item.question}</p>
-            <div dir="auto" className="p-3 whitespace-pre-wrap">{item.answer || (item.status==='failed'?'Request failed. Retry from its saved status.':'Waiting for the lecture assistant...')}{references(item.citations)}</div>
+            <p dir={textDirection(item.question)} className="bg-secondary/10 p-3 whitespace-pre-wrap">{item.question}</p>
+            <div dir={textDirection(item.answer)} className="p-3 whitespace-pre-wrap">{item.answer || (item.status==='failed'?'Request failed. Retry from its saved status.':'Waiting for the lecture assistant...')}{references(item.citations)}</div>
           </article>)}
           {ready && !messages.length && <p className="text-sm text-light-accent/60">Ask a question about this lecture. Answers include references to its text.</p>}
           <form onSubmit={ask} className="flex flex-col sm:flex-row gap-2">
@@ -260,8 +304,17 @@ export default function LectureWorkspace({ lectureId, initialTab='summary', onCl
           {attempts.length>0 && <aside aria-label="Practice history"><h3 className="font-bold">Your previous attempts</h3>
             {attempts.map((item) => <p key={item.id} className="text-sm mt-2">{new Date(item.created_at).toLocaleString()} · {item.score}/{item.total}</p>)}</aside>}
         </>}
-        {tab==='sources' && <div className="space-y-3">{lecture?.chunks.map((chunk) =>
-          <article key={chunk.id} id={'source-'+chunk.id} dir="auto" className={'border p-4 whitespace-pre-wrap leading-7 '+(sourceId===chunk.id?'border-accent bg-secondary/10':'border-border')}>
+        {tab==='transcript' && lecture && (!hasTranscript ? <p className="text-sm text-light-accent/60">The transcript appears here once the lecture has been transcribed.</p>
+          : transcript.state==='ready' ? (transcript.cleaned || transcript.raw
+            ? <TranscriptView cleaned={transcript.cleaned} raw={transcript.raw} title={lecture.title} language={lecture.language}/>
+            : <p className="text-sm text-light-accent/60">This lecture has no stored transcript.</p>)
+          : transcript.state==='error' ? <div role="alert" className="p-3 bg-red-50 text-red-700 text-sm">{transcript.error}
+            <button type="button" className={button+' ml-2'} onClick={() => setTranscript({state:'idle'})}><RotateCcw size={14}/>Try again</button></div>
+          : <p><Loader2 className="inline animate-spin" size={16}/> Loading the transcript...</p>)}
+        {tab==='sources' && <div className="space-y-3">
+          {lecture?.chunks.length>0 && <p className="text-xs text-light-accent/60">The passages that answers and questions cite. Neighbouring passages overlap; the Transcript tab has the full text.</p>}
+          {lecture?.chunks.map((chunk) =>
+          <article key={chunk.id} id={'source-'+chunk.id} dir={textDirection(chunk.text)} className={'border p-4 whitespace-pre-wrap leading-7 '+(sourceId===chunk.id?'border-accent bg-secondary/10':'border-border')}>
             <p className="text-xs text-accent mb-2">Source {chunk.id}</p>{chunk.text}</article>)}</div>}
       </div>
     </section>
