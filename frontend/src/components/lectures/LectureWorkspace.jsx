@@ -28,7 +28,7 @@ export const transcriptVersions = (lecture) => {
   return { cleaned: transcript, raw };
 };
 const button = 'inline-flex items-center gap-2 border border-border px-3 py-2 text-sm hover:border-accent disabled:opacity-40';
-const input = 'w-full border border-border bg-white p-3 text-sm outline-none focus:border-accent';
+const input = 'w-full border border-border bg-white p-3 text-sm outline-none focus:border-secondary';
 
 export default function LectureWorkspace({ lectureId, initialTab='summary', onClose }) {
   const [lecture,setLecture] = useState(null);

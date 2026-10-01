@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 import {
   Eye, EyeOff, Lock, User, ArrowRight, ArrowLeft,
-  Check, Building2, Info, MessageSquare, Youtube, FileQuestion, TrendingUp,
+  Check, Building2, Info, AlertCircle, MessageSquare, Youtube, FileQuestion, TrendingUp,
 } from 'lucide-react';
 import { authService } from '../services/api';
 
@@ -116,6 +116,7 @@ export default function Auth({ mode: initialMode = 'login' }) {
   const [coursesFailed, setCoursesFailed] = useState(false);
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loginError, setLoginError] = useState('');
   const { login, registerStudent, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -163,16 +164,22 @@ export default function Auth({ mode: initialMode = 'login' }) {
   const handleLogin = async (event) => {
     event.preventDefault();
     if (!form.username.trim() || !form.password) {
-      toast.error('Please fill in both fields');
+      setLoginError('Enter your student ID (or username) and your PIN.');
       return;
     }
     setLoading(true);
+    setLoginError('');
     try {
       await login(form.username.trim(), form.password);
       toast.success('Welcome back!');
       navigate(redirectTo, { replace: true });
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Login failed');
+      // Shown inside the form, next to the fields, so it cannot be missed.
+      const status = err.response?.status;
+      setLoginError(status === 401 ? 'That student ID or PIN is not correct. Check both and try again.'
+        : status === 429 ? 'Too many attempts. Wait a minute, then try again.'
+        : !err.response || status >= 500 ? 'We could not reach EduFusion. Check your connection and try again.'
+        : err.response?.data?.error || 'Sign-in failed. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -289,7 +296,8 @@ export default function Auth({ mode: initialMode = 'login' }) {
                       <input
                         type="text"
                         value={form.username}
-                        onChange={(e) => setForm((prev) => ({ ...prev, username: e.target.value }))}
+                        onChange={(e) => { setLoginError(''); setForm((prev) => ({ ...prev, username: e.target.value })); }}
+                        aria-invalid={Boolean(loginError)}
                         className={`${inputClass} pl-10`}
                         placeholder="e.g. 120210627"
                         autoComplete="username"
@@ -303,7 +311,8 @@ export default function Auth({ mode: initialMode = 'login' }) {
                       <input
                         type={showPass ? 'text' : 'password'}
                         value={form.password}
-                        onChange={(e) => setForm((prev) => ({ ...prev, password: e.target.value }))}
+                        onChange={(e) => { setLoginError(''); setForm((prev) => ({ ...prev, password: e.target.value })); }}
+                        aria-invalid={Boolean(loginError)}
                         className={`${inputClass} pl-10 pr-11`}
                         placeholder="Enter your PIN or password"
                         autoComplete="current-password"
@@ -318,6 +327,13 @@ export default function Auth({ mode: initialMode = 'login' }) {
                       </button>
                     </span>
                   </Field>
+
+                  {loginError && (
+                    <p role="alert" className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-800">
+                      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                      {loginError}
+                    </p>
+                  )}
 
                   <button
                     type="submit"

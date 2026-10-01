@@ -731,29 +731,19 @@ export default function LectureScribePage() {
             <label htmlFor="lecture-url" className="block text-sm font-semibold text-light-accent mb-2">
               YouTube lecture URL
             </label>
-            <div className="flex flex-col sm:flex-row gap-3">
-              <div className="relative flex-1">
-                <Youtube className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-red-500" aria-hidden="true" />
-                <input
-                  id="lecture-url"
-                  type="url"
-                  inputMode="url"
-                  autoComplete="off"
-                  dir="ltr"
-                  value={youtubeUrl}
-                  onChange={(event) => { setYoutubeUrl(event.target.value); setSubmitError(''); }}
-                  placeholder="https://www.youtube.com/watch?v=..."
-                  className="w-full h-12 border border-border bg-white pl-12 pr-4 text-sm text-light-accent outline-none transition-colors focus:border-accent"
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={submitting}
-                className="h-12 px-6 bg-secondary text-white text-sm font-semibold inline-flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                {submitting ? 'Submitting' : studyEnabled ? 'Save lecture' : 'Create transcript'}
-              </button>
+            <div className="relative">
+              <Youtube className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-red-500" aria-hidden="true" />
+              <input
+                id="lecture-url"
+                type="url"
+                inputMode="url"
+                autoComplete="off"
+                dir="ltr"
+                value={youtubeUrl}
+                onChange={(event) => { setYoutubeUrl(event.target.value); setSubmitError(''); }}
+                placeholder="https://www.youtube.com/watch?v=..."
+                className="w-full h-12 border border-border bg-white pl-12 pr-4 text-sm text-light-accent outline-none transition-colors focus:border-secondary"
+              />
             </div>
             {submitError && <p role="alert" className="mt-3 flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
               <AlertCircle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />{submitError}
@@ -794,13 +784,22 @@ export default function LectureScribePage() {
               </label>)}
             </div>
           </fieldset>}
+          {/* Last, so the language and mode are chosen before the lecture is sent. */}
+          <button
+            type="submit"
+            disabled={submitting}
+            className="h-12 w-full sm:w-auto px-6 bg-secondary text-white text-sm font-semibold inline-flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+            {submitting ? 'Submitting' : studyEnabled ? 'Save lecture' : 'Create transcript'}
+          </button>
         </form>
 
         <aside className="glass glow-border flex min-w-0 flex-col p-5" aria-labelledby="lecture-jobs-heading">
           <div className="flex items-center justify-between gap-3 mb-4">
             <div className="min-w-0">
               <p className="text-xs font-mono uppercase text-light-accent/45">{isAdmin ? 'Across all accounts' : 'Your lectures'}</p>
-              <h2 id="lecture-jobs-heading" className="font-display text-lg font-semibold text-light-accent mt-1">{isAdmin ? 'All lecture transcriptions' : 'Previous jobs'}</h2>
+              <h2 id="lecture-jobs-heading" className="font-display text-lg font-semibold text-light-accent mt-1">{isAdmin ? 'All lecture transcriptions' : 'Saved lectures'}</h2>
             </div>
             <button
               type="button"
