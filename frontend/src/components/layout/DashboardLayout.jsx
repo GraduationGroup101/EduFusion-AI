@@ -12,7 +12,7 @@ const titles = {
   "/dashboard/my-prediction": "EduPredict",
   "/dashboard/ai-tool": "EduPredict",
   "/dashboard/question-gen": "Quiz Generator",
-  "/dashboard/youtube": "LectureScribe",
+  "/dashboard/lecturescribe": "LectureScribe",
   "/dashboard/oral-exam": "Oral Exam",
   "/dashboard/admin/at-risk": "At-Risk Students",
   "/dashboard/admin/clock": "Academic Clock",
@@ -23,6 +23,7 @@ export default function DashboardLayout() {
   const menuRef = useRef(null);
   const { pathname } = useLocation();
   const { user } = useAuth();
+  const title = titles[pathname.replace(/\/+$/, "")] || "Overview";
   return (
     <div className="workspace-shell flex h-dvh bg-primary">
       <a href="#workspace-content" className="skip-link">
@@ -63,7 +64,7 @@ export default function DashboardLayout() {
               Workspace
             </Link>
             <ChevronRight size={14} className="text-light-accent/35" />
-            <span className="truncate" aria-current="page">{titles[pathname] || "Overview"}</span>
+            <span className="truncate" aria-current="page">{title}</span>
           </nav>
           <div className="ml-auto flex items-center gap-2 text-xs text-secondary">
             <ShieldCheck size={16} />
@@ -81,7 +82,7 @@ export default function DashboardLayout() {
         >
           {/* Lazy pages load inside the shell, so navigation never drops the
               sidebar and header for an unbranded screen. */}
-          <Suspense fallback={<BrandedLoader variant="panel" label={`Loading ${titles[pathname] || "page"}`} />}>
+          <Suspense fallback={<BrandedLoader variant="panel" label={`Loading ${title}`} />}>
             <Outlet />
           </Suspense>
         </main>

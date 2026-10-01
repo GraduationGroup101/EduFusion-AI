@@ -8,9 +8,14 @@ const json = (value) => JSON.stringify(value);
 const lockOwner = (client, owner) => client.query('SELECT pg_advisory_xact_lock(hashtext($1))', ['study:' + owner]);
 const usage=async(client,owner,kind)=>(await client.query("SELECT requests FROM study_usage WHERE owner_key=$1 AND kind=$2 AND day=(NOW() AT TIME ZONE 'UTC')::date",[owner,kind])).rows[0]?.requests||0;
 const addUsage=(client,owner,kind)=>client.query("INSERT INTO study_usage(owner_key,day,kind,requests) VALUES($1,(NOW() AT TIME ZONE 'UTC')::date,$2,1) ON CONFLICT(owner_key,day,kind) DO UPDATE SET requests=study_usage.requests+1",[owner,kind]);
+// A lecture is named after its video until the transcription service or YouTube
+// reports the real title; a member's own title (if any) stays private to them.
+const placeholderTitle = (sourceKey) => 'Lecture ' + String(sourceKey).split(':')[0];
+// A removed membership stays as the administrator's record of who saved the
+// lecture; access and work need a current one.
 const owned = async (client, owner, lectureId, lock = false) => {
   const result = await client.query(
-    'SELECT l.*,m.enrollment_id,COALESCE(m.title,l.title) AS title FROM study_lectures l JOIN study_members m ON m.lecture_id=l.id WHERE m.owner_key=$1 AND l.id=$2' +
+    'SELECT l.*,l.title AS lecture_title,m.enrollment_id,COALESCE(m.title,l.title) AS title FROM study_lectures l JOIN study_members m ON m.lecture_id=l.id WHERE m.owner_key=$1 AND l.id=$2 AND m.removed_at IS NULL' +
       (lock ? ' FOR UPDATE OF l,m' : ''), [owner, lectureId]);
   if (!result.rowCount) fail(404, 'Lecture not found');
   return result.rows[0];
@@ -49,11 +54,15 @@ const createLecture = (user, source, key, imported = null) => db.transaction(asy
   if (!lecture) {
     const lectureId = randomUUID();
     await client.query('INSERT INTO study_lectures(id,source_key,youtube_url,language,title) VALUES($1,$2,$3,$4,$5) ON CONFLICT(source_key) DO NOTHING',
-      [lectureId,source.source_key,source.youtube_url,source.language,'Lecture ' + new URL(source.youtube_url).searchParams.get('v')]);
+      [lectureId,source.source_key,source.youtube_url,source.language,placeholderTitle(source.source_key)]);
     lecture = (await client.query('SELECT * FROM study_lectures WHERE source_key=$1 FOR UPDATE', [source.source_key])).rows[0];
   }
-  await client.query('INSERT INTO study_members(owner_key,lecture_id,enrollment_id,title) VALUES($1,$2,$3,$4) ON CONFLICT(owner_key,lecture_id) DO UPDATE SET enrollment_id=COALESCE(EXCLUDED.enrollment_id,study_members.enrollment_id),title=COALESCE(EXCLUDED.title,study_members.title)',
-    [owner,lecture.id,source.enrollment_id,source.title]);
+  // Saving a removed lecture again starts a fresh membership (new date, course link and title).
+  await client.query('INSERT INTO study_members(owner_key,lecture_id,enrollment_id,title) VALUES($1,$2,$3,$4) ON CONFLICT(owner_key,lecture_id) DO UPDATE SET '+
+    'enrollment_id=CASE WHEN study_members.removed_at IS NULL THEN COALESCE(EXCLUDED.enrollment_id,study_members.enrollment_id) ELSE EXCLUDED.enrollment_id END,'+
+    'title=CASE WHEN study_members.removed_at IS NULL THEN COALESCE(EXCLUDED.title,study_members.title) ELSE EXCLUDED.title END,'+
+    'created_at=CASE WHEN study_members.removed_at IS NULL THEN study_members.created_at ELSE NOW() END,removed_at=NULL',
+    [owner,lecture.id,source.enrollment_id,source.title===placeholderTitle(source.source_key)?null:source.title]);
   let job;
   if (lecture.status !== 'ready') {
     job = (await client.query("SELECT * FROM study_jobs WHERE lecture_id=$1 AND kind='prepare' AND status IN ('queued','running') ORDER BY created_at LIMIT 1", [lecture.id])).rows[0];
@@ -63,8 +72,9 @@ const createLecture = (user, source, key, imported = null) => db.transaction(asy
       await client.query("UPDATE study_lectures SET status='queued',stage='queued',error=NULL WHERE id=$1", [lecture.id]);
       job = await insertJob(client,owner,lecture,'prepare',key,payload);
       await addUsage(client,owner,'prepare');
+      // The original is kept only when there is one: a formatted copy is never presented as the spoken text.
       if (imported) await client.query('UPDATE study_lectures SET transcript=$2,raw_transcript=$3 WHERE id=$1',
-        [lecture.id,imported.transcript,imported.raw_transcript || imported.transcript]);
+        [lecture.id,imported.transcript,imported.raw_transcript || null]);
     }
   }
   // A cached or shared preparation result needs an owner-specific replay receipt.
@@ -75,6 +85,10 @@ const createLecture = (user, source, key, imported = null) => db.transaction(asy
   }
   return { lecture: await owned(client,owner,lecture.id), job };
 });
+// A lecture already prepared, or being prepared, from this source can be joined without a transcript.
+const sourceAvailable = async (sourceKey) => (await db.query(
+  "SELECT 1 FROM study_lectures l WHERE l.source_key=$1 AND (l.status='ready' OR EXISTS(SELECT 1 FROM study_jobs j WHERE j.lecture_id=l.id AND j.kind='prepare' AND j.status IN ('queued','running')))",
+  [sourceKey])).rowCount > 0;
 const preparationReplay=(user,source,key)=>db.transaction(async(client)=>{
   const owner=ownerKey(user);
   const payload={source_key:source.source_key,enrollment_id:source.enrollment_id,title:source.title};
@@ -83,11 +97,17 @@ const preparationReplay=(user,source,key)=>db.transaction(async(client)=>{
 });
 const listLectures = async (user, offset = 0) => {
   const result = await db.query(
-    "SELECT l.id,COALESCE(m.title,l.title) AS title,l.youtube_url,l.language,CASE WHEN l.status<>'ready' AND p.status='failed' THEN 'failed' ELSE l.status END AS status,l.stage,COALESCE(p.error,l.error) AS error,l.version,l.updated_at,m.enrollment_id FROM study_members m JOIN study_lectures l ON l.id=m.lecture_id LEFT JOIN LATERAL(SELECT status,error FROM study_jobs WHERE lecture_id=l.id AND kind='prepare' AND stage<>'linked' ORDER BY created_at DESC LIMIT 1)p ON true WHERE m.owner_key=$1 ORDER BY m.created_at DESC LIMIT 20 OFFSET $2", [ownerKey(user),offset]);
+    "SELECT l.id,COALESCE(m.title,l.title) AS title,l.youtube_url,l.language,CASE WHEN l.status<>'ready' AND p.status='failed' THEN 'failed' ELSE l.status END AS status,l.stage,COALESCE(p.error,l.error) AS error,l.version,l.updated_at,m.enrollment_id FROM study_members m JOIN study_lectures l ON l.id=m.lecture_id LEFT JOIN LATERAL(SELECT status,error FROM study_jobs WHERE lecture_id=l.id AND kind='prepare' AND stage<>'linked' ORDER BY created_at DESC LIMIT 1)p ON true WHERE m.owner_key=$1 AND m.removed_at IS NULL ORDER BY m.created_at DESC LIMIT 20 OFFSET $2", [ownerKey(user),offset]);
   return result.rows;
 };
+// What a member's lecture view needs: polled while preparing, so the transcripts
+// (up to 1 MB each) and provider internals stay out; they have their own endpoint.
 const getLecture = async (user,id) => {
-  const lecture = await owned(db,ownerKey(user),id);
+  const found = await db.query(
+    'SELECT l.id,COALESCE(m.title,l.title) AS title,l.youtube_url,l.language,l.version,l.status,l.stage,l.error,l.summary,l.sections,l.concepts,l.created_at,l.updated_at,m.enrollment_id,'+
+    '(l.transcript IS NOT NULL) AS has_transcript FROM study_lectures l JOIN study_members m ON m.lecture_id=l.id WHERE m.owner_key=$1 AND l.id=$2 AND m.removed_at IS NULL', [ownerKey(user),id]);
+  if (!found.rowCount) fail(404,'Lecture not found');
+  const lecture = found.rows[0];
   const chunks = (await db.query('SELECT id,text,section,ordinal FROM study_chunks WHERE lecture_id=$1 AND version=$2 ORDER BY ordinal', [id,lecture.version])).rows;
   const jobs = (await db.query("SELECT id,kind,status,stage,error,created_at FROM study_jobs WHERE owner_key=$1 AND lecture_id=$2 AND status IN ('queued','running','failed') ORDER BY created_at DESC LIMIT 20", [ownerKey(user),id])).rows;
   if (lecture.status !== 'ready') {
@@ -96,10 +116,22 @@ const getLecture = async (user,id) => {
   }
   return { ...lecture, chunks, jobs };
 };
+const getTranscript = async (user,id) => {
+  const result = await db.query('SELECT l.id,COALESCE(m.title,l.title) AS title,l.language,l.transcript,l.raw_transcript FROM study_lectures l JOIN study_members m ON m.lecture_id=l.id WHERE m.owner_key=$1 AND l.id=$2 AND m.removed_at IS NULL', [ownerKey(user),id]);
+  if (!result.rowCount) fail(404,'Lecture not found');
+  return result.rows[0];
+};
+// Who saved a lecture and when, oldest first (owner keys; names live in the main
+// database), including members who removed it since (with when they did).
+const members = (limit) => "COALESCE((SELECT json_agg(json_build_object('owner_key',s.owner_key,'saved_at',s.created_at,'removed_at',s.removed_at) ORDER BY s.created_at) FROM "+
+  '(SELECT owner_key,created_at,removed_at FROM study_members WHERE lecture_id=l.id ORDER BY created_at LIMIT '+limit+") s),'[]'::json) AS members";
+const memberCount = '(SELECT COUNT(*)::int FROM study_members m WHERE m.lecture_id=l.id AND m.removed_at IS NULL) AS member_count,';
 const listAllLectures = async (offset=0) => (await db.query(
-  'SELECT l.id,l.title,l.youtube_url,l.language,l.status,l.stage,l.updated_at,(SELECT COUNT(*)::int FROM study_members m WHERE m.lecture_id=l.id) AS member_count FROM study_lectures l ORDER BY l.created_at DESC LIMIT 20 OFFSET $1',[offset])).rows;
+  'SELECT l.id,l.title,l.youtube_url,l.language,l.status,l.stage,l.updated_at,'+memberCount+members(20)+
+  ' FROM study_lectures l ORDER BY l.created_at DESC LIMIT 20 OFFSET $1',[offset])).rows;
 const getLectureContent = async (id) => {
-  const lecture=(await db.query('SELECT id,title,youtube_url,language,version,status,stage,raw_transcript,transcript,summary,sections,concepts,created_at,updated_at FROM study_lectures WHERE id=$1',[id])).rows[0];
+  const lecture=(await db.query('SELECT l.id,l.title,l.youtube_url,l.language,l.version,l.status,l.stage,l.raw_transcript,l.transcript,l.summary,l.sections,l.concepts,l.created_at,l.updated_at,'+
+    memberCount+members(500)+' FROM study_lectures l WHERE l.id=$1',[id])).rows[0];
   if(!lecture)fail(404,'Lecture not found');
   return lecture;
 };
@@ -125,7 +157,7 @@ const enqueue = (user,lectureId,kind,key,payload) => db.transaction(async (clien
   return job;
 });
 const getJob = async (user,jobId) => {
-  const result = await db.query('SELECT j.* FROM study_jobs j JOIN study_members m ON m.owner_key=j.owner_key AND m.lecture_id=j.lecture_id WHERE j.id=$1 AND j.owner_key=$2', [jobId,ownerKey(user)]);
+  const result = await db.query('SELECT j.* FROM study_jobs j JOIN study_members m ON m.owner_key=j.owner_key AND m.lecture_id=j.lecture_id AND m.removed_at IS NULL WHERE j.id=$1 AND j.owner_key=$2', [jobId,ownerKey(user)]);
   if (!result.rowCount) fail(404,'Job not found');
   const job = {...result.rows[0]};
   delete job.payload;delete job.lease_token;
@@ -142,7 +174,7 @@ const quizzes = async (user,lectureId) => {
   return (await db.query('SELECT id,lecture_id,version,created_at FROM study_quizzes WHERE owner_key=$1 AND lecture_id=$2 ORDER BY created_at DESC LIMIT 20', [ownerKey(user),lectureId])).rows;
 };
 const getQuiz = async (user,quizId) => {
-  const result = await db.query('SELECT q.* FROM study_quizzes q JOIN study_members m ON m.owner_key=q.owner_key AND m.lecture_id=q.lecture_id WHERE q.id=$1 AND q.owner_key=$2', [quizId,ownerKey(user)]);
+  const result = await db.query('SELECT q.* FROM study_quizzes q JOIN study_members m ON m.owner_key=q.owner_key AND m.lecture_id=q.lecture_id AND m.removed_at IS NULL WHERE q.id=$1 AND q.owner_key=$2', [quizId,ownerKey(user)]);
   if (!result.rowCount) fail(404,'Quiz not found');
   return result.rows[0];
 };
@@ -155,7 +187,7 @@ const submitAttempt = (user,quizId,key,answers) => db.transaction(async (client)
     await owned(client,owner,previous.lecture_id);
     return previous;
   }
-  const quiz = (await client.query('SELECT q.* FROM study_quizzes q JOIN study_members m ON m.owner_key=q.owner_key AND m.lecture_id=q.lecture_id WHERE q.id=$1 AND q.owner_key=$2', [quizId,owner])).rows[0];
+  const quiz = (await client.query('SELECT q.* FROM study_quizzes q JOIN study_members m ON m.owner_key=q.owner_key AND m.lecture_id=q.lecture_id AND m.removed_at IS NULL WHERE q.id=$1 AND q.owner_key=$2', [quizId,owner])).rows[0];
   if (!quiz) fail(404,'Quiz not found');
   await owned(client,owner,quiz.lecture_id,true);
   const result = grade(quiz.questions,answers);
@@ -175,11 +207,12 @@ const removeLecture = (user,id) => db.transaction(async (client) => {
   await client.query('DELETE FROM study_quizzes WHERE owner_key=$1 AND lecture_id=$2', [owner,id]);
   await client.query('DELETE FROM study_messages WHERE owner_key=$1 AND lecture_id=$2', [owner,id]);
   await client.query('DELETE FROM study_jobs WHERE owner_key=$1 AND lecture_id=$2', [owner,id]);
-  await client.query('DELETE FROM study_members WHERE owner_key=$1 AND lecture_id=$2', [owner,id]);
+  // The member's private work is deleted; the record that they saved the lecture is kept.
+  await client.query('UPDATE study_members SET removed_at=NOW() WHERE owner_key=$1 AND lecture_id=$2', [owner,id]);
   // Shared preparation must survive the initiating student leaving the library.
   // Create a fresh receipt for a remaining member; never expose the old owner's job.
   if(lecture.status!=='ready'&&!(await client.query("SELECT 1 FROM study_jobs WHERE lecture_id=$1 AND kind='prepare' AND status IN ('queued','running')",[id])).rowCount){
-    const member=(await client.query('SELECT * FROM study_members WHERE lecture_id=$1 ORDER BY created_at LIMIT 1',[id])).rows[0];
+    const member=(await client.query('SELECT * FROM study_members WHERE lecture_id=$1 AND removed_at IS NULL ORDER BY created_at LIMIT 1',[id])).rows[0];
     if(member){
       await insertJob(client,member.owner_key,lecture,'prepare','recovery:'+randomUUID(),{source_key:lecture.source_key,enrollment_id:member.enrollment_id,title:member.title});
       await client.query("UPDATE study_lectures SET status='queued',stage='queued',error=NULL WHERE id=$1",[id]);
@@ -209,7 +242,7 @@ const claimJob = (workerId,preferPreparation = false) => db.transaction(async (c
   // A visibility lease prevents simultaneous claims. Reclaimed jobs get a new
   // fencing token so a late worker cannot publish over a newer result.
   const result = await client.query(
-    "SELECT j.* FROM study_jobs j WHERE ((j.status='queued' AND j.available_at<=NOW()) OR (j.status='running' AND j.lease_until<NOW())) AND j.attempts<3 AND EXISTS(SELECT 1 FROM study_members m WHERE m.owner_key=j.owner_key AND m.lecture_id=j.lecture_id) ORDER BY CASE WHEN j.kind='prepare' THEN $1 ELSE $2 END,j.created_at FOR UPDATE SKIP LOCKED LIMIT 1",
+    "SELECT j.* FROM study_jobs j WHERE ((j.status='queued' AND j.available_at<=NOW()) OR (j.status='running' AND j.lease_until<NOW())) AND j.attempts<3 AND EXISTS(SELECT 1 FROM study_members m WHERE m.owner_key=j.owner_key AND m.lecture_id=j.lecture_id AND m.removed_at IS NULL) ORDER BY CASE WHEN j.kind='prepare' THEN $1 ELSE $2 END,j.created_at FOR UPDATE SKIP LOCKED LIMIT 1",
     preferPreparation ? [0,1] : [1,0]);
   if (!result.rowCount) return null;
   const job = result.rows[0];
@@ -238,6 +271,15 @@ const checkpoint = (job,stage,values = {}) => db.transaction(async (client) => {
   if (job.kind === 'prepare') await client.query(
     "UPDATE study_lectures SET status='processing',stage=$2,provider_job_id=COALESCE($3,provider_job_id),transcript=COALESCE($4,transcript),raw_transcript=COALESCE($5,raw_transcript),updated_at=NOW() WHERE id=$1",
     [job.lecture_id,stage,values.provider_job_id || null,values.transcript || null,values.raw_transcript || null]);
+  // A real title replaces only the placeholder, never a name a member chose.
+  if (job.kind === 'prepare' && values.title) {
+    const lecture = (await client.query('SELECT source_key FROM study_lectures WHERE id=$1',[job.lecture_id])).rows[0];
+    const title = String(values.title).trim().slice(0,200), placeholder = placeholderTitle(lecture.source_key);
+    if (title) {
+      await client.query('UPDATE study_lectures SET title=$2 WHERE id=$1 AND title=$3',[job.lecture_id,title,placeholder]);
+      await client.query('UPDATE study_members SET title=NULL WHERE lecture_id=$1 AND title=$2',[job.lecture_id,placeholder]);
+    }
+  }
 });
 const preparationProgress = (job,progress) => db.transaction(async(client)=>{
   await owned(client,job.owner_key,job.lecture_id,true);
@@ -281,7 +323,7 @@ const complete = (job,result) => db.transaction(async (client) => {
     [job.id,job.lease_token,json(result)]);
 });
 const failJob = (job,message) => db.transaction(async (client) => {
-  if (!(await client.query('SELECT 1 FROM study_members WHERE owner_key=$1 AND lecture_id=$2',[job.owner_key,job.lecture_id])).rowCount) return;
+  if (!(await client.query('SELECT 1 FROM study_members WHERE owner_key=$1 AND lecture_id=$2 AND removed_at IS NULL',[job.owner_key,job.lecture_id])).rowCount) return;
   await owned(client,job.owner_key,job.lecture_id,true);
   const status = job.attempts >= 3 ? 'failed' : 'queued';
   const changed = await client.query(
@@ -302,5 +344,5 @@ const clearMessages = (user,id) => db.transaction(async(client)=>{
   await client.query('DELETE FROM study_messages WHERE owner_key=$1 AND lecture_id=$2',[owner,id]);
   await client.query("DELETE FROM study_jobs WHERE owner_key=$1 AND lecture_id=$2 AND kind='chat'",[owner,id]);
 });
-module.exports = { createLecture,preparationReplay,listLectures,getLecture,listAllLectures,getLectureContent,enqueue,getJob,messages,quizzes,getQuiz,submitAttempt,attempts,
+module.exports = { createLecture,preparationReplay,sourceAvailable,listLectures,getLecture,getTranscript,listAllLectures,getLectureContent,enqueue,getJob,messages,quizzes,getQuiz,submitAttempt,attempts,
   removeLecture,clearMessages,retry,claimJob,renewLease,workerContext,checkpoint,preparationProgress,complete,failJob,status };

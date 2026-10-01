@@ -11,6 +11,7 @@ const examiner=require('../oralExam/examiner');
 const study=require('../lectureStudy/store');
 const learning=require('../lectureStudy/database');
 const legacy=require('../db/appStore');
+const library=require('../lectureLibrary');
 const router=express.Router();
 const wrap=fn=>async(req,res)=>{try{await fn(req,res);}catch(error){
   const status=error.name==='ZodError'?400:error.statusCode||503;
@@ -21,14 +22,15 @@ router.use(authenticate);
 router.get('/status',(_req,res)=>res.json({enabled:configured(),max_duration_seconds:600}));
 router.use((_req,res,next)=>configured()?next():res.status(503).json({error:'Oral Exam is not enabled yet'}));
 router.get('/materials',wrap(async(req,res)=>{
-  const jobs=await legacy.listJobs(req.user);
+  // Lectures that finished while nobody was watching become available here too.
+  const jobs=await library.syncPending(await legacy.listJobs(req.user),{user:req.user});
   let lectures=[],libraryUnavailable=false;
   if(learning.enabled())try{
     lectures=await study.listLectures(req.user,0);
     if(req.query.lecture&&!lectures.some(l=>l.id===req.query.lecture))lectures.push(await study.getLecture(req.user,id.parse(req.query.lecture)));
   }catch{libraryUnavailable=true;}
   res.json({materials:[...lectures.filter(l=>l.status==='ready').map(l=>({kind:'lecture',id:l.id,title:l.title})),
-    ...jobs.filter(j=>j.status==='completed').map(j=>({kind:'transcript',id:j.job_id,title:j.title||j.request?.youtube_url||'Lecture transcript'}))],library_unavailable:libraryUnavailable});
+    ...jobs.filter(j=>j.status==='completed').map(j=>({kind:'transcript',id:j.job_id,title:j.title||j.youtube_url||j.request?.youtube_url||'Lecture transcript'}))],library_unavailable:libraryUnavailable});
 }));
 // Converts an uploaded study document to normalized text. Nothing is stored:
 // the student reviews the text, then creates a session from it like pasted notes.

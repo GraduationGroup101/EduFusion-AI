@@ -142,13 +142,13 @@ export default function OralExamPage(){
   const feedbackStatus=generating?'Generating feedback… this can take up to a minute.':feedback.state==='failed'?feedback.error:session?.evaluation_status==='failed'?feedbackError(session.evaluation_error):'Preparing your feedback…';
   // After an exam on a saved transcript, continue with that lecture's other tools.
   const transcriptId=session?.source?.kind==='transcript'?session.source.id:null;
-  const lectureLink=tool=>`/dashboard/youtube?job=${encodeURIComponent(transcriptId)}&tool=${tool}`;
+  const lectureLink=tool=>`/dashboard/lecturescribe?job=${encodeURIComponent(transcriptId)}&tool=${tool}`;
   const direction=session?.language==='ar'?'rtl':'auto';
   return <div className="oral-exam-page">
     <PageHeader title="Oral Exam" description="Turn what you’ve learned into a conversation."><span className="oral-duration"><Clock size={16}/>10 minutes maximum</span></PageHeader>
     {(error||voice.error)&&<div className="oral-notice" role="alert">{error||voice.error}</div>}
     {enabled===null&&!error&&<p role="status">Loading your exam workspace…</p>}
-    {enabled===false&&<section className="oral-panel"><h2>Oral Exam is being prepared</h2><p>Your other learning tools are available while voice examination is configured.</p><Link to="/dashboard/youtube">Open LectureScribe</Link></section>}
+    {enabled===false&&<section className="oral-panel"><h2>Oral Exam is being prepared</h2><p>Your other learning tools are available while voice examination is configured.</p><Link to="/dashboard/lecturescribe">Open LectureScribe</Link></section>}
     {enabled&&!session&&<>
       <section className="oral-panel oral-setup"><div><span className="oral-eyebrow">01 / YOUR MATERIAL</span><h2>What would you like to explore?</h2><p>Choose a completed lecture or bring your own notes. Questions will use only this material.</p>{warning&&<p role="status">{warning}</p>}
         <label>Saved lecture<select value={selected} onChange={e=>setSelected(e.target.value)}><option value="">Use my own text</option>{materials.map(m=><option key={`${m.kind}:${m.id}`} value={`${m.kind}:${m.id}`}>{m.title}</option>)}</select></label>

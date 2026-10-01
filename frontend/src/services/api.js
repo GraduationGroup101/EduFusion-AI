@@ -77,22 +77,29 @@ export const questionGeneratorService = {
 };
 
 export const lectureScribeService = {
-  health: () => api.get('/lecture-scribe/health'),
+  // Bounded wait: the page retries on its own while a sleeping service wakes up.
+  health: (options = {}) => api.get('/lecture-scribe/health', { timeout: 30000, ...options }),
+  // `language` is always sent, including 'auto', so the server never guesses it.
   createJob: ({ youtube_url, clean, language = 'auto' }) =>
     api.post('/lecture-scribe/jobs', {
       youtube_url,
       clean,
       skip_audio_cache: false,
       use_cached_outputs: true,
-      language,
+      language: language || 'auto',
     }),
-  listJobs: () => api.get('/lecture-scribe/jobs'),
+  listJobs: (options = {}) => api.get('/lecture-scribe/jobs', options),
   getJob: (jobId, options = {}) => api.get(`/lecture-scribe/jobs/${encodeURIComponent(jobId)}`, options),
-  getTranscript: (jobId, kind = 'cleaned') =>
+  // Text on success; an error body is still JSON text, which the page parses for its message.
+  getTranscript: (jobId, kind = 'cleaned', options = {}) =>
     api.get(`/lecture-scribe/jobs/${encodeURIComponent(jobId)}/transcript`, {
+      ...options,
       params: { kind },
       responseType: 'text',
     }),
+  // Admin only: every student save, newest first, with who saved it.
+  adminSaves: ({ q = '', limit = 20, offset = 0 } = {}, options = {}) =>
+    api.get('/lecture-scribe/admin/saves', { ...options, params: { ...(q ? { q } : {}), limit, offset } }),
 };
 
 // Keep the key after an uncertain result so a manual retry cannot tick twice.

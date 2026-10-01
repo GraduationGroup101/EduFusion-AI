@@ -81,7 +81,7 @@ before(async () => {
 after(async () => { if(server) await new Promise((resolve) => { server.close(resolve); server.closeAllConnections(); }); global.fetch=originalFetch;pool.query=originalQuery;pool.connect=originalConnect;await database.close();await pool.end(); });
 
 test('migrations are repeatable and new student PINs are hashes',async()=>{
-  assert.equal((await database.query('SELECT COUNT(*)::int AS n FROM edufusion_schema_migrations')).rows[0].n,10);
+  assert.equal((await database.query('SELECT COUNT(*)::int AS n FROM edufusion_schema_migrations')).rows[0].n,11);
   const student=(await database.query('SELECT * FROM students WHERE id_student=123')).rows[0];
   assert.notEqual(student.pin_hash,'abcd1234');assert.equal(await bcrypt.compare('abcd1234',student.pin_hash),true);
   const login=await request(server).post('/api/auth/login').send({username:'123',password:'abcd1234'});
@@ -387,13 +387,14 @@ test('LectureScribe stores creation entitlement and blocks arbitrary jobs and tr
   response=await request(server).get('/api/lecture-scribe/jobs/owned-job/transcript?kind=raw').set('Authorization',token);
   assert.equal(response.status,200);assert.equal(response.text,'private transcript');
   response=await request(server).get('/api/lecture-scribe/jobs').set('Authorization',`Bearer ${adminToken()}`);
+  // Administrators see saved lectures with their owners, never the provider's public job list.
   assert.equal(response.body.scope,'all');
-  assert.deepEqual(new Set(response.body.jobs.map(job=>job.job_id)),new Set(['owned-job','provider-only-job']));
+  assert.deepEqual(response.body.jobs.map(job=>job.job_id),['owned-job']);assert.equal(response.body.jobs[0].saved_by[0].id,123);
   response=await request(server).get('/api/lecture-scribe/jobs/provider-only-job/transcript?kind=raw').set('Authorization',`Bearer ${adminToken()}`);
   assert.equal(response.status,200);assert.equal(response.text,'private transcript');
   providerMode='fail';
   response=await request(server).get('/api/lecture-scribe/jobs').set('Authorization',`Bearer ${adminToken()}`);
-  assert.equal(response.status,200);assert.equal(response.body.jobs[0].job_id,'owned-job');assert.ok(response.body.warning);
+  assert.equal(response.status,200);assert.equal(response.body.jobs[0].job_id,'owned-job');
   providerMode='ok';
 });
 test('clock commands replay safely and keep success when only prediction regeneration fails',async()=>{

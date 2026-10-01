@@ -1,11 +1,25 @@
-import { useCallback, useEffect, useState } from 'react';
-import { BookOpen, ListChecks, MessageSquare, RefreshCw, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { BookOpen, ListChecks, MessageSquare, RefreshCw, Trash2, Users } from 'lucide-react';
 import LectureWorkspace from './LectureWorkspace';
 import AdminLectureViewer from './AdminLectureViewer';
+import { ownerName } from './AdminLectureSaves';
+import ConfirmDialog from '../ui/ConfirmDialog';
 import {useAuth} from '../../context/AuthContext';
 import { lectureStudyService as service } from '../../services/lectureStudy';
 import { studentService } from '../../services/api';
 const button='inline-flex items-center gap-2 border border-border px-3 py-2 text-sm hover:border-accent disabled:opacity-40';
+// New lectures go to the study queue only while a worker can prepare them; otherwise
+// the page transcribes directly (LectureScribe) and the library can import it later.
+const available=(status)=>Boolean(status?.enabled&&status?.worker_online);
+const memberName=(member)=>member.type==='student'&&member.name?`${member.name} (#${member.id})`:ownerName(member);
+/** "Saved by Amal (#800), Badr (#801) +3" for an administrator's lecture card.
+ *  Members who removed the lecture (`removed_at`) are kept by the API for the record
+ *  but are not counted or named as current savers. */
+export const savedBy=(lecture)=>{
+  const members=(lecture.members||[]).filter(member=>!member.removed_at),shown=members.slice(0,3).map(memberName);
+  const more=Math.max(0,(lecture.member_count??members.length)-shown.length);
+  return shown.length?'Saved by '+shown.join(', ')+(more?` +${more}`:''):more?`Saved by ${more} account${more===1?'':'s'}`:'Not in any library now';
+};
 
 export function LectureCourseSelect({enabled,value,onChange}) {
   const [courses,setCourses]=useState([]);
@@ -38,11 +52,13 @@ export default function LectureLibrary({focusLecture,onAvailabilityChange}) {
   const [opened,setOpened]=useState(null);
   const [error,setError]=useState('');
   const [busy,setBusy]=useState(false);
+  const [removing,setRemoving]=useState(null);
+  const [removeBusy,setRemoveBusy]=useState(false);
   const close=useCallback(() => setOpened(null),[]);
   const load=useCallback(async () => {
     setBusy(true);
     try {
-      const {data}=await service.status();setStatus(data);onAvailabilityChange?.(data.enabled);
+      const {data}=await service.status();setStatus(data);onAvailabilityChange?.(available(data));
       if (data.enabled) {const result=await (global?service.adminList(offset):service.list(offset));setLectures(result.data.lectures);}
       setError('');
     } catch(error) {setError(error.response?.data?.error||'Saved lecture tools are temporarily unavailable.');}
@@ -54,7 +70,7 @@ export default function LectureLibrary({focusLecture,onAvailabilityChange}) {
       try {
         const {data}=await service.status();
         if (!alive) return;
-        setStatus(data);onAvailabilityChange?.(data.enabled);
+        setStatus(data);onAvailabilityChange?.(available(data));
         if (data.enabled) {
           const response=await (global?service.adminList(offset):service.list(offset));
           if (alive) {setLectures(response.data.lectures);setError('');}
@@ -65,9 +81,24 @@ export default function LectureLibrary({focusLecture,onAvailabilityChange}) {
     const timer=setInterval(() => {if(!document.hidden&&alive)initialize();},15000);
     return () => {alive=false;clearInterval(timer);};
   },[offset,onAvailabilityChange,global]);
+  // A lecture the page asks to show is opened once: paging, changing scope or
+  // closing the drawer must not reopen it.
+  const loadLatest=useRef(load);
+  loadLatest.current=load;
+  const focused=useRef(null);
   useEffect(() => {
-    if (focusLecture?.id) {setOpened(focusLecture);if(global)setScope('mine');else load();}
-  },[focusLecture,load]);
+    if (!focusLecture?.id || focused.current===focusLecture) return;
+    focused.current=focusLecture;
+    setOpened(focusLecture);
+    if(global)setScope('mine');else loadLatest.current();
+  },[focusLecture,global]);
+  const remove=async () => {
+    if(!removing)return;
+    setRemoveBusy(true);
+    try {await service.remove(removing.id);setRemoving(null);if(opened?.id===removing.id)setOpened(null);await load();}
+    catch(error){setRemoving(null);setError(error.response?.data?.error||'Unable to remove lecture');}
+    finally{setRemoveBusy(false);}
+  };
   if(!error&&!status?.enabled)return null;
   return <section className="glass glow-border p-5 space-y-4" aria-label="Saved lecture library">
     <header className="flex items-center justify-between gap-3">
@@ -84,16 +115,15 @@ export default function LectureLibrary({focusLecture,onAvailabilityChange}) {
     {status?.storage_warning && <p role="status" className="text-sm text-amber-700">Learning storage is approaching its free capacity.</p>}
     {status?.enabled && !lectures.length && <p className="text-sm text-light-accent/60">Add a lecture using the form below, or save a completed transcript using its chat or questions button.</p>}
     <div className="grid md:grid-cols-2 gap-3">{lectures.map((lecture) => <article key={lecture.id} className="rounded-xl border border-border p-4">
-      <h3 className="font-semibold break-words">{lecture.title}</h3>
+      <h3 dir="auto" className="font-semibold break-words">{lecture.title}</h3>
       <p className="text-xs text-light-accent/60 mt-1">{lecture.status} · {lecture.stage}</p>
+      {global&&<p className="text-xs text-light-accent/70 mt-1 flex items-start gap-1.5"><Users size={13} className="mt-0.5 shrink-0" aria-hidden="true"/><span className="min-w-0 break-words">{savedBy(lecture)}</span></p>}
       <div className="flex flex-wrap gap-2 mt-3">
         {global?<button className={button} onClick={()=>setOpened({id:lecture.id,admin:true})}><BookOpen size={15}/>View transcript and summary</button>:<>
         <button className={button} onClick={() => setOpened({id:lecture.id,tab:'summary'})}><BookOpen size={15}/>Summary</button>
         <button className={button} onClick={() => setOpened({id:lecture.id,tab:'chat'})}><MessageSquare size={15}/>Ask this lecture</button>
         <button className={button} onClick={() => setOpened({id:lecture.id,tab:'quiz'})}><ListChecks size={15}/>Generate questions</button>
-        <button className={button} aria-label={'Remove '+lecture.title+' from library'} onClick={async () => {
-          try {await service.remove(lecture.id);await load();} catch(error){setError(error.response?.data?.error||'Unable to remove lecture');}
-        }}><Trash2 size={15}/></button>
+        <button className={button} aria-label={'Remove '+lecture.title+' from library'} onClick={() => setRemoving(lecture)}><Trash2 size={15}/></button>
         </>}
       </div>
     </article>)}</div>
@@ -102,5 +132,8 @@ export default function LectureLibrary({focusLecture,onAvailabilityChange}) {
       <button className={button} disabled={lectures.length<20} onClick={() => setOffset(offset+20)}>Next</button>
     </div>}
     {opened && (opened.admin?<AdminLectureViewer key={opened.id} lectureId={opened.id} onClose={close}/>:<LectureWorkspace key={opened.id} lectureId={opened.id} initialTab={opened.tab} onClose={close}/>)}
+    <ConfirmDialog open={Boolean(removing)} title="Remove this lecture from your library?" confirmLabel="Remove lecture" busy={removeBusy}
+      description={`"${removing?.title||''}" will leave your library, with your chat, practice questions and attempts for it. You can add the lecture again later.`}
+      onConfirm={remove} onCancel={() => setRemoving(null)}/>
   </section>;
 }

@@ -10,7 +10,7 @@ const learning = [
   { path: '/dashboard/oral-exam', icon: Mic, label: 'Oral Exam' },
   { path: '/dashboard/chatbot', icon: MessageSquare, label: 'Academic Chatbot' },
   { path: '/dashboard/question-gen', icon: FileQuestion, label: 'Quiz Generator' },
-  { path: '/dashboard/youtube', icon: Youtube, label: 'LectureScribe' },
+  { path: '/dashboard/lecturescribe', icon: Youtube, label: 'LectureScribe' },
 ];
 const insights = [
   { path: '/dashboard/admin/at-risk', icon: AlertTriangle, label: 'At-Risk Students' },

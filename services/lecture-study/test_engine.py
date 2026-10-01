@@ -115,6 +115,58 @@ class EngineTests(unittest.TestCase):
         self.assertIn("Persisted summary", result["summary"])
         self.assertIn("Last summary", result["summary"])
 
+    def test_arabic_lectures_are_summarized_in_arabic(self):
+        calls = []
+        def generator(instruction, data, _schema):
+            calls.append((instruction, data["language"]))
+            return {"title": "الشبكات", "summary": "الموجه يختار المسار.", "concepts": ["التوجيه"],
+                    "citations": [data["evidence"][0]["id"]]}
+        # 'auto' lectures take the language of their text, even when it opens with an English term.
+        chunks = [{"id": "c0001", "text": "TCP بروتوكول يضمن وصول الحزم بالترتيب الصحيح بين الأجهزة", "section": "s001"}]
+        result = Engine(generator).prepare({"chunks": chunks, "lecture": {"language": "auto"}})
+        self.assertEqual(calls[0][1], "ar")
+        self.assertIn("in Arabic", calls[0][0])
+        self.assertIn("الموجه", result["summary"])
+        calls.clear()
+        Engine(generator).prepare({"chunks": [{"id": "c0001", "text": "Routers forward packets", "section": "s001"}],
+                                   "lecture": {"language": "ar"}})
+        self.assertEqual(calls[0][1], "ar")
+
+    def test_an_english_summary_of_an_arabic_lecture_is_retried_then_rejected(self):
+        instructions = []
+        def generator(instruction, _data, _schema):
+            instructions.append(instruction)
+            return {"title": "Networks", "summary": "Routers choose paths.", "concepts": [], "citations": ["c0001"]}
+        chunks = [{"id": "c0001", "text": "الموجه يختار أفضل مسار بين الشبكات", "section": "s001"}]
+        with self.assertRaises(ValueError):
+            Engine(generator).prepare({"chunks": chunks, "lecture": {"language": "ar"}})
+        self.assertEqual(len(instructions), 2)
+        self.assertIn("ONLY in Arabic", instructions[1])
+        replies = iter([{"title": "Networks", "summary": "Routers.", "concepts": [], "citations": ["c0001"]},
+                        {"title": "الشبكات", "summary": "الموجهات.", "concepts": [], "citations": ["c0001"]}])
+        result = Engine(lambda *_: next(replies)).prepare({"chunks": chunks, "lecture": {"language": "ar"}})
+        self.assertEqual(result["sections"][0]["title"], "الشبكات")
+
+    def test_english_lectures_keep_english_summaries(self):
+        languages = []
+        def generator(instruction, data, _schema):
+            languages.append(data["language"])
+            self.assertIn("in English", instruction)
+            return {"title": "Routing", "summary": "Routers choose paths.", "concepts": ["Routing"], "citations": ["c0001"]}
+        Engine(generator).prepare({"chunks": [{"id": "c0001", "text": "Routers forward packets between networks", "section": "s001"}],
+                                   "lecture": {"language": "auto"}})
+        self.assertEqual(languages, ["en"])
+
+    def test_quiz_language_follows_the_main_script_of_an_auto_lecture(self):
+        def generator(instruction, data, _schema):
+            self.assertEqual(data["language"], "ar")
+            self.assertIn("in Arabic", instruction)
+            return {"questions": [{"type": "essay", "prompt": "اشرح البروتوكول", "choices": [], "answer": "يضمن الترتيب",
+                                   "explanation": "مدعوم", "concept": "TCP", "citations": ["c0001"], "rubric": ["الترتيب"]}]}
+        result = Engine(generator).quiz({"chunks": [{"id": "c0001", "text": "TCP بروتوكول يضمن وصول الحزم بالترتيب", "section": "s001"}],
+                                         "lecture": {"language": "auto"}, "payload": {"mcq": 0, "tf": 0, "essay": 1}})
+        self.assertEqual(len(result["questions"]), 1)
+
     def test_large_quiz_uses_bounded_batches_and_typed_answer_schemas(self):
         calls = []
         def generator(_instruction, data, output_schema):
