@@ -25,6 +25,10 @@ const providerSchema = contract => {
   return schema;
 };
 const decisionJsonSchema=providerSchema(decision);
+// Decode assessment independently: a malformed proposal must not trigger a
+// second assessment of an otherwise valid student answer.
+const assessmentDecision=decision.extend({next:z.unknown().nullable(),core_concepts:z.unknown().nullable().default(null),transition:z.unknown().nullable().default(null)});
+const nextDecision=z.object({next:question.nullable()}).strict();
 const evaluationJsonSchema=providerSchema(evaluation);
 const commentaryJsonSchema=providerSchema(commentary);
 const id = z.string().uuid();
@@ -35,4 +39,4 @@ const createInput = z.object({ language:z.enum(['en','ar']).default('en'), sourc
 ]) }).strict();
 const weightedScore = (value) => Math.round(value.understanding*.35+value.accuracy*.35+value.completeness*.2+value.communication*.1);
 const fail = (statusCode,message) => { throw Object.assign(new Error(message),{statusCode}); };
-module.exports = { assessment,question,intent,decision,evaluation,commentary,commentaryJsonSchema,decisionJsonSchema,evaluationJsonSchema,providerSchema,id,createInput,weightedScore,fail };
+module.exports = { assessment,question,intent,decision,assessmentDecision,nextDecision,evaluation,commentary,commentaryJsonSchema,decisionJsonSchema,evaluationJsonSchema,providerSchema,id,createInput,weightedScore,fail };

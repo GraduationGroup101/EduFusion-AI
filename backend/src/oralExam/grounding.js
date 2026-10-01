@@ -17,6 +17,8 @@ const groundedAssessment=z.object({grounding:z.object({citations:z.array(z.strin
 const groundedQuestion=question.extend({criterion_ids:z.array(z.string().min(1).max(100)).min(1).max(5)});
 const {decision}=require('./contracts');
 const groundedDecision=decision.extend({assessment:groundedAssessment.nullable(),next:groundedQuestion.nullable()});
+const assessmentDecision=groundedDecision.extend({next:z.unknown().nullable(),core_concepts:z.unknown().nullable().default(null),transition:z.unknown().nullable().default(null)});
+const nextDecision=z.object({next:groundedQuestion.nullable()}).strict();
 const groundedCommentary=z.object({summary:z.enum(['completed','practice','limited']),strength_ids:z.array(z.number().int().min(0)).max(8),improvement_ids:z.array(z.number().int().min(0)).max(8)}).strict();
 const enabled=s=>s.context?.grounding_version===1;
 function validatePlan(plan,evidence,max){if(!Array.isArray(plan)||!plan.length||plan.length>max)reject('invalid_core_plan');for(const c of plan){if(!c.citations?.length||c.citations.some(id=>!evidence.some(e=>e.id===id)))reject('invalid_core_plan');lexical(c.name,catalog(evidence.filter(e=>c.citations.includes(e.id))));}return plan;}
@@ -58,4 +60,4 @@ function finalCommentary(value,core,language){
   const summaries=language==='ar'?{completed:'أكملت التقييم. يعرض هذا التقرير النقاط التي تم اختبارها من مادتك فقط.',practice:'استخدم النقاط المدعومة بالمادة أدناه لمواصلة التدريب.',limited:'يعتمد التقرير على الإجابات المكتملة والمقيّمة فقط.'}:{completed:'You completed the assessment. This report covers only the source points tested.',practice:'Use the source-supported points below to continue practising.',limited:'This report uses completed, assessed answers only.'};
   return {summary:summaries[value.summary],strengths:value.strength_ids.map(i=>core.strengths[i]),areasForImprovement:value.improvement_ids.map(i=>core.areasForImprovement[i])};
 }
-module.exports={enabled,validatePlan,catalog,lexical,evidenceFor,rubric,assess,storedAssessment,storedRubric,finalCommentary,groundedDecision,groundedCommentary,decisionSchema:providerSchema(groundedDecision),commentarySchema:providerSchema(groundedCommentary)};
+module.exports={enabled,validatePlan,catalog,lexical,evidenceFor,rubric,assess,storedAssessment,storedRubric,finalCommentary,groundedDecision,assessmentDecision,nextDecision,nextSchema:providerSchema(nextDecision),groundedCommentary,decisionSchema:providerSchema(groundedDecision),commentarySchema:providerSchema(groundedCommentary)};

@@ -85,6 +85,20 @@ async function recordAnswer(id,token,sequence,transcript) {
 // the current question. It is appended to that turn and never creates a turn,
 // a transcript or an assessment. A transcript recorded provisionally before
 // the intent was known is cleared so it cannot be scored later.
+// Commit a validated assessment before next-question recovery. An assessed
+// last turn in an active session is the durable recovery state.
+async function saveAssessment(id,token,sequence,transcript,assessment) {
+  return db.transaction(async client=>{
+    const session=(await client.query(`SELECT * FROM ${TABLE} WHERE id=$1 AND lease_token=$2 AND status='active' AND expires_at>clock_timestamp() AND lease_until>clock_timestamp() FOR UPDATE`,[id,token])).rows[0];
+    if(!session)fail(409,'Exam connection expired');
+    const turns=(await client.query(`SELECT * FROM ${TURNS} WHERE session_id=$1 ORDER BY sequence`,[id])).rows,last=turns.at(-1);
+    if(!last||last.sequence!==sequence||last.transcript!==null&&last.transcript!==transcript)fail(409,'The exam has already advanced');
+    if(last.assessment){if(!isDeepStrictEqual(last.assessment,assessment))fail(409,'This assessment is already saved');return;}
+    if(grounding.enabled(session))grounding.storedAssessment(assessment,last,session.context.chunks.filter(c=>last.citations.includes(c.id)),transcript,session.language);
+    if(!assessment)fail(409,'An answer must be assessed before it is saved');
+    await client.query(`UPDATE ${TURNS} SET transcript=$2,assessment=$3,answered_at=COALESCE(answered_at,clock_timestamp()) WHERE id=$1`,[last.id,transcript,assessment]);
+  });
+}
 async function recordExchange(id,token,sequence,exchange) {
   return db.transaction(async client=>{
     const valid=await client.query(`SELECT id FROM ${TABLE} WHERE id=$1 AND lease_token=$2 AND status='active' AND expires_at>clock_timestamp() AND lease_until>clock_timestamp() FOR UPDATE`,[id,token]);
@@ -108,7 +122,7 @@ async function commit(id,token,expectedSequence,transcript,decision) {
       const currentEvidence=session.context.chunks.filter(c=>last?.citations.includes(c.id));
       if(last&&transcript!==null)grounding.storedAssessment(decision.assessment,last,currentEvidence,transcript,session.language);
       if(decision.next){grounding.storedRubric(decision.next,session.context.chunks);
-        if(decision.next.question_type==='follow_up')grounding.rubric({...decision.next,criterion_ids:decision.next.grading_criteria.map(c=>c.id)},session.context.chunks,last,decision.assessment);}
+        if(decision.next.question_type==='follow_up')grounding.rubric({...decision.next,criterion_ids:decision.next.grading_criteria.map(c=>c.id)},session.context.chunks,last,decision.assessment||last?.assessment);}
     }
     if(last && transcript!==null) {
       // An answer is only committed with its assessment; a control decision
@@ -116,16 +130,19 @@ async function commit(id,token,expectedSequence,transcript,decision) {
       if(!decision.assessment||(decision.intent&&decision.intent!=='answer')) fail(409,'An answer must be assessed before it is saved');
       if(last.assessment||(last.transcript!==null&&last.transcript!==transcript)) fail(409,'This answer is already saved');
       await client.query(`UPDATE ${TURNS} SET transcript=$2,assessment=$3,answered_at=COALESCE(answered_at,clock_timestamp()) WHERE id=$1`,[last.id,transcript,decision.assessment]);
-    } else if(last) fail(409,'Answer the current question first');
+    } else if(last&&!last.assessment) fail(409,'Answer the current question first');
+    else if(last&&decision.assessment)fail(409,'This assessment is already saved');
     if(!turns.length&&decision.core_concepts?.length){
       session.context={...session.context,core_plan:decision.core_concepts};
       await client.query(`UPDATE ${TABLE} SET context=$2 WHERE id=$1`,[id,session.context]);
     }
     const q=classifyNext({...session,turns},decision.next,(new Date(session.expires_at)-new Date(session.server_now))/1000);
+    if(grounding.enabled(session)&&transcript===null&&last&&decision.next&&turns.some(t=>t.question===decision.next.question))fail(409,'This question is already saved');
+    if(transcript===null&&last&&decision.next&&!q&&(new Date(session.expires_at)-new Date(session.server_now))>60000)fail(409,'Invalid next question');
     if(q) {
       await client.query(`INSERT INTO ${TURNS}(id,session_id,sequence,question,concept,question_type,difficulty,citations,follow_up_reason,category,concept_key,parent_sequence,transition,grading_criteria) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
         [randomUUID(),id,expectedSequence+1,q.question,q.concept,q.question_type,q.difficulty,JSON.stringify(q.citations),q.follow_up_reason,q.category,q.concept_key,q.parent_sequence,decision.transition||null,q.grading_criteria?JSON.stringify(q.grading_criteria):null]);
-    } else if(transcript!==null) {
+    } else if(transcript!==null||last?.assessment) {
       await client.query(`UPDATE ${TABLE} SET status='completed',ended_at=LEAST(clock_timestamp(),expires_at),termination_reason='exam_completed',lease_token=NULL,lease_until=NULL,lease_client_id=NULL,lease_client_attempt=NULL,updated_at=clock_timestamp() WHERE id=$1`,[id]);
     }
   });
@@ -177,4 +194,4 @@ function publicView(row) {
     turns:(historical?row.turns||[]:classified(row.turns||[])).map(({id,sequence,question,concept,transcript,assessment,exchanges,category,concept_key,parent_sequence,transition})=>({id,sequence,question,concept,transcript,category,concept_key,parent_sequence,transition,feedback:terminal?assessment?.feedback:undefined,
       exchanges:(exchanges||[]).map(({kind,transcript,reply,at})=>({kind,transcript,reply,at}))}))||[]};
 }
-module.exports={create,get,list,start,claim,renew,release,recordAnswer,recordExchange,commit,finish,expire,saveEvaluation,evaluationFailed,publicView,ensureCore,claimFeedback,completeFeedback,interruption,pendingEvaluations};
+module.exports={create,get,list,start,claim,renew,release,recordAnswer,saveAssessment,recordExchange,commit,finish,expire,saveEvaluation,evaluationFailed,publicView,ensureCore,claimFeedback,completeFeedback,interruption,pendingEvaluations};

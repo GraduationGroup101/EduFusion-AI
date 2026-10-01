@@ -1,4 +1,4 @@
-const { decision,commentary,decisionJsonSchema,commentaryJsonSchema } = require('./contracts');
+const { decision,assessmentDecision,nextDecision,providerSchema,commentary,decisionJsonSchema,commentaryJsonSchema } = require('./contracts');
 const store=require('./store');
 const conversation=require('./conversation');
 const progression=require('./progression');
@@ -51,8 +51,8 @@ function active(signal,expiresAt) {
   if(signal?.aborted)throw signal.reason||new DOMException('Aborted','AbortError');
   if(expiresAt&&Date.now()>=new Date(expiresAt).getTime())throw new DOMException('Exam expired','AbortError');
 }
-async function jsonModel(messages,{operation,schemaName,schema,contract,signal,expiresAt,validate}) {
-  for(let attempt=1;attempt<=2;attempt++) {
+async function jsonModel(messages,{operation,schemaName,schema,contract,signal,expiresAt,validate,maxAttempts=2}) {
+  for(let attempt=1;attempt<=maxAttempts;attempt++) {
     active(signal,expiresAt);
     try {
       const remaining=expiresAt?new Date(expiresAt).getTime()-Date.now():25000;
@@ -80,7 +80,7 @@ async function jsonModel(messages,{operation,schemaName,schema,contract,signal,e
       const recoverable=error?.name==='ZodError'||error instanceof SyntaxError||error?.name==='ModelValidationError'||
         error instanceof ProviderError&&([408,429].includes(error.status)||error.status>=500||error.status===400&&error.code==='json_validate_failed')||
         error?.name==='TimeoutError'||error instanceof TypeError;
-      if(attempt===2||!recoverable||signal?.aborted||expiresAt&&Date.now()>=new Date(expiresAt).getTime())throw error;
+      if(attempt===maxAttempts||!recoverable||signal?.aborted||expiresAt&&Date.now()>=new Date(expiresAt).getTime())throw error;
       const waitMs=error.retryAfterMs||150;
       if(expiresAt&&Date.now()+waitMs>=new Date(expiresAt).getTime())throw error;
       // Honor provider throttling without changing the authoritative exam time.
@@ -120,6 +120,18 @@ function checkControl(value,evidence,expected,question='') {
   if(value.reply&&conversation.leaks(value.reply,evidence,question))throw new ModelValidationError('reply_reveals_evidence');
   return value;
 }
+function validateNext(session,proposal,evidence,assessment,remaining) {
+  let next=proposal===null?null:(grounding.enabled(session)?grounding.nextDecision:nextDecision).parse({next:proposal}).next;
+  if(grounding.enabled(session)&&next)next=grounding.rubric(next,evidence,session.turns.at(-1),assessment);
+  if(next?.citations.some(id=>!evidence.some(c=>c.id===id)))throw new ModelValidationError('ungrounded_citation');
+  if(session.turns.some(t=>t.question===next?.question))throw new ModelValidationError('repeated_question');
+  const classified=progression.classifyNext(session,next,remaining);
+  const permitted=progression.allowed(session,remaining);
+  if(remaining<=15||session.turns.length>=30)return null;
+  if(next&&!classified)throw new ModelValidationError('invalid_progression');
+  if(!next&&(permitted.core||permitted.bonus))throw new ModelValidationError('missing_next_question');
+  return classified?next:null;
+}
 // forceAnswer: the student has used up the repeat/clarify/nudge allowance for
 // this question, so the response must be assessed as their answer. A control
 // decision is rejected here and never reaches the store.
@@ -144,7 +156,7 @@ async function next(session,transcript,signal,{forceAnswer=false}={}) {
     ...(grounded?{assessment_evidence:assessmentEvidence,question_generation_evidence:evidence,source_criteria:grounding.catalog(evidence)}:{evidence}),core_plan:session.context.core_plan||null,required_concepts:rules.required_concepts,allowed_question_types:permitted,recent_transitions:session.turns.slice(-3).map(t=>t.transition).filter(Boolean),covered:session.turns.map(t=>t.concept),consecutive_follow_ups:consecutiveFollowUps(session),
     current_question:current?{question:current.question,concept:current.concept,exchanges_so_far:publicExchanges(current),...(grounded?{grading_criteria:current.grading_criteria}: {})}:null,
     history:session.turns.slice(-8).map(t=>({question:t.question,answer:t.transcript,assessment:t.assessment})),student_response:transcript})}],
-  {operation:'next_question',schemaName:'oral_exam_decision',schema:grounded?grounding.decisionSchema:decisionJsonSchema,contract:grounded?grounding.groundedDecision:decision,signal,expiresAt:session.expires_at,validate:value=>{
+  {operation:'next_question',schemaName:'oral_exam_decision',schema:grounded?grounding.decisionSchema:decisionJsonSchema,contract:transcript===null?(grounded?grounding.groundedDecision:decision):(grounded?grounding.assessmentDecision:assessmentDecision),signal,expiresAt:session.expires_at,validate:value=>{
     if(transcript===null) {
       if(value.intent!=='answer'||value.assessment!==null||!value.next)throw new ModelValidationError('invalid_initial_decision');
       if(value.core_concepts){
@@ -159,17 +171,65 @@ async function next(session,transcript,signal,{forceAnswer=false}={}) {
       return checkControl(value,evidence,undefined,current?.question);
     } else if(!value.assessment)throw new ModelValidationError('missing_assessment');
     if(grounded&&value.assessment)value.assessment=grounding.assess(value.assessment,current,assessmentEvidence,transcript,session.language);
-    if(grounded&&value.next)value.next=grounding.rubric(value.next,evidence,current,value.assessment);
-    if(!session.turns.length&&!value.next)throw new ModelValidationError('missing_initial_question');
-    if(value.next?.citations.some(id=>!evidence.some(c=>c.id===id)))throw new ModelValidationError('ungrounded_citation');
-    if(session.turns.some(t=>t.question===value.next?.question))throw new ModelValidationError('repeated_question');
     // Fail closed for unsafe acknowledgements without losing a valid assessment.
-    if(value.transition&&!conversation.safeTransition(value.transition,evidence,current?.question||'',session.language))value.transition=null;
-    const classified=progression.classifyNext(session,value.next,remaining);
-    if(value.next&&!classified&&remaining>60&&session.turns.length<30)throw new ModelValidationError('invalid_progression');
-    if((remaining<=15||session.turns.length>=30||!classified)&&transcript!==null)value.next=null;
+    if(typeof value.transition!=='string'||value.transition.length>240||!conversation.safeTransition(value.transition,evidence,current?.question||'',session.language))value.transition=null;
+    try {value.next=validateNext(session,value.next,evidence,value.assessment,remaining);}
+    catch(error){
+      if(transcript===null)throw error;
+      // The validated assessment is authoritative. Do not ask the provider to
+      // assess this answer again just because its next proposal was rejected.
+      console.error('Oral exam next proposal rejected:',diagnostic('next_proposal',error,0));
+      value.next_error=error?.name==='ModelValidationError'?safeCode(error.code):'invalid_next_question';
+      value.recovery_type=value.next?.question_type==='follow_up'?'follow_up':'advance';
+      value.next=null;
+    }
+    if(transcript!==null)value.core_concepts=null;
     return value;
   }});
+}
+// Called only after the assessment has been committed. At most one next-only
+// regeneration and one core/bonus fallback are attempted; neither can regrade.
+async function recoverNext(session,signal,{followUp=true}={}) {
+  const current=session.turns.at(-1),assessment=current?.assessment;
+  if(!assessment)throw new ModelValidationError('missing_saved_assessment');
+  for(let attempt=0;attempt<2;attempt++){
+    active(signal,session.expires_at);
+    const remaining=progression.remaining(session),permitted=progression.allowed(session,remaining);
+    if(remaining<=15||session.turns.length>=30)return null;
+    const missing=grounding.enabled(session)?current.grading_criteria.filter(c=>assessment.grounding.criteria.some(v=>v.criterion_id===c.id&&v.level!=='met')):[];
+    const tryFollow=attempt===0&&followUp&&permitted.follow_up&&(!grounding.enabled(session)||missing.length>0);
+    const uncovered=(session.context.core_plan||[]).filter(c=>!permitted.covered.includes(conceptKey(c.name)));
+    const target=tryFollow?null:permitted.core?uncovered[0]:null;
+    if(!tryFollow&&!target&&!permitted.bonus)return null;
+    const cited=new Set(tryFollow?current.citations:target?.citations||[]);
+    const evidence=cited.size?session.context.chunks.filter(c=>cited.has(c.id)):evidenceFor(session,current.transcript);
+    const sourceCriteria=tryFollow?missing:grounding.catalog(evidence);
+    const grounded=grounding.enabled(session),type=tryFollow?'follow_up':target?'next_topic':'bonus';
+    try {
+      const result=await jsonModel([{role:'system',content:SYSTEM},{role:'user',content:JSON.stringify({
+        task:'Generate ONLY the next question. The saved assessment is final; do not reassess the answer. Select only supplied criterion IDs and cite their chunks. Question academic terms must occur in selected criteria; use simple question scaffolding. Do not quote source points as the answer. Return a question of the exact requested type and concept, or null if impossible.',
+        language:session.language,question_type:type,concept:tryFollow?current.concept:target?.name||null,
+        ...(grounded?{question_generation_evidence:evidence,source_criteria:sourceCriteria}:{evidence}),
+        current_question:current.question,saved_assessment:assessment,previous_questions:session.turns.map(t=>t.question),remaining_seconds:remaining,
+      })}],{operation:'next_recovery',schemaName:'oral_exam_next',schema:grounded?grounding.nextSchema:providerSchema(nextDecision),contract:grounded?grounding.nextDecision:nextDecision,signal,expiresAt:session.expires_at,maxAttempts:1,
+        validate:value=>{
+          if(!value.next||value.next.question_type!==type||target&&conceptKey(value.next.concept)!==conceptKey(target.name))throw new ModelValidationError('invalid_recovery_target');
+          return validateNext(session,value.next,evidence,assessment,progression.remaining(session));
+        }});
+      return result;
+    }catch(error){
+      if(signal?.aborted)throw error;
+      console.error('Oral exam next recovery failed:',diagnostic('next_recovery',error,attempt+1));
+      if(new Date(session.expires_at)<=new Date())return null;
+      // Honor throttling once before the distinct fallback, within the timer.
+      if(error instanceof ProviderError&&error.status===429&&attempt===0){
+        const waitMs=error.retryAfterMs;
+        if(waitMs>60000||progression.remaining(session)*1000<=waitMs+15000)return null;
+        await delay(waitMs,undefined,{signal});
+      }
+    }
+  }
+  return null;
 }
 // Produces the spoken reply for a clarification or a "don't know" nudge about
 // the current question. Only that question's evidence is supplied, and the
@@ -219,4 +279,4 @@ async function evaluate(user,id) {
   evaluations.set(id,work);
   try {return await work;} finally {evaluations.delete(id);}
 }
-module.exports={SYSTEM,next,reply,evaluate,evidenceFor,jsonModel,diagnostic,failureCode};
+module.exports={SYSTEM,next,recoverNext,reply,evaluate,evidenceFor,jsonModel,diagnostic,failureCode};

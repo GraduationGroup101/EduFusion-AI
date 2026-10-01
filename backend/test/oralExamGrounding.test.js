@@ -108,3 +108,80 @@ test('private rubric is persisted, absent from public payloads, and ungrounded w
 test('source topic label may name its cited chunk while the question and rubric remain restricted to the selected source sentence',()=>{
  const loss=criteria[1];const q=proposal({question:'How does packet loss affect media quality?',concept:'UDP',criterion_ids:[loss.id]});assert.deepEqual(g.rubric(q,evidence).grading_criteria,[loss]);assert.throws(()=>g.rubric({...q,concept:'forward error correction'},evidence),{code:'unsupported_question_term'});assert.throws(()=>g.rubric({...q,question:'How does forward error correction affect media quality?'},evidence),{code:'unsupported_question_term'});
 });
+const dnsProposal=()=>proposal({question:'What does DNS translate?',concept:'DNS',question_type:'next_topic',citations:['text-2'],criterion_ids:[dns.id]});
+const unsupportedFollow=()=>proposal({question:'Explain forward error correction.',question_type:'follow_up'});
+async function savedAnswer(level='partial'){
+  const row=await store.create(user,material,'en',randomUUID());await store.start(user,row.id);const lease=await store.claim(user,row.id);
+  await store.commit(row.id,lease.token,0,null,{assessment:null,next:g.rubric(proposal(),evidence),core_concepts:[{name:'UDP',citations:['text-1']},{name:'DNS',citations:['text-2']}]});
+  const s=await store.get(user,row.id),text=level==='met'?'UDP does not guarantee delivery.':'UDP.';
+  const a=g.assess(rawAssessment(level,text),s.turns[0],g.evidenceFor(s),text,'en');
+  await store.recordAnswer(row.id,lease.token,1,text);await store.saveAssessment(row.id,lease.token,1,text,a);
+  return {row,lease,text,a,s:await store.get(user,row.id)};
+}
+test('invalid next shape, rubric, duplicate and progression reject only next, without reassessment',async()=>{
+  for(const next of [unsupportedFollow(),{invalid:true},proposal({criterion_ids:['invented']}),proposal(),dnsProposal()]){
+    const s=session();if(next.concept==='DNS')s.context.core_plan=[{name:'UDP',citations:['text-1']}];
+    let calls=0;global.fetch=async()=>{calls++;return response(value(rawAssessment(),next));};
+    const result=await examiner.next(s,'UDP does not guarantee delivery.');assert.equal(calls,1);assert.equal(result.assessment.completeness,100);assert.equal(result.next,null);assert.ok(result.next_error);
+  }
+});
+test('valid assessment is saved before rejected follow-up recovery and one recovery persists a grounded follow-up unchanged',async()=>{
+  const p=await savedAnswer();let calls=0;
+  global.fetch=async(_url,options)=>{calls++;const input=JSON.parse(JSON.parse(options.body).messages[1].content);assert.equal(input.question_type,'follow_up');assert.deepEqual(input.source_criteria,[udp]);assert.equal((await store.get(user,p.row.id)).turns[0].assessment.completeness,60);return response({next:proposal({question:'Explain UDP delivery.',question_type:'follow_up'})});};
+  const next=await examiner.recoverNext(p.s);assert.equal(calls,1);await store.commit(p.row.id,p.lease.token,1,null,{assessment:null,next});
+  const after=await store.get(user,p.row.id);assert.deepEqual(after.turns[0].assessment,p.a);assert.equal(after.turns[1].category,'follow_up');assert.equal(after.turns[1].parent_sequence,1);assert.equal(+after.expires_at,+p.s.expires_at);await store.finish(user,p.row.id);
+});
+test('failed follow-up recovery advances to the next uncovered core without reassessing or extending time',async()=>{
+  const p=await savedAnswer();let calls=0;
+  global.fetch=async(_url,options)=>{const input=JSON.parse(JSON.parse(options.body).messages[1].content);assert.equal(input.question_type,calls?'next_topic':'follow_up');return response({next:++calls===1?unsupportedFollow():dnsProposal()});};
+  const next=await examiner.recoverNext(p.s);assert.equal(calls,2);await store.commit(p.row.id,p.lease.token,1,null,{assessment:null,next});
+  const after=await store.get(user,p.row.id);assert.deepEqual(after.turns[0].assessment,p.a);assert.equal(after.turns[1].concept,'DNS');assert.equal(+after.expires_at,+p.s.expires_at);await store.finish(user,p.row.id);
+});
+test('two unsafe next proposals close safely with the authoritative assessment saved and no invented turn',async()=>{
+  const p=await savedAnswer();let calls=0;global.fetch=async()=>{calls++;return response({next:unsupportedFollow()});};
+  const next=await examiner.recoverNext(p.s);assert.equal(calls,2);assert.equal(next,null);await store.commit(p.row.id,p.lease.token,1,null,{assessment:null,next});
+  const after=await store.ensureCore(user,p.row.id);assert.equal(after.status,'completed');assert.equal(after.turns.length,1);assert.deepEqual(after.turns[0].assessment,p.a);assert.equal(after.core_evaluation.assessed_answers,1);assert.equal(+after.expires_at,+p.s.expires_at);
+});
+test('last fifteen seconds close without a recovery call and preserve the assessed answer',async()=>{
+  const p=await savedAnswer();let calls=0;global.fetch=async()=>{calls++;throw Error('Unexpected model call');};
+  assert.equal(await examiner.recoverNext({...p.s,expires_at:new Date(Date.now()+14000)}),null);assert.equal(calls,0);await store.commit(p.row.id,p.lease.token,1,null,{assessment:null,next:null});assert.deepEqual((await store.get(user,p.row.id)).turns[0].assessment,p.a);
+});
+test('an authoritative grade cannot be overwritten, duplicated or appended by a fenced recovery owner',async()=>{
+  const p=await savedAnswer(),key=randomUUID();await store.release(p.row.id,p.lease.token);const owner=await store.claim(user,p.row.id,key,1);
+  await store.saveAssessment(p.row.id,owner.token,1,p.text,p.a);
+  await assert.rejects(()=>store.saveAssessment(p.row.id,owner.token,1,p.text,{...p.a,completeness:0}),{statusCode:409});
+  const next=g.rubric(dnsProposal(),evidence);
+  await assert.rejects(()=>store.commit(p.row.id,p.lease.token,1,null,{assessment:null,next}),{statusCode:409});
+  await store.commit(p.row.id,owner.token,1,null,{assessment:null,next});await assert.rejects(()=>store.commit(p.row.id,owner.token,1,null,{assessment:null,next}),{statusCode:409});
+  const after=await store.get(user,p.row.id);assert.equal(after.turns.length,2);assert.deepEqual(after.turns[0].assessment,p.a);await store.finish(user,p.row.id);
+});
+test('recovery offers a source-grounded bonus only after all planned core concepts',async()=>{
+  const p=await savedAnswer('met');await database.query("UPDATE edufusion_oral_exam_sessions SET context=jsonb_set(context,'{core_plan}',$2::jsonb) WHERE id=$1",[p.row.id,JSON.stringify([{name:'UDP',citations:['text-1']}])]);
+  const s=await store.get(user,p.row.id);let calls=0;global.fetch=async(_url,options)=>{calls++;const input=JSON.parse(JSON.parse(options.body).messages[1].content);assert.equal(input.question_type,'bonus');return response({next:proposal({question:'Why would you choose UDP?',question_type:'bonus'})});};
+  const next=await examiner.recoverNext(s);assert.equal(calls,1);await store.commit(p.row.id,p.lease.token,1,null,{assessment:null,next});assert.equal((await store.get(user,p.row.id)).turns[1].category,'bonus');await store.finish(user,p.row.id);
+});
+test('reconnect during next recovery preserves the committed grade and fences the old proposal without duplicate turns',async()=>{
+  process.env.ORAL_EXAM_ENABLED='true';for(const k of ['GROQ_API_KEY','ELEVENLABS_API_KEY','ELEVENLABS_EN_VOICE_ID','ELEVENLABS_AR_VOICE_ID'])process.env[k]='fixture-only';
+  const {once}=require('node:events'),WebSocket=require('ws');
+  const row=await store.create(user,material,'en',randomUUID());await store.start(user,row.id);const initial=await store.claim(user,row.id);
+  await store.commit(row.id,initial.token,0,null,{assessment:null,next:g.rubric(proposal(),evidence),core_concepts:[{name:'UDP',citations:['text-1']},{name:'DNS',citations:['text-2']}]});await store.release(row.id,initial.token);
+  let onFinal,assessmentCalls=0,recoveryCalls=0,releaseOld;
+  global.fetch=async(_url,options)=>{
+    const input=JSON.parse(JSON.parse(options.body).messages[1].content);
+    if(Object.hasOwn(input,'student_response')){assessmentCalls++;return response(value(rawAssessment('partial','UDP.'),unsupportedFollow()));}
+    recoveryCalls++;
+    if(recoveryCalls===1)return new Promise(resolve=>{releaseOld=()=>resolve(response({next:proposal({question:'Explain UDP delivery.',question_type:'follow_up'})}));});
+    return response({next:proposal({question:'Describe UDP delivery.',question_type:'follow_up'})});
+  };
+  const server=require('node:http').createServer();server.listen(0,'127.0.0.1');await once(server,'listening');
+  const runtime=require('../src/oralExam/realtime').attachRealtime(server,{authenticate:async()=>({user,expires:Date.now()+600000}),examiner:{...examiner,evaluate:async()=>{}},voice:{speak:async()=>Buffer.from('ID3fixture'),transcriber:options=>{onFinal=options.onFinal;return {opened:Promise.resolve(),send:()=>true,close(){}};}}});
+  const clients=[],key=randomUUID();
+  const connect=async attempt=>{const ws=new WebSocket(`ws://127.0.0.1:${server.address().port}/api/oral-exam/realtime`,{origin:'http://localhost:3000'}),events=[];clients.push(ws);ws.on('message',raw=>events.push(JSON.parse(raw)));await once(ws,'open');ws.send(JSON.stringify({type:'hello',token:'fixture',sessionId:row.id,connectionKey:key,connectionAttempt:attempt}));return {ws,events};};
+  const until=async fn=>{const end=Date.now()+5000;while(Date.now()<end){if(await fn())return;await new Promise(r=>setTimeout(r,10));}throw Error('Recovery assertion timed out');};
+  try{
+    const first=await connect(1);await until(()=>first.events.some(e=>e.type==='audio'));first.ws.send(JSON.stringify({type:'played',sequence:1}));await until(()=>first.events.some(e=>e.state==='listening'));onFinal('UDP.');await until(()=>recoveryCalls===1);
+    const saved=await store.get(user,row.id);assert.equal(saved.turns[0].assessment.completeness,60);assert.equal(saved.turns.length,1);
+    const second=await connect(2);await until(()=>second.events.some(e=>e.type==='question'&&e.sequence===2));releaseOld();await new Promise(r=>setTimeout(r,30));
+    const after=await store.get(user,row.id);assert.equal(assessmentCalls,1);assert.equal(recoveryCalls,2);assert.deepEqual(after.turns[0].assessment,saved.turns[0].assessment);assert.equal(after.turns.length,2);assert.equal(after.turns[1].question,'Describe UDP delivery.');assert.equal(+after.expires_at,+saved.expires_at);assert.ok(!second.events.find(e=>e.type==='question').transition);assert.ok(!first.events.some(e=>e.type==='error'));assert.ok(!second.events.some(e=>e.type==='error'));
+  }finally{releaseOld?.();for(const c of clients)c.terminate();runtime.close();await new Promise(r=>server.close(r));await store.finish(user,row.id);}
+});

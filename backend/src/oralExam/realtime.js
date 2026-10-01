@@ -169,11 +169,38 @@ function attachRealtime(server,dependencies={}) {
           if(abort.signal.aborted||closed)return;
         }
         if(transcript!==null&&(decision.intent&&decision.intent!=='answer'||!decision.assessment))throw new Error('Answer was not assessed');
-        await store.commit(session.id,token,turn?.sequence||0,transcript,decision);
+        if(transcript!==null&&typeof model.recoverNext==='function') {
+          // Commit the authoritative grade first. A disconnect during recovery
+          // resumes from this row, never from another assessment request.
+          await store.saveAssessment(session.id,token,turn.sequence,transcript,decision.assessment);
+          session=await store.get(user,session.id);
+          let next=decision.next;
+          if(decision.next_error){
+            log('next_proposal_rejected',{reason:decision.next_error});
+            next=await model.recoverNext(session,abort.signal,{followUp:decision.recovery_type==='follow_up'});
+          }
+          if(abort.signal.aborted||closed)return;
+          await store.commit(session.id,token,turn.sequence,null,{assessment:null,next,transition:decision.transition});
+          decision.next=next;
+        } else await store.commit(session.id,token,turn?.sequence||0,transcript,decision);
         session=await store.get(user,session.id);
         if(!decision.next||session.status!=='active'){await finish();return;}
         await speakQuestion();
       } finally {busy=false;}
+    }
+    async function resumeProgression() {
+      if(busy||closed||abort.signal.aborted)return;
+      busy=true;stopAudio();state('thinking');
+      try {
+        const current=session.turns.at(-1);
+        log('next_recovery_resume',{sequence:current.sequence});
+        const next=typeof model.recoverNext==='function'?await model.recoverNext(session,abort.signal):null;
+        if(abort.signal.aborted||closed)return;
+        await store.commit(session.id,token,current.sequence,null,{assessment:null,next,transition:null});
+        session=await store.get(user,session.id);
+        if(!next||session.status!=='active'){await finish();return;}
+        await speakQuestion('question','',true);
+      }finally{busy=false;}
     }
     ws.on('pong',()=>{lastPong=Date.now();});
     ws.on('message',(raw,binary)=>{
@@ -232,6 +259,7 @@ function attachRealtime(server,dependencies={}) {
           if(!session.turns.length&&remaining<=60000)await finish('insufficient_time');
           else if(!session.turns.length)await advance(null);
           else if(session.turns.at(-1).transcript&&!session.turns.at(-1).assessment)await advance(session.turns.at(-1).transcript);
+          else if(session.turns.at(-1).assessment)await resumeProgression();
           else await speakQuestion('question','',true);
         }else if(msg.type==='played'&&phase==='speaking'&&msg.sequence===session.turns.at(-1)?.sequence){clearTimeout(playbackTimer);await listen();}
         else if(msg.type==='playback_failed'&&phase==='speaking'&&msg.sequence===session.turns.at(-1)?.sequence)await textFallback('playback_unavailable');

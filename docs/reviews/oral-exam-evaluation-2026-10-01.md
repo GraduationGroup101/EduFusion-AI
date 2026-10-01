@@ -1,5 +1,19 @@
 # Oral Exam evaluation and conversation
 
+## Progression resilience after 5732e9c (October 2)
+
+The saved assessments/commentary in the single prior grounding exam stayed source-derived, but it reached only 2/5 cores. A valid current assessment and an invalid next proposal shared one model validation callback; rejection of the next rubric retried the entire response and discarded the otherwise valid grade. The transaction also coupled assessment persistence with appending the next question. These were application coupling defects; Groq HTTP429 was a separate provider limitation.
+
+Answer decoding now validates the assessment independently while treating the next proposal as untrusted input. A bad next shape, citation, rubric, unsupported follow-up, duplicate or invalid progression sets a safe next-only recovery reason. It does not cause another assessment request. The realtime path commits the validated assessment under its lease first, then appends the valid next question or recovers it separately. Once saved, the grade is immutable; conflicting writes fail. Active sessions whose last turn is already assessed represent pending progression using existing columns, so no migration is required. Migration011/012 and historical reports are untouched.
+
+Recovery makes at most one next-only request targeting saved non-met criteria when a grounded follow-up is possible, then at most one distinct request for the first uncovered core or an eligible bonus. It supplies the saved assessment as authoritative and never asks for scores. Both responses pass the same strict grounding, rubric, duplicate and time/progression checks. Exhaustion closes gracefully with the grade retained. A transient HTTP429 wait is bounded by the original deadline and the provider's retry delay. The hard deadline, final-minute policy and 30-turn bound still apply.
+
+On reconnect during recovery, the newly fenced owner sees the saved assessment and continues next-only generation. It does not replay or regrade the answer. The stale owner cannot append its late result. Database sequence checks prevent duplicate turns; resumed delivery suppresses acknowledgement replay.
+
+Eight new regressions cover malformed/unsupported next proposals, authoritative assessment persistence, successful grounded follow-up recovery, fallback to the next core, bounded graceful close, unchanged expiry, immutable/fenced/idempotent persistence, post-core bonus eligibility, and a real WebSocket reconnect while a recovery response is blocked. The reconnect asserts one assessment request, one saved answer/grade, no duplicate question, no recovery error/reconnect request and suppressed transition delivery.
+
+Final validation and the single targeted production outcome are recorded in PR23's latest verification section. Prior historical, upload, migration and speech evidence below is preserved and is not being repeated.
+
 ## Grounding release fix after production verification of 60dc839
 
 The subsequent single disposable live exam completed with 93.2/100 (core 91, bonus +2.2), 5/5 cores, three bonuses and eight assessed answers. Speech/playback recovery, reconnect acknowledgement suppression, final-minute closing with MP3 audio, fencing and refresh stability passed. Weak bonuses added zero and did not remove earned credit. These results supplement the 91/100 and 75/100 historical evidence below; those sessions and their reports are not rewritten.
