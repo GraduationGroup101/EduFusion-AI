@@ -130,7 +130,7 @@ export function AtRiskStudentsPage() {
 }
 
 const CURRENT_CHATBOT_ADMIN_URL = `${
-  (import.meta.env.VITE_CHATBOT_APP_URL || 'https://final-iug-chat-botv2.onrender.com').replace(/\/$/, '')
+  (import.meta.env.VITE_CHATBOT_APP_URL || 'https://final-iug-chat-botv3.onrender.com').replace(/\/$/, '')
 }/app/admin.html`;
 
 export function ChatbotFilesPage() {

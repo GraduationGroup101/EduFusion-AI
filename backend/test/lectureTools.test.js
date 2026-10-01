@@ -184,7 +184,7 @@ test('sign-in warm-up pings sleeping services once a minute and returns browser 
   assert.equal(response.status, 200);
   assert.deepEqual(response.body.targets.map((t) => t.name), ['lecturescribe', 'chatbot', 'question-generator', 'edupredict']);
   assert.equal(response.body.targets[0].url, 'https://lecturescribe-ai.onrender.com/health');
-  assert.equal(response.body.targets[1].url, 'https://final-iug-chat-botv2.onrender.com/live');
+  assert.equal(response.body.targets[1].url, 'https://final-iug-chat-botv3.onrender.com/live');
   assert.equal(response.body.started.length, 4);
   await new Promise((resolve) => setTimeout(resolve, 10));
   assert.equal(calls.filter((c) => c.url.endsWith('/health') || c.url.endsWith('/live')).length, 4);
