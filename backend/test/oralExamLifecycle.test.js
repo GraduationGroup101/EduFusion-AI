@@ -46,6 +46,8 @@ after(async()=>{
 async function session(){
   await store.expire();
   const row=await store.create(user,material,'en',randomUUID());
+  // Exercise recovery of sessions persisted before the private-rubric contract.
+  await database.query("UPDATE edufusion_oral_exam_sessions SET context=context-'grounding_version' WHERE id=$1",[row.id]);
   return store.start(user,row.id);
 }
 // Each browser capability numbers its connection attempts, like the real client.

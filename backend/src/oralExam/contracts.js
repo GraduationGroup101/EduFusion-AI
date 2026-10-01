@@ -35,4 +35,4 @@ const createInput = z.object({ language:z.enum(['en','ar']).default('en'), sourc
 ]) }).strict();
 const weightedScore = (value) => Math.round(value.understanding*.35+value.accuracy*.35+value.completeness*.2+value.communication*.1);
 const fail = (statusCode,message) => { throw Object.assign(new Error(message),{statusCode}); };
-module.exports = { assessment,question,intent,decision,evaluation,commentary,commentaryJsonSchema,decisionJsonSchema,evaluationJsonSchema,id,createInput,weightedScore,fail };
+module.exports = { assessment,question,intent,decision,evaluation,commentary,commentaryJsonSchema,decisionJsonSchema,evaluationJsonSchema,providerSchema,id,createInput,weightedScore,fail };

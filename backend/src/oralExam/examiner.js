@@ -3,6 +3,7 @@ const store=require('./store');
 const conversation=require('./conversation');
 const progression=require('./progression');
 const legacy=require('./legacy');
+const grounding=require('./grounding');
 const {conceptKey,policy}=require('./grading');
 const {setTimeout:delay}=require('node:timers/promises');
 
@@ -41,7 +42,7 @@ function diagnostic(operation,error,attempt) {
 function failureCode(error) {
   if(error instanceof ProviderError&&error.code==='json_validate_failed')return 'invalid_model_output';
   if(error instanceof ProviderError)return [401,403].includes(error.status)?'model_auth':'model_unavailable';
-  if(error?.name==='ZodError'||error instanceof SyntaxError||error instanceof ModelValidationError)return 'invalid_model_output';
+  if(error?.name==='ZodError'||error?.name==='ModelValidationError'||error instanceof SyntaxError)return 'invalid_model_output';
   if(error?.name==='TimeoutError'||error?.name==='AbortError')return 'timeout';
   if(error instanceof TypeError)return 'network';
   return 'unknown';
@@ -76,7 +77,7 @@ async function jsonModel(messages,{operation,schemaName,schema,contract,signal,e
       return validate?validate(value):value;
     } catch(error) {
       console.error('Oral exam model failure:',diagnostic(operation,error,attempt));
-      const recoverable=error?.name==='ZodError'||error instanceof SyntaxError||error instanceof ModelValidationError||
+      const recoverable=error?.name==='ZodError'||error instanceof SyntaxError||error?.name==='ModelValidationError'||
         error instanceof ProviderError&&([408,429].includes(error.status)||error.status>=500||error.status===400&&error.code==='json_validate_failed')||
         error?.name==='TimeoutError'||error instanceof TypeError;
       if(attempt===2||!recoverable||signal?.aborted||expiresAt&&Date.now()>=new Date(expiresAt).getTime())throw error;
@@ -124,23 +125,30 @@ function checkControl(value,evidence,expected,question='') {
 // decision is rejected here and never reaches the store.
 async function next(session,transcript,signal,{forceAnswer=false}={}) {
   const evidence=evidenceFor(session,transcript);
+  const grounded=grounding.enabled(session),assessmentEvidence=grounded?grounding.evidenceFor(session):evidence;
   const remaining=Math.max(0,Math.floor((new Date(session.expires_at)-new Date(session.server_now||Date.now()))/1000));
   const rules=session.context.oral_policy||policy(),permitted=progression.allowed(session,remaining);
   const current=session.turns.at(-1);
   const format={intent:transcript===null||forceAnswer?'answer':'answer | repeat | clarify | dont_know | unclear',reply:'Short message for clarify or dont_know, otherwise null',transition:'One short content-neutral acknowledgement for an answer, otherwise null',core_concepts:transcript===null?[{name:'Distinct topic',citations:['evidence chunk id']}]:null,
     assessment:transcript===null?null:{understanding:0,accuracy:0,completeness:0,communication:0,feedback:'Concise feedback',strengths:[],improvements:[]},
     next:{question:'One question',concept:'Topic',question_type:transcript===null?'initial':'follow_up',difficulty:'foundation',citations:['evidence chunk id'],follow_up_reason:'Brief pedagogical label, no reasoning trace'}};
+  if(grounded){
+    format.next.criterion_ids=['An id from source_criteria'];
+    if(transcript!==null)format.assessment={grounding:{citations:['Current question citation only'],criteria:[{criterion_id:'Saved rubric id',level:'met | partial | missing | incorrect',answer_quote:'Exact substring of student_response; empty only for missing'}]},communication:'clear | unclear'};
+  }
   const task=transcript===null?'Choose the first question.'
     :forceAnswer?'The student has used all repeat, clarification and hint allowances for this question. Treat this response as their answer of record: intent must be "answer", assess it exactly as it stands (a non-answer scores low, with brief encouraging feedback), and choose the next question; next may be null to end the exam.'
     :'Classify the student response. If it is an answer, assess it (0–100 dimensions) and choose the next question; next may be null to end the exam. Otherwise return the intent with a reply and no assessment or next question.';
-  return jsonModel([{role:'system',content:SYSTEM},{role:'user',content:JSON.stringify({task,format,language:session.language,remaining_seconds:remaining,control_requests_exhausted:Boolean(forceAnswer),
-    evidence,core_plan:session.context.core_plan||null,required_concepts:rules.required_concepts,allowed_question_types:permitted,recent_transitions:session.turns.slice(-3).map(t=>t.transition).filter(Boolean),covered:session.turns.map(t=>t.concept),consecutive_follow_ups:consecutiveFollowUps(session),
-    current_question:current?{question:current.question,concept:current.concept,exchanges_so_far:publicExchanges(current)}:null,
+  const groundingInstructions=grounded?'Assessment must evaluate EVERY saved criterion, and ONLY those criteria. No numeric scores or academic prose are allowed in assessment. General knowledge must never create expectations. Use current question assessment_evidence only. Communication judges clarity, not omitted knowledge. For next, select criterion_ids from source_criteria and cite exactly their chunks. These source-extractive criteria are private. Question and concept academic terms must appear in the SELECTED criteria, even for bonus/application; use only generic question scaffolding otherwise. Keep academic terms in their source language. Do not quote the criteria as an answer in the question. A follow_up must select only current saved criteria rated partial/missing/incorrect. Never introduce an industry technique not present in those criteria.':'';
+  return jsonModel([{role:'system',content:SYSTEM+'\n'+groundingInstructions},{role:'user',content:JSON.stringify({task,format,language:session.language,remaining_seconds:remaining,control_requests_exhausted:Boolean(forceAnswer),
+    ...(grounded?{assessment_evidence:assessmentEvidence,question_generation_evidence:evidence,source_criteria:grounding.catalog(evidence)}:{evidence}),core_plan:session.context.core_plan||null,required_concepts:rules.required_concepts,allowed_question_types:permitted,recent_transitions:session.turns.slice(-3).map(t=>t.transition).filter(Boolean),covered:session.turns.map(t=>t.concept),consecutive_follow_ups:consecutiveFollowUps(session),
+    current_question:current?{question:current.question,concept:current.concept,exchanges_so_far:publicExchanges(current),...(grounded?{grading_criteria:current.grading_criteria}: {})}:null,
     history:session.turns.slice(-8).map(t=>({question:t.question,answer:t.transcript,assessment:t.assessment})),student_response:transcript})}],
-  {operation:'next_question',schemaName:'oral_exam_decision',schema:decisionJsonSchema,contract:decision,signal,expiresAt:session.expires_at,validate:value=>{
+  {operation:'next_question',schemaName:'oral_exam_decision',schema:grounded?grounding.decisionSchema:decisionJsonSchema,contract:grounded?grounding.groundedDecision:decision,signal,expiresAt:session.expires_at,validate:value=>{
     if(transcript===null) {
       if(value.intent!=='answer'||value.assessment!==null||!value.next)throw new ModelValidationError('invalid_initial_decision');
       if(value.core_concepts){
+        if(grounded)grounding.validatePlan(value.core_concepts,evidence,rules.required_concepts);
         const keys=value.core_concepts.map(c=>conceptKey(c.name));
         if(value.core_concepts.length>rules.required_concepts||new Set(keys).size!==keys.length||value.core_concepts.some(c=>c.citations.some(id=>!evidence.some(e=>e.id===id))))throw new ModelValidationError('invalid_core_plan');
         if(!keys.includes(conceptKey(value.next.concept)))throw new ModelValidationError('question_outside_plan');
@@ -150,6 +158,8 @@ async function next(session,transcript,signal,{forceAnswer=false}={}) {
       if(forceAnswer)throw new ModelValidationError('control_exhausted_not_assessed');
       return checkControl(value,evidence,undefined,current?.question);
     } else if(!value.assessment)throw new ModelValidationError('missing_assessment');
+    if(grounded&&value.assessment)value.assessment=grounding.assess(value.assessment,current,assessmentEvidence,transcript,session.language);
+    if(grounded&&value.next)value.next=grounding.rubric(value.next,evidence,current,value.assessment);
     if(!session.turns.length&&!value.next)throw new ModelValidationError('missing_initial_question');
     if(value.next?.citations.some(id=>!evidence.some(c=>c.id===id)))throw new ModelValidationError('ungrounded_citation');
     if(session.turns.some(t=>t.question===value.next?.question))throw new ModelValidationError('repeated_question');
@@ -192,8 +202,11 @@ async function evaluate(user,id) {
     const answered=session.turns.filter(t=>t.transcript&&t.assessment);
     if(!core.assessed_answers) {await store.completeFeedback(id,token,{summary:session.language==='ar'?'لا توجد إجابات مكتملة ومقيّمة لمنح درجة.':'No completed, assessed answers were recorded. This exam is not scored.',strengths:[],areasForImprovement:[]});return {status:'ready',unscored:true};}
     try {
-      const report=await jsonModel([{role:'system',content:SYSTEM},{role:'user',content:JSON.stringify({task:'Write concise supportive final commentary using these persisted assessments and computed results. Return summary,strengths,areasForImprovement only. Do not produce scores or claim untested concepts were tested. A technical interruption is not poor academic performance.',language:session.language,computed_evaluation:core,answers:answered.map(t=>({question:t.question,concept:t.concept,answer:t.transcript,assessment:t.assessment}))})}],
-        {operation:'final_evaluation',schemaName:'oral_exam_commentary',schema:commentaryJsonSchema,contract:commentary});
+      const grounded=grounding.enabled(session);
+      const report=await jsonModel([{role:'system',content:SYSTEM},{role:'user',content:JSON.stringify(grounded?
+        {task:'Select zero-based strength_ids and improvement_ids ONLY from the supplied validated lists. Choose summary completed,practice,or limited. No free-form academic claims or additional topics.',language:session.language,computed_score:core.score,strengths:core.strengths,improvements:core.areasForImprovement}:
+        {task:'Write concise supportive final commentary using these persisted assessments and computed results. Return summary,strengths,areasForImprovement only. Do not produce scores or claim untested concepts were tested. A technical interruption is not poor academic performance.',language:session.language,computed_evaluation:core,answers:answered.map(t=>({question:t.question,concept:t.concept,answer:t.transcript,assessment:t.assessment}))})}],
+        {operation:'final_evaluation',schemaName:'oral_exam_commentary',schema:grounded?grounding.commentarySchema:commentaryJsonSchema,contract:grounded?grounding.groundedCommentary:commentary,validate:grounded?v=>grounding.finalCommentary(v,core,session.language):undefined});
       await store.completeFeedback(id,token,report);
       return {status:'ready'};
     } catch(error) {

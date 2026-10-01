@@ -16,7 +16,12 @@ function classified(turns){
 }
 function evaluateCore(session){
   const turns=classified(session.turns||[]),rules=session.context?.oral_policy||policy();
-  const valid=turns.filter(t=>t.transcript&&assessment.safeParse(t.assessment).success);
+  const grounding=require('./grounding');
+  const valid=turns.filter(t=>{
+    if(!t.transcript)return false;
+    if(!grounding.enabled(session))return assessment.safeParse(t.assessment).success;
+    try{grounding.storedAssessment(t.assessment,t,session.context.chunks.filter(c=>t.citations.includes(c.id)),t.transcript,session.language);return true;}catch{return false;}
+  });
   const groups=new Map();
   for(const t of valid.filter(t=>t.category!=='bonus')){
     if(!groups.has(t.concept_key))groups.set(t.concept_key,[]);

@@ -7,6 +7,7 @@ const {policy,evaluateCore,classified}=require('./grading');
 const {classifyNext}=require('./progression');
 const {closing}=require('./conversation');
 const legacy=require('./legacy');
+const grounding=require('./grounding');
 const TABLE='edufusion_oral_exam_sessions';
 const TURNS='edufusion_oral_exam_turns';
 const expire = async (client=db) => client.query(`UPDATE ${TABLE} SET status='timed_out',ended_at=expires_at,termination_reason='time_limit',lease_token=NULL,lease_until=NULL,lease_client_id=NULL,lease_client_attempt=NULL,updated_at=clock_timestamp() WHERE status='active' AND expires_at<=clock_timestamp()`);
@@ -21,7 +22,7 @@ async function create(user,material,language,key) {
     const count=(await client.query(`SELECT COUNT(*)::int n FROM ${TABLE} WHERE owner_key=$1 AND created_at>NOW()-INTERVAL '1 day'`,[ownerKey(user)])).rows[0].n;
     if(count>=12) fail(429,'Daily oral exam limit reached. Please return tomorrow.');
     return (await client.query(`INSERT INTO ${TABLE}(id,owner_key,id_student,user_id,request_key,source,material_title,context,language) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-      [randomUUID(),ownerKey(user),user.id_student??null,user.id_student==null?user.id:null,key,material.source,material.title,{...material.context,oral_policy:policy()},language])).rows[0];
+      [randomUUID(),ownerKey(user),user.id_student??null,user.id_student==null?user.id:null,key,material.source,material.title,{...material.context,oral_policy:policy(),grounding_version:1},language])).rows[0];
   });
 }
 async function get(user,id) {
@@ -102,6 +103,13 @@ async function commit(id,token,expectedSequence,transcript,decision) {
     const turns=(await client.query(`SELECT * FROM ${TURNS} WHERE session_id=$1 ORDER BY sequence`,[id])).rows;
     const last=turns.at(-1);
     if((last?.sequence||0)!==expectedSequence) fail(409,'The exam has already advanced');
+    if(grounding.enabled(session)){
+      if(!last)grounding.validatePlan(decision.core_concepts,session.context.chunks,session.context.oral_policy.required_concepts);
+      const currentEvidence=session.context.chunks.filter(c=>last?.citations.includes(c.id));
+      if(last&&transcript!==null)grounding.storedAssessment(decision.assessment,last,currentEvidence,transcript,session.language);
+      if(decision.next){grounding.storedRubric(decision.next,session.context.chunks);
+        if(decision.next.question_type==='follow_up')grounding.rubric({...decision.next,criterion_ids:decision.next.grading_criteria.map(c=>c.id)},session.context.chunks,last,decision.assessment);}
+    }
     if(last && transcript!==null) {
       // An answer is only committed with its assessment; a control decision
       // (repeat, clarify, don't know) must never end or advance the exam here.
@@ -115,8 +123,8 @@ async function commit(id,token,expectedSequence,transcript,decision) {
     }
     const q=classifyNext({...session,turns},decision.next,(new Date(session.expires_at)-new Date(session.server_now))/1000);
     if(q) {
-      await client.query(`INSERT INTO ${TURNS}(id,session_id,sequence,question,concept,question_type,difficulty,citations,follow_up_reason,category,concept_key,parent_sequence,transition) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-        [randomUUID(),id,expectedSequence+1,q.question,q.concept,q.question_type,q.difficulty,JSON.stringify(q.citations),q.follow_up_reason,q.category,q.concept_key,q.parent_sequence,decision.transition||null]);
+      await client.query(`INSERT INTO ${TURNS}(id,session_id,sequence,question,concept,question_type,difficulty,citations,follow_up_reason,category,concept_key,parent_sequence,transition,grading_criteria) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+        [randomUUID(),id,expectedSequence+1,q.question,q.concept,q.question_type,q.difficulty,JSON.stringify(q.citations),q.follow_up_reason,q.category,q.concept_key,q.parent_sequence,decision.transition||null,q.grading_criteria?JSON.stringify(q.grading_criteria):null]);
     } else if(transcript!==null) {
       await client.query(`UPDATE ${TABLE} SET status='completed',ended_at=LEAST(clock_timestamp(),expires_at),termination_reason='exam_completed',lease_token=NULL,lease_until=NULL,lease_client_id=NULL,lease_client_attempt=NULL,updated_at=clock_timestamp() WHERE id=$1`,[id]);
     }

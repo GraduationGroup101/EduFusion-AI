@@ -25,7 +25,9 @@ let database,server,realtime,finalizeSpeech,nextOverride,replyOverride,speakOver
 const spoken=[];
 const original={query:db.pool.query,connect:db.pool.connect,transaction:db.transaction,fetch:global.fetch};
 const api=(method,path,id=900)=>request(server)[method]('/api/oral-exam'+path).set('Authorization','Bearer '+jwt.sign({id_student:id},process.env.JWT_SECRET));
-const create=()=>store.create(user,material,'en',randomUUID());
+// Existing lifecycle/scoring fixtures represent pre-012 persisted sessions.
+// The separate grounding suite exercises every new-session contract and fence.
+const create=async(language='en')=>{const row=await store.create(user,material,language,randomUUID());await database.query("UPDATE edufusion_oral_exam_sessions SET context=context-'grounding_version' WHERE id=$1",[row.id]);return {...row,context:{...material.context,oral_policy:row.context.oral_policy}};};
 before(async()=>{
   database=await PGlite.create();
   db.pool.query=async(sql,params=[])=>{
@@ -278,7 +280,7 @@ test('the model may classify a longer utterance as a request, which clears the p
 test('Arabic control phrases are handled in Arabic and bounded the same way',async()=>{
   await database.query("UPDATE edufusion_oral_exam_sessions SET created_at=NOW()-INTERVAL '2 days'");
   const arabicQuestion={...question,question:'ما هي وظيفة الراوتر؟'};
-  const a=await store.create(user,material,'ar',randomUUID());const started=await store.start(user,a.id);
+  const a=await create('ar');const started=await store.start(user,a.id);
   const modelCalls=[];
   nextOverride=async(_session,text)=>{modelCalls.push(text);return {intent:'answer',reply:null,assessment:text===null?null:assessment,next:text===null?arabicQuestion:{...arabicQuestion,question:'كيف يختار الراوتر المسار؟',question_type:'follow_up'}};};
   replyOverride=async(_session,_text,intent)=>({intent,reply:intent==='clarify'?'بكلمات أبسط، ما الذي يقوم به هذا الجهاز؟':'لا بأس، أخبرني بأي شيء تتذكره عن هذا الجهاز.',assessment:null,next:null});
