@@ -57,6 +57,8 @@ export default function App() {
             <Route path="lecturescribe" element={<LectureScribePage />} />
             <Route path="youtube/*" element={<LegacyLectureScribeRedirect />} />
             <Route path="oral-exam" element={<OralExamPage />} />
+            {/* A mistyped workspace link lands on the dashboard, not the public homepage. */}
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Route>
 
           {/* Unknown paths land on the public home rather than a hard 404 */}

@@ -5,7 +5,7 @@ import { lectureToolsService as service } from '../../services/lectureTools';
 
 const message = (error) => error.response?.data?.error || 'The lecture assistant is unavailable right now. Please try again.';
 const button = 'inline-flex items-center gap-2 border border-border px-3 py-2 text-sm hover:border-accent disabled:opacity-40';
-const input = 'w-full border border-border bg-white p-3 text-sm outline-none focus:border-accent';
+const input = 'w-full border border-border bg-white p-3 text-sm outline-none focus:border-secondary';
 const jobTitle = (job) => job?.title || job?.result?.title || job?.request?.youtube_url || 'Lecture transcript';
 
 // Chat and practice questions over one saved transcript. Unlike the optional

@@ -75,11 +75,13 @@ const NUMBERED = /^\s*([0-9\u0660-\u0669\u06F0-\u06F9]+)[.)]\s+(.+)$/;
 const toNumber = (digits) => Number(String(digits).replace(/[\u0660-\u0669]/g, (d) => d.charCodeAt(0) - 0x0660).replace(/[\u06F0-\u06F9]/g, (d) => d.charCodeAt(0) - 0x06F0)) || 1;
 
 /** Parses the Markdown subset LectureScribe produces into plain block objects (never HTML). */
-export function parseTranscript(text) {
+export function parseTranscript(text, { breaks = false } = {}) {
+  // breaks keeps single line breaks (quiz choices, chat answers); transcripts reflow them.
+  const joiner = breaks ? '\n' : ' ';
   const blocks = [];
   let paragraph = [];
   let list = null;
-  const flushParagraph = () => { if (paragraph.length) blocks.push({ type: 'p', text: paragraph.join(' ') }); paragraph = []; };
+  const flushParagraph = () => { if (paragraph.length) blocks.push({ type: 'p', text: paragraph.join(joiner) }); paragraph = []; };
   const flushList = () => { if (list) blocks.push(list); list = null; };
   for (const line of String(text || '').replace(/\r\n?/g, '\n').split('\n')) {
     const trimmed = line.trim();
@@ -100,7 +102,7 @@ export function parseTranscript(text) {
       list.items.push(numbered[2].trim()); continue;
     }
     // An indented line continues the previous list item; anything else ends the list.
-    if (list && /^\s{2,}/.test(line)) { list.items[list.items.length - 1] += ' ' + trimmed; continue; }
+    if (list && /^\s{2,}/.test(line)) { list.items[list.items.length - 1] += joiner + trimmed; continue; }
     flushList();
     paragraph.push(trimmed);
   }
@@ -147,7 +149,7 @@ const renderInline = (text) => {
 };
 
 const headingClass = ['', 'text-xl md:text-2xl mt-8', 'text-lg md:text-xl mt-7', 'text-base md:text-lg mt-6'];
-function Block({ block }) {
+export function MarkdownBlock({ block }) {
   if (block.type === 'hr') return <hr className="my-6 border-border" />;
   if (block.type === 'h') {
     const level = Math.min(block.level, 3);
@@ -252,7 +254,7 @@ export default function TranscriptView({ cleaned, raw, title, language }) {
       style={{ fontFamily: FONT_STACK }}
       className={`rounded-xl md:max-h-[70vh] md:overflow-y-auto md:overscroll-contain border border-border bg-white px-4 py-5 text-light-accent md:px-8 md:py-7 ${rtl ? 'text-[17px] leading-[2.05]' : 'text-[15px] leading-8'}`}>
       <div className="mx-auto max-w-3xl">
-        {blocks.map((block, index) => <Block key={index} block={block} />)}
+        {blocks.map((block, index) => <MarkdownBlock key={index} block={block} />)}
       </div>
     </article>
   </section>;

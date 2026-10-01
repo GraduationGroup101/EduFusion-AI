@@ -4,6 +4,7 @@ import { Menu, ChevronRight, ShieldCheck } from "lucide-react";
 import Sidebar from "./Sidebar";
 import Brand from "../Brand";
 import BrandedLoader from "../ui/BrandedLoader";
+import ErrorBoundary from "../ui/ErrorBoundary";
 import { useAuth } from "../../context/AuthContext";
 
 const titles = {
@@ -82,9 +83,11 @@ export default function DashboardLayout() {
         >
           {/* Lazy pages load inside the shell, so navigation never drops the
               sidebar and header for an unbranded screen. */}
-          <Suspense fallback={<BrandedLoader variant="panel" label={`Loading ${title}`} />}>
-            <Outlet />
-          </Suspense>
+          <ErrorBoundary key={pathname}>
+            <Suspense fallback={<BrandedLoader variant="panel" label={`Loading ${title}`} />}>
+              <Outlet />
+            </Suspense>
+          </ErrorBoundary>
         </main>
       </div>
     </div>

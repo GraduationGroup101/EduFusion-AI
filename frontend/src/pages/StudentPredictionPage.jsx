@@ -12,6 +12,12 @@ import { buildPayload, defaultForm, describeChanges, formFromInputs, formatPerce
 
 const USABLE_STATES = ['current', 'needs_reevaluation'];
 
+// The model service may describe a reason as text or as {feature, description};
+// either way the student sees readable text, never a crashed page.
+const reasonList = (value) => (Array.isArray(value) ? value : [])
+  .map((item) => (typeof item === 'string' ? item : item?.description || item?.text || item?.feature || ''))
+  .map((item) => String(item).trim()).filter(Boolean);
+
 export default function StudentPredictionPage() {
   const [enrollments, setEnrollments] = useState([]);
   const [selectedId, setSelectedId] = useState('');
@@ -241,7 +247,7 @@ export default function StudentPredictionPage() {
               value={selectedId}
               disabled={busy}
               onChange={(event) => setSelectedId(event.target.value)}
-              className="w-full rounded-xl border border-border bg-surface px-3 py-2 text-sm text-light-accent focus:outline-none focus:border-accent"
+              className="w-full rounded-xl border border-border bg-surface px-3 py-2 text-sm text-light-accent focus:outline-none focus:border-secondary"
             >
               {enrollments.map((item) => (
                 <option key={item.enrollment_id} value={item.enrollment_id}>
@@ -288,11 +294,11 @@ export default function StudentPredictionPage() {
                     <p className="text-2xl font-display font-bold text-light-accent">{prediction.day_of_course ?? prediction.model_confidence?.day_of_course ?? selected.current_day}</p>
                   </div>
                 </div>
-                {(prediction.explanation || []).length > 0 && (
+                {reasonList(prediction.explanation).length > 0 && (
                   <div>
                     <p className="text-xs font-mono uppercase text-light-accent/45 mb-2">Reasons</p>
                     <ul className="space-y-2">
-                      {prediction.explanation.map((item, index) => (
+                      {reasonList(prediction.explanation).map((item, index) => (
                         <li key={index} className="rounded-xl border border-border bg-surface/70 px-4 py-3 text-sm text-light-accent/75">{item}</li>
                       ))}
                     </ul>
