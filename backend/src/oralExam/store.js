@@ -3,6 +3,9 @@ const { isDeepStrictEqual } = require('node:util');
 const db = require('../db');
 const { ownerKey } = require('../lib/owner');
 const { fail } = require('./contracts');
+const {policy,evaluateCore,classified}=require('./grading');
+const {classifyNext}=require('./progression');
+const {closing}=require('./conversation');
 const TABLE='edufusion_oral_exam_sessions';
 const TURNS='edufusion_oral_exam_turns';
 const expire = async (client=db) => client.query(`UPDATE ${TABLE} SET status='timed_out',ended_at=expires_at,termination_reason='time_limit',lease_token=NULL,lease_until=NULL,lease_client_id=NULL,lease_client_attempt=NULL,updated_at=clock_timestamp() WHERE status='active' AND expires_at<=clock_timestamp()`);
@@ -17,7 +20,7 @@ async function create(user,material,language,key) {
     const count=(await client.query(`SELECT COUNT(*)::int n FROM ${TABLE} WHERE owner_key=$1 AND created_at>NOW()-INTERVAL '1 day'`,[ownerKey(user)])).rows[0].n;
     if(count>=12) fail(429,'Daily oral exam limit reached. Please return tomorrow.');
     return (await client.query(`INSERT INTO ${TABLE}(id,owner_key,id_student,user_id,request_key,source,material_title,context,language) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-      [randomUUID(),ownerKey(user),user.id_student??null,user.id_student==null?user.id:null,key,material.source,material.title,material.context,language])).rows[0];
+      [randomUUID(),ownerKey(user),user.id_student??null,user.id_student==null?user.id:null,key,material.source,material.title,{...material.context,oral_policy:policy()},language])).rows[0];
   });
 }
 async function get(user,id) {
@@ -93,7 +96,7 @@ async function recordExchange(id,token,sequence,exchange) {
 }
 async function commit(id,token,expectedSequence,transcript,decision) {
   return db.transaction(async client=>{
-    const session=(await client.query(`SELECT * FROM ${TABLE} WHERE id=$1 AND lease_token=$2 AND status='active' AND expires_at>clock_timestamp() AND lease_until>clock_timestamp() FOR UPDATE`,[id,token])).rows[0];
+    const session=(await client.query(`SELECT *,clock_timestamp() AS server_now FROM ${TABLE} WHERE id=$1 AND lease_token=$2 AND status='active' AND expires_at>clock_timestamp() AND lease_until>clock_timestamp() FOR UPDATE`,[id,token])).rows[0];
     if(!session) fail(409,'Exam connection expired');
     const turns=(await client.query(`SELECT * FROM ${TURNS} WHERE session_id=$1 ORDER BY sequence`,[id])).rows;
     const last=turns.at(-1);
@@ -105,10 +108,14 @@ async function commit(id,token,expectedSequence,transcript,decision) {
       if(last.assessment||(last.transcript!==null&&last.transcript!==transcript)) fail(409,'This answer is already saved');
       await client.query(`UPDATE ${TURNS} SET transcript=$2,assessment=$3,answered_at=COALESCE(answered_at,clock_timestamp()) WHERE id=$1`,[last.id,transcript,decision.assessment]);
     } else if(last) fail(409,'Answer the current question first');
-    if(decision.next) {
-      const q=decision.next;
-      await client.query(`INSERT INTO ${TURNS}(id,session_id,sequence,question,concept,question_type,difficulty,citations,follow_up_reason) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-        [randomUUID(),id,expectedSequence+1,q.question,q.concept,q.question_type,q.difficulty,JSON.stringify(q.citations),q.follow_up_reason]);
+    if(!turns.length&&decision.core_concepts?.length){
+      session.context={...session.context,core_plan:decision.core_concepts};
+      await client.query(`UPDATE ${TABLE} SET context=$2 WHERE id=$1`,[id,session.context]);
+    }
+    const q=classifyNext({...session,turns},decision.next,(new Date(session.expires_at)-new Date(session.server_now))/1000);
+    if(q) {
+      await client.query(`INSERT INTO ${TURNS}(id,session_id,sequence,question,concept,question_type,difficulty,citations,follow_up_reason,category,concept_key,parent_sequence,transition) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+        [randomUUID(),id,expectedSequence+1,q.question,q.concept,q.question_type,q.difficulty,JSON.stringify(q.citations),q.follow_up_reason,q.category,q.concept_key,q.parent_sequence,decision.transition||null]);
     } else if(transcript!==null) {
       await client.query(`UPDATE ${TABLE} SET status='completed',ended_at=LEAST(clock_timestamp(),expires_at),termination_reason='exam_completed',lease_token=NULL,lease_until=NULL,lease_client_id=NULL,lease_client_attempt=NULL,updated_at=clock_timestamp() WHERE id=$1`,[id]);
     }
@@ -122,6 +129,23 @@ async function finish(user,id,reason='student_ended',token=null) {
 async function saveEvaluation(id,evaluation) {
   await db.query(`UPDATE ${TABLE} SET evaluation=$2,evaluation_status='ready',evaluation_error=NULL,evaluation_attempts=evaluation_attempts+1,updated_at=clock_timestamp() WHERE id=$1 AND status NOT IN ('ready','active') AND evaluation_status<>'ready'`,[id,evaluation]);
 }
+async function ensureCore(user,id){
+  const session=await get(user,id);
+  if(['ready','active'].includes(session.status))return session;
+  if(!session.core_evaluation){
+    const core=evaluateCore(session);
+    await db.query(`UPDATE ${TABLE} SET core_evaluation=$2 WHERE id=$1 AND core_evaluation IS NULL AND status NOT IN ('ready','active')`,[id,core]);
+    return get(user,id);
+  }
+  return session;
+}
+async function claimFeedback(id){
+  const token=randomUUID();
+  const result=await db.query(`UPDATE ${TABLE} SET feedback_token=$2,feedback_until=clock_timestamp()+INTERVAL '150 seconds',evaluation_status='pending',evaluation_error=NULL WHERE id=$1 AND status NOT IN ('ready','active') AND evaluation_status<>'ready' AND (feedback_until IS NULL OR feedback_until<clock_timestamp()) RETURNING id`,[id,token]);
+  return result.rowCount?token:null;
+}
+const completeFeedback=(id,token,report,error=null)=>db.query(`UPDATE ${TABLE} SET evaluation=CASE WHEN $3::jsonb IS NULL THEN evaluation ELSE $3::jsonb END,evaluation_status=$4,evaluation_error=$5,evaluation_attempts=evaluation_attempts+1,feedback_token=NULL,feedback_until=NULL WHERE id=$1 AND feedback_token=$2`,[id,token,report,error?'failed':'ready',error]);
+const interruption=(id,token,kind)=>db.query(`UPDATE ${TABLE} SET technical_interruptions=technical_interruptions||$3::jsonb WHERE id=$1 AND lease_token=$2 AND status='active' AND jsonb_array_length(technical_interruptions)<20`,[id,token,JSON.stringify([{kind,at:new Date().toISOString()}])]);
 // Records why the last attempt failed (a safe code, never provider text) so a
 // retry can explain it; a ready report is never downgraded.
 const evaluationFailed=(id,code='unknown')=>db.query(`UPDATE ${TABLE} SET evaluation_status='failed',evaluation_error=$2,evaluation_attempts=evaluation_attempts+1,updated_at=clock_timestamp() WHERE id=$1 AND evaluation_status<>'ready'`,[id,String(code).slice(0,80)]);
@@ -129,8 +153,12 @@ function publicView(row) {
   const {id,material_title,language,status,started_at,expires_at,ended_at,termination_reason,evaluation,evaluation_status,evaluation_error,evaluation_attempts,server_now}=row;
   // Only the material reference is exposed (never pasted text) so results can link back to lecture tools.
   const source=row.source&&row.source.kind!=='text'?{kind:row.source.kind,id:row.source.id}:undefined;
-  return {id,material_title,language,status,started_at,expires_at,ended_at,termination_reason,evaluation,evaluation_status,evaluation_error:evaluation_error??null,evaluation_attempts:evaluation_attempts??0,server_now:server_now||new Date(),source,
-    turns:row.turns?.map(({id,sequence,question,concept,transcript,assessment,exchanges})=>({id,sequence,question,concept,transcript,feedback:assessment?.feedback,
+  const terminal=!['ready','active'].includes(status);
+  const feedbackExpired=evaluation_status==='pending'&&row.feedback_until&&new Date(row.feedback_until)<=new Date(server_now||Date.now());
+  const core=terminal?(row.core_evaluation||evaluateCore(row)):null;
+  const report=core?{...core,commentary:evaluation_status==='ready'&&evaluation?{summary:evaluation.summary,strengths:evaluation.strengths,areasForImprovement:evaluation.areasForImprovement}:null}:null;
+  return {id,material_title,language,status,started_at,expires_at,ended_at,termination_reason,closing_message:terminal?closing(language):null,evaluation:report,evaluation_status:feedbackExpired?'failed':evaluation_status,evaluation_error:feedbackExpired?'timeout':evaluation_error??null,evaluation_attempts:evaluation_attempts??0,server_now:server_now||new Date(),source,
+    turns:classified(row.turns||[]).map(({id,sequence,question,concept,transcript,assessment,exchanges,category,concept_key,parent_sequence,transition})=>({id,sequence,question,concept,transcript,category,concept_key,parent_sequence,transition,feedback:terminal?assessment?.feedback:undefined,
       exchanges:(exchanges||[]).map(({kind,transcript,reply,at})=>({kind,transcript,reply,at}))}))||[]};
 }
-module.exports={create,get,list,start,claim,renew,release,recordAnswer,recordExchange,commit,finish,expire,saveEvaluation,evaluationFailed,publicView};
+module.exports={create,get,list,start,claim,renew,release,recordAnswer,recordExchange,commit,finish,expire,saveEvaluation,evaluationFailed,publicView,ensureCore,claimFeedback,completeFeedback,interruption};

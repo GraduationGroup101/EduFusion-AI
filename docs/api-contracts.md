@@ -52,6 +52,13 @@ Grounded chat and practice questions over a saved transcript. Available on any b
 - `GET /api/oral-exam/materials` lists ready study lectures and this account's completed transcripts. A transcript source is read from the transcript cache first, then the provider.
 - Session views include `source: {kind, id}` for lecture and transcript material (never pasted text) so results can link back to that lecture's chat and practice questions. `/dashboard/oral-exam?transcript=<job_id>` preselects a transcript.
 
+## Oral Exam results and closing
+
+- Terminal session views always include a deterministic `evaluation` derived from valid persisted assessments, independent of the final provider: four dimensions, `core_score`, `bonus_score`, `score`, `required_concepts`, `completed_core_concepts`, `follow_up_questions`, `bonus_questions`, `concepts`, and incomplete/technical coverage metadata. A session without assessed core answers has null scores. See `docs/reviews/oral-exam-evaluation-2026-10-01.md` for formulas.
+- `evaluation.commentary` contains optional AI-written feedback. `evaluation_status` (`pending`, `ready`, `failed`) describes this enhancement only; `POST /api/oral-exam/sessions/:id/evaluate` retries commentary without recalculating persisted numeric results. Concurrent workers are fenced. An expired worker lease is exposed as retryable `failed`/`timeout`.
+- Turn views expose `category`, `concept_key`, `parent_sequence`, and `transition`. Per-answer grading feedback is returned only after termination. WebSocket `question.transition`, when present, precedes the question in speech/display.
+- At completion/expiry, WebSocket `state: closing` and `closing: {text}` precede optional `audio: {kind: closing}` and the final `ended: {session}`. Clients acknowledge closing playback with `played: {kind: closing}`. Closing delivery accepts no answers and never extends `expires_at`; terminal HTTP views include `closing_message` for recovery.
+
 ## Question generation
 
 - `POST /api/question-generator/generate`: multipart `file`, `num_mcq`, `num_tf`, `num_essay`. Each count is 0–50, at least one must be positive.

@@ -22,6 +22,7 @@ const material={source:{kind:'text',digest:'test'},title:'Networks',context:boun
 const question={question:'What does a router do?',concept:'Routing',question_type:'initial',difficulty:'foundation',citations:['text-1'],follow_up_reason:''};
 const assessment={understanding:80,accuracy:80,completeness:75,communication:90,feedback:'You explained path selection.',strengths:['Path selection'],improvements:['Explain packets']};
 let database,server,realtime,finalizeSpeech,nextOverride,replyOverride;
+const spoken=[];
 const original={query:db.pool.query,connect:db.pool.connect,transaction:db.transaction,fetch:global.fetch};
 const api=(method,path,id=900)=>request(server)[method]('/api/oral-exam'+path).set('Authorization','Bearer '+jwt.sign({id_student:id},process.env.JWT_SECRET));
 const create=()=>store.create(user,material,'en',randomUUID());
@@ -37,9 +38,9 @@ before(async()=>{
   await require('../scripts/migrate').migrate();
   await database.query("INSERT INTO students(id_student,student_name,pin_hash) VALUES(900,'Oral student','hash'),(901,'Other student','hash')");
   server=app.listen(0,'127.0.0.1');await once(server,'listening');
-  realtime=attachRealtime(server,{examiner:{...examiner,evaluate:async()=>{},next:async(_s,text,signal,options)=>nextOverride?nextOverride(_s,text,signal,options):({assessment:text===null?null:assessment,next:text===null?question:{...question,question:'Why is path selection useful?',question_type:'follow_up'}}),
+  realtime=attachRealtime(server,{closingTimeoutMs:50,examiner:{...examiner,evaluate:async()=>{},next:async(_s,text,signal,options)=>nextOverride?nextOverride(_s,text,signal,options):({assessment:text===null?null:assessment,next:text===null?question:{...question,question:'Why is path selection useful?',question_type:'follow_up'}}),
     reply:async(_s,text,intent)=>replyOverride?replyOverride(_s,text,intent):({intent,reply:intent==='clarify'?'In other words, what job does this device do for packets?':'No problem. Share anything you remember about this device.',assessment:null,next:null})},voice:{
-    speak:async()=>Buffer.from('ID3fake-test-audio'),
+    speak:async text=>{spoken.push(text);return Buffer.from('ID3fake-test-audio');},
     transcriber:({onFinal})=>{finalizeSpeech=onFinal;return {opened:Promise.resolve(),close(){},send(){return true;}};},
   }});
 });
@@ -94,7 +95,7 @@ test('expired sessions reject turns, start and reconnect independently of browse
   const expired=await store.get(user,a.id);assert.equal(expired.status,'timed_out');assert.equal(+new Date(expired.ended_at),+new Date(expired.expires_at));
   await assert.rejects(()=>store.start(user,a.id),{statusCode:409});
   await assert.rejects(()=>store.claim(user,a.id),{statusCode:409});
-  await examiner.evaluate(user,a.id);assert.equal((await store.get(user,a.id)).evaluation.score,null);
+  await examiner.evaluate(user,a.id);assert.equal((await store.get(user,a.id)).core_evaluation.score,null);
 });
 test('database enforces deadline and ownership constraints',async()=>{
   const a=await create();await store.start(user,a.id);
@@ -122,15 +123,15 @@ test('material sampling includes transcript tail, evaluation schema refuses fabr
 test('model output is validated, grounded and failed final evaluation is recoverable',async()=>{
   const a=await create();await store.start(user,a.id);const lease=await store.claim(user,a.id);
   const mock=value=>{global.fetch=async()=>new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(value)}}]}));};
-  mock({intent:'answer',reply:null,assessment:null,next:{...question,citations:['foreign-source']}});
+  mock({intent:'answer',reply:null,assessment:null,core_concepts:[{name:'Routing',citations:['text-1']}],next:{...question,citations:['foreign-source']}});
   await assert.rejects(async()=>examiner.next({...await store.get(user,a.id),turns:[]},null),{code:'ungrounded_citation'});
   await store.commit(a.id,lease.token,0,null,{assessment:null,next:question});
   await store.commit(a.id,lease.token,1,'A router selects packet routes.',{assessment,next:null});
   await store.finish(user,a.id);mock({understanding:999});await examiner.evaluate(user,a.id);
   assert.equal((await store.get(user,a.id)).evaluation_status,'failed');
-  const report={understanding:80,accuracy:80,completeness:75,communication:90,strengths:['Path selection'],areasForImprovement:['Add detail'],topicsCovered:['Fabricated topic'],summary:'You explained the core idea.'};
+  const report={strengths:['Path selection'],areasForImprovement:['Add detail'],summary:'You explained the core idea.'};
   mock(report);await examiner.evaluate(user,a.id);
-  const saved=await store.get(user,a.id);assert.equal(saved.evaluation_status,'ready');assert.equal(saved.evaluation.score,80);assert.deepEqual(saved.evaluation.topicsCovered,['Routing']);
+  const saved=await store.get(user,a.id);assert.equal(saved.evaluation_status,'ready');assert.equal(saved.core_evaluation.score,80);assert.deepEqual(saved.core_evaluation.topicsCovered,['Routing']);
   global.fetch=original.fetch;
 });
 test('final evaluation retries one invalid output and persists only the valid report',async()=>{
@@ -138,13 +139,13 @@ test('final evaluation retries one invalid output and persists only the valid re
   await store.commit(a.id,lease.token,0,null,{assessment:null,next:question});
   await store.commit(a.id,lease.token,1,'A router selects paths for packets.',{assessment,next:null});
   await store.finish(user,a.id);
-  const report={understanding:80,accuracy:80,completeness:75,communication:90,strengths:['Path selection'],areasForImprovement:['Add detail'],topicsCovered:['Routing'],summary:'You explained the core idea.'};
+  const report={strengths:['Path selection'],areasForImprovement:['Add detail'],summary:'You explained the core idea.'};
   let calls=0;
-  global.fetch=async()=>new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(++calls===1?{...report,accuracy:80.5}:report)}}]}));
+  global.fetch=async()=>new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(++calls===1?{...report,summary:42}:report)}}]}));
   try {
     await examiner.evaluate(user,a.id);
     const saved=await store.get(user,a.id);
-    assert.equal(calls,2);assert.equal(saved.evaluation_status,'ready');assert.equal(saved.evaluation.score,80);
+    assert.equal(calls,2);assert.equal(saved.evaluation_status,'ready');assert.equal(saved.core_evaluation.score,80);
     assert.equal(saved.turns.length,1);assert.equal(saved.turns[0].transcript,'A router selects paths for packets.');
   } finally {global.fetch=original.fetch;}
 });
@@ -174,6 +175,8 @@ test('real WebSocket authenticates, resumes persisted question, and automaticall
     await database.query("WITH t AS (SELECT NOW() AS n) UPDATE edufusion_oral_exam_sessions SET started_at=t.n-INTERVAL '599.5 seconds',expires_at=t.n+INTERVAL '0.5 seconds' FROM t WHERE id=$1",[a.id]);
   });
   const expiring=await socket(a.id);await expiring.until(e=>e.type==='ended');assert.equal((await store.get(user,a.id)).status,'timed_out');
+  assert.ok(expiring.events.some(e=>e.type==='closing'));
+  assert.ok(expiring.events.find(e=>e.type==='ended').session.evaluation);
 });
 test('model failure preserves the accepted answer and reconnect resumes one incomplete turn',{timeout:30000},async()=>{
   await database.query("UPDATE edufusion_oral_exam_sessions SET created_at=NOW()-INTERVAL '2 days'");
@@ -307,7 +310,7 @@ test('a second "I don\'t know" after the nudge never ends the exam, even when th
     if(text===null)return {intent:'answer',reply:null,assessment:null,next:question};
     // The model insists on dont_know until it is told the allowance is used up.
     if(!options.forceAnswer)return {intent:'dont_know',reply:'Take your time.',assessment:null,next:null};
-    return {intent:'answer',reply:null,assessment:{...assessment,accuracy:5,completeness:0},next:{...question,question:'What is a routing table?',question_type:'next_topic'}};
+    return {intent:'answer',reply:null,assessment:{...assessment,accuracy:5,completeness:0},next:{...question,question:'What is a routing table?',concept:'Routing tables '+_session.turns.length,question_type:'next_topic'}};
   };
   try {
     const c=await socket(a.id);await c.until(e=>e.type==='audio');
@@ -349,7 +352,7 @@ test('ending an exam responds before feedback is generated and the report still 
   await store.commit(a.id,lease.token,0,null,{assessment:null,next:question});
   await store.commit(a.id,lease.token,1,'A router selects packet routes.',{assessment,next:null});
   await store.release(a.id,lease.token);
-  const report={understanding:80,accuracy:80,completeness:75,communication:90,strengths:['Path selection'],areasForImprovement:['Add detail'],topicsCovered:['Routing'],summary:'You explained the core idea.'};
+  const report={strengths:['Path selection'],areasForImprovement:['Add detail'],summary:'You explained the core idea.'};
   let release;const gate=new Promise(resolve=>{release=resolve;});
   global.fetch=async()=>{await gate;return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(report)}}]}));};
   try {
@@ -361,7 +364,7 @@ test('ending an exam responds before feedback is generated and the report still 
     release();
     for(let i=0;i<100&&(await store.get(user,a.id)).evaluation_status!=='ready';i++)await new Promise(r=>setTimeout(r,20));
     const saved=await store.get(user,a.id);
-    assert.equal(saved.evaluation_status,'ready');assert.equal(saved.evaluation.score,80);
+    assert.equal(saved.evaluation_status,'ready');assert.equal(saved.core_evaluation.score,80);
     assert.deepEqual((await api('post',`/sessions/${a.id}/end`)).body.evaluation,{status:'ready',cached:true});
   } finally {global.fetch=original.fetch;}
 });
@@ -379,11 +382,11 @@ test('feedback retry reports each outcome, stays idempotent and never touches sa
     let response=await api('post',auth);
     assert.equal(response.status,200);assert.deepEqual(response.body.evaluation,{status:'failed',error:'model_unavailable'});
     assert.equal(response.body.session.evaluation_status,'failed');assert.equal(response.body.session.evaluation_error,'model_unavailable');assert.equal(response.body.session.evaluation_attempts,1);
-    assert.equal(response.body.session.evaluation,null);
+    assert.equal(response.body.session.evaluation.score,80);assert.equal(response.body.session.evaluation.commentary,null);
     global.fetch=async()=>{fetches++;return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({understanding:999})}}]}));};
     response=await api('post',auth);
     assert.deepEqual(response.body.evaluation,{status:'failed',error:'invalid_model_output'});assert.equal(response.body.session.evaluation_attempts,2);
-    const report={understanding:80,accuracy:80,completeness:75,communication:90,strengths:['Path selection'],areasForImprovement:['Add detail'],topicsCovered:['Routing'],summary:'You explained the core idea.'};
+    const report={strengths:['Path selection'],areasForImprovement:['Add detail'],summary:'You explained the core idea.'};
     fetches=0;
     global.fetch=async()=>{fetches++;await new Promise(r=>setTimeout(r,30));return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(report)}}]}));};
     // Two concurrent retries share one model call.
@@ -428,4 +431,60 @@ test('database write failures return a safe error and do not claim a session was
     const response=await api('post','/sessions').set('Idempotency-Key',randomUUID()).send({source:{kind:'text',title:'DB failure fixture',text:'Packets connect computers through routes. '.repeat(5)}});
     assert.equal(response.status,503);assert.doesNotMatch(JSON.stringify(response.body),/private|08006|stack/);assert.equal(response.body.session,undefined);
   }finally{db.pool.query=execute;}
+});
+
+test('transition is persisted and spoken before the next question; closing rejects further answers',async()=>{
+  await database.query("UPDATE edufusion_oral_exam_sessions SET created_at=NOW()-INTERVAL '2 days'");
+  const a=await create();const started=await store.start(user,a.id);
+  nextOverride=async(s,text)=>({intent:'answer',assessment:text===null?null:assessment,transition:text===null?null:'You identified the main idea clearly.',next:s.turns.length>=2?null:text===null?question:{...question,question:'How does path selection work?',question_type:'follow_up'}});
+  const c=await socket(a.id);
+  try{
+    await c.until(e=>e.type==='audio');c.ws.send(JSON.stringify({type:'played',sequence:1}));await c.until(e=>e.type==='state'&&e.state==='listening');
+    const next=await say(c,'It selects a path.');assert.equal(next.transition,'You identified the main idea clearly.');
+    assert.ok(spoken.some(text=>text==='You identified the main idea clearly. How does path selection work?'));
+    const persisted=await store.get(user,a.id);assert.equal(persisted.turns[1].category,'follow_up');assert.equal(persisted.turns[1].parent_sequence,1);
+    assert.equal(persisted.turns[1].transition,next.transition);
+    c.ws.send(JSON.stringify({type:'played',sequence:2}));await c.until(e=>e.type==='state'&&e.state==='listening',c.events.indexOf(next));
+    finalizeSpeech('It uses the routing table.');
+    await c.until(e=>e.type==='closing');const ended=await c.until(e=>e.type==='ended');
+    assert.ok(c.events.findIndex(e=>e.type==='closing')<c.events.findIndex(e=>e.type==='ended'));
+    assert.equal(ended.session.status,'completed');assert.equal(ended.session.evaluation.completed_core_concepts,1);assert.equal(ended.session.evaluation.follow_up_questions,1);
+    assert.equal(+new Date(ended.session.expires_at),+new Date(started.expires_at));
+    await assert.rejects(()=>store.recordAnswer(a.id,persisted.lease_token,2,'Too late'),{statusCode:409});
+  }finally{nextOverride=undefined;c.ws.terminate();await c.closed;await store.finish(user,a.id);}
+});
+
+test('core plan, five cores, follow-ups and bonus remain reconstructible after reload',async()=>{
+  await database.query("UPDATE edufusion_oral_exam_sessions SET created_at=NOW()-INTERVAL '2 days'");
+  const a=await create();await store.start(user,a.id);const lease=await store.claim(user,a.id);
+  const plan=Array.from({length:5},(_,i)=>({name:'Concept '+i,citations:['text-1']}));
+  const q=(name,type='next_topic')=>({...question,concept:name,question_type:type,question:'Explain '+name+'?'});
+  const score=n=>({...assessment,understanding:n,accuracy:n,completeness:n,communication:n});
+  await store.commit(a.id,lease.token,0,null,{assessment:null,core_concepts:plan,next:q('Concept 0','initial')});
+  await store.commit(a.id,lease.token,1,'Initial',{assessment:score(60),next:q('Concept 0','follow_up')});
+  await store.commit(a.id,lease.token,2,'Follow-up',{assessment:score(90),next:q('Concept 1')});
+  for(let i=1;i<=3;i++)await store.commit(a.id,lease.token,i+2,'Answer '+i,{assessment:score(80),next:q('Concept '+(i+1))});
+  await store.commit(a.id,lease.token,6,'Answer 4',{assessment:score(80),next:q('Application','bonus')});
+  await store.commit(a.id,lease.token,7,'Bonus answer',{assessment:score(92),next:null});
+  const saved=await store.ensureCore(user,a.id),r=store.publicView(saved).evaluation;
+  assert.equal(saved.context.core_plan.length,5);assert.equal(r.completed_core_concepts,5);assert.equal(r.follow_up_questions,1);assert.equal(r.bonus_questions,1);
+  assert.equal(r.core_score,78);assert.equal(r.bonus_score,4);assert.equal(r.score,82);
+  assert.deepEqual((await store.ensureCore(user,a.id)).core_evaluation,saved.core_evaluation);
+});
+
+test('a persisted core report is available while commentary is pending and stale feedback workers are fenced',async()=>{
+  await database.query("UPDATE edufusion_oral_exam_sessions SET created_at=NOW()-INTERVAL '2 days'");
+  const a=await create();await store.start(user,a.id);const lease=await store.claim(user,a.id);
+  await store.commit(a.id,lease.token,0,null,{assessment:null,next:question});
+  await store.commit(a.id,lease.token,1,'Saved answer',{assessment,next:null});
+  const saved=await store.ensureCore(user,a.id),first=await store.claimFeedback(a.id);
+  assert.ok(first);assert.equal(await store.claimFeedback(a.id),null);
+  assert.equal(store.publicView(saved).evaluation.score,80);
+  await database.query("UPDATE edufusion_oral_exam_sessions SET feedback_until=NOW()-INTERVAL '1 second' WHERE id=$1",[a.id]);
+  const interrupted=store.publicView(await store.get(user,a.id));
+  assert.equal(interrupted.evaluation_status,'failed');assert.equal(interrupted.evaluation_error,'timeout');assert.equal(interrupted.evaluation.score,80);
+  const second=await store.claimFeedback(a.id);assert.ok(second);
+  await store.completeFeedback(a.id,second,{summary:'Ready',strengths:[],areasForImprovement:[]});
+  await store.completeFeedback(a.id,first,null,'timeout');
+  const after=await store.get(user,a.id);assert.equal(after.evaluation_status,'ready');assert.deepEqual(after.core_evaluation,saved.core_evaluation);
 });

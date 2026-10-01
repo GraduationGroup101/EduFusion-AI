@@ -42,7 +42,7 @@ it('keeps a normal connection and the original deadline alive for eight minutes'
   expect(sockets).toHaveLength(1);expect(hook.result.current.state).toBe('listening');
   expect(hook.onSession.mock.calls.at(-1)[0].expires_at).toBe(snapshot().expires_at);
   act(()=>vi.advanceTimersByTime(120000));
-  expect(hook.result.current.state).toBe('ended');expect(track.stop).toHaveBeenCalled();
+  expect(hook.result.current.state).toBe('closing');act(()=>vi.advanceTimersByTime(8000));expect(hook.result.current.state).toBe('ended');expect(track.stop).toHaveBeenCalled();
   hook.unmount();
 });
 it('reconnects a server-side close with a private resume credential and the same session',async()=>{
@@ -181,4 +181,25 @@ it('recovers a provider error even when its socket remains open, with a bounded 
   expect(hook.onSession.mock.calls.every(([s])=>s.expires_at===snapshot().expires_at)).toBe(true);
   expect(sockets.every(ws=>ws.sent[0].sessionId==='exam-1')).toBe(true);
   hook.unmount();
+});
+
+it('shows a generated acknowledgement separately from the next question and accepts closing without reconnect',async()=>{
+  const hook=await ready();welcome(sockets[0]);
+  act(()=>sockets[0].message({type:'question',question:'How would you apply it?',transition:'You identified the main idea clearly.',sequence:2}));
+  expect(hook.result.current.question).toBe('How would you apply it?');expect(hook.result.current.remark).toEqual({kind:'transition',text:'You identified the main idea clearly.'});
+  act(()=>sockets[0].message({type:'closing',text:'Thank you for taking part.'}));
+  expect(hook.result.current.state).toBe('closing');expect(track.stop).toHaveBeenCalled();
+  act(()=>sockets[0].message({type:'state',state:'ended'}));
+  act(()=>sockets[0].message({type:'ended',session:{...snapshot(),status:'completed'}}));
+  act(()=>vi.advanceTimersByTime(10000));expect(sockets).toHaveLength(1);expect(hook.onSession).toHaveBeenLastCalledWith(expect.objectContaining({status:'completed'}));hook.unmount();
+});
+
+it('does not invent a timeout when transport drops during a normal closing',async()=>{
+  const hook=await ready();welcome(sockets[0]);hook.onSession.mockClear();
+  act(()=>sockets[0].message({type:'closing',text:'Thank you for taking part.'}));
+  act(()=>sockets[0].closed(1006,''));
+  act(()=>vi.advanceTimersByTime(10000));
+  expect(hook.result.current.state).toBe('ended');expect(sockets).toHaveLength(1);
+  // The page's HTTP polling recovers the authoritative terminal snapshot.
+  expect(hook.onSession).not.toHaveBeenCalled();hook.unmount();
 });

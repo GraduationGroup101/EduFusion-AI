@@ -13,7 +13,7 @@ export function useOralExamVoice(onSession) {
   // A per-tab capability: survives a refresh of this tab, never shared with another live tab.
   const resume=useRef({});
   const stop=useCallback(()=>{
-    const r=runtime.current;r.stopped=true;clearTimeout(r.retry);clearTimeout(r.deadline);clearTimeout(r.watchdog);r.socket?.close();r.source?.stop();
+    const r=runtime.current;r.stopped=true;clearTimeout(r.retry);clearTimeout(r.deadline);clearTimeout(r.closingDeadline);clearTimeout(r.watchdog);r.socket?.close();r.source?.stop();
     r.stream?.getTracks().forEach(t=>t.stop());r.capture?.disconnect();r.input?.disconnect();r.context?.close().catch(()=>{});
     runtime.current={};setMic(false);
   },[]);
@@ -50,7 +50,13 @@ export function useOralExamVoice(onSession) {
     function deadline(snapshot){
       clearTimeout(r.deadline);
       const remaining=Math.max(0,new Date(snapshot.expires_at)-new Date(snapshot.server_now));
-      r.deadline=setTimeout(()=>{if(!active())return;r.phase='ended';forgetResumeKey(r.sessionId);clearTimeout(r.retry);clearTimeout(r.watchdog);r.source?.stop();r.stream?.getTracks().forEach(t=>t.stop());r.socket?.close();setState('ended');onSessionRef.current({...snapshot,status:'timed_out'});},remaining);
+      r.deadline=setTimeout(()=>{
+        if(!active())return;r.timeExpired=true;r.phase='closing';setState('closing');clearTimeout(r.retry);clearTimeout(r.watchdog);r.source?.stop();r.stream?.getTracks().forEach(t=>t.stop());setMic(false);
+        setRemark({kind:'closing',text:session.language==='ar'?'انتهى وقت المقابلة. شكرًا إلك وبالتوفيق.':'The interview time has ended. Thank you, and best of luck.'});
+        // Capture stops at zero; a bounded grace period is only for closing
+        // audio/report delivery, never for accepting another answer.
+        r.closingDeadline=setTimeout(()=>{if(!active())return;r.phase='ended';setState('ended');onSessionRef.current({...snapshot,status:'timed_out'});stop();},8000);
+      },remaining);
     }
     deadline(session);
     function dial(){
@@ -65,6 +71,7 @@ export function useOralExamVoice(onSession) {
       function disconnected(code,reason,retryAfterMs=0){
         if(!current())return;
         clearTimeout(r.watchdog);r.socket=null;r.source?.stop();
+        if(r.phase==='closing'){r.phase='ended';setState('ended');if(r.timeExpired)onSessionRef.current({...session,status:'timed_out'});stop();return;}
         log('disconnect',{code,reason});
         if(r.deviceLost){r.phase='error';setState('error');return;}
         r.phase='reconnecting';setState('reconnecting');
@@ -94,23 +101,27 @@ export function useOralExamVoice(onSession) {
         if(!current())return;
         try{
           const msg=JSON.parse(event.data);watch();
+          if(r.timeExpired&&(msg.type==='question'||msg.type==='state'&&!['closing','ended'].includes(msg.state)||msg.type==='audio'&&msg.kind!=='closing'))return;
           if(msg.type==='welcome'){r.busySince=null;setError('');log('welcome',{server_connection:msg.connectionId});onSessionRef.current(msg.session);deadline(msg.session);}
           if(msg.type==='clock'){onSessionRef.current({id:r.sessionId,...msg});}
-          if(msg.type==='state'){r.phase=msg.state;setState(msg.state);if(msg.state==='listening')r.attempts=0;}
+          // The terminal snapshot follows the ended phase message. Keep this
+          // socket eligible until that snapshot has actually been consumed.
+          if(msg.type==='state'&&msg.state!=='ended'){r.phase=msg.state;setState(msg.state);if(msg.state==='listening')r.attempts=0;}
           // A conversational reply (repeat, clarification, nudge, retry) keeps the
           // same question and sequence; the remark is what the examiner just said.
-          if(msg.type==='question'){setQuestion(msg.question);setRemark(msg.kind&&msg.kind!=='question'?{kind:msg.kind,text:msg.remark||''}:null);}
+          if(msg.type==='question'){setQuestion(msg.question);setRemark(msg.transition?{kind:'transition',text:msg.transition}:msg.kind&&msg.kind!=='question'?{kind:msg.kind,text:msg.remark||''}:null);}
+          if(msg.type==='closing'){r.phase='closing';setState('closing');clearTimeout(r.retry);clearTimeout(r.deadline);r.stream?.getTracks().forEach(t=>t.stop());setMic(false);setRemark({kind:'closing',text:msg.text});}
           if(msg.type==='error'){setError(msg.message);r.phase='error';setState('error');r.source?.stop();if(msg.retryable){disconnected(4500,'recoverable_exam_failure',msg.retry_after_ms);ws.close(4500,'Recoverable exam failure');}}
           if(msg.type==='ended'){r.phase='ended';forgetResumeKey(r.sessionId);setState('ended');onSessionRef.current(msg.session);stop();}
           if(msg.type==='audio'){
             const buffer=Uint8Array.from(atob(msg.audio),c=>c.charCodeAt(0)).buffer;
             const decoded=await r.context.decodeAudioData(buffer);
-            if(!current()||r.phase!=='speaking')return;
+            if(!current()||!['speaking','closing'].includes(r.phase))return;
             await r.context.resume();
             if(!current())return;
             if(r.context.state!=='running')throw new Error('Audio playback is blocked');
             r.source=r.context.createBufferSource();r.source.buffer=decoded;r.source.connect(r.context.destination);
-            r.source.onended=()=>{if(current()&&r.phase==='speaking'&&ws.readyState===1)ws.send(JSON.stringify({type:'played',sequence:msg.sequence}));};
+            r.source.onended=()=>{if(current()&&['speaking','closing'].includes(r.phase)&&ws.readyState===1)ws.send(JSON.stringify({type:'played',sequence:msg.sequence,kind:msg.kind}));};
             r.source.start();
           }
         }catch{if(current()){log('playback_failure');setError('Audio could not play. Reconnect to hear the question again.');setState('error');r.phase='error';}}

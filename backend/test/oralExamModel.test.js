@@ -9,9 +9,9 @@ process.env.GROQ_API_KEY='test-only';
 process.env.ORAL_EXAM_MODEL='openai/gpt-oss-120b';
 after(()=>{global.fetch=originalFetch;console.error=originalError;});
 const question={question:'What does a router do?',concept:'Routing',question_type:'initial',difficulty:'foundation',citations:['text-1'],follow_up_reason:''};
-const decision={intent:'answer',reply:null,assessment:null,next:question};
+const decision={transition:null,core_concepts:null,intent:'answer',reply:null,assessment:null,next:question};
 const report={understanding:80,accuracy:80,completeness:75,communication:90,strengths:['Path selection'],areasForImprovement:['Add detail'],topicsCovered:['Routing'],summary:'You explained the core idea.'};
-const session=()=>({language:'en',expires_at:new Date(Date.now()+60000),server_now:new Date(),turns:[],context:{chunks:[{id:'text-1',section:'Network',text:'Routers select paths for packets.'}]}});
+const session=()=>({language:'en',expires_at:new Date(Date.now()+600000),server_now:new Date(),turns:[],context:{chunks:[{id:'text-1',section:'Network',text:'Routers select paths for packets.'}]}});
 const reply=value=>new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(value)}}]}));
 function mock(values) {let calls=0;global.fetch=async(_url,options)=>{const payload=JSON.parse(options.body);assert.equal(payload.model,'openai/gpt-oss-120b');assert.equal(payload.response_format.type,'json_schema');assert.equal(payload.response_format.json_schema.strict,true);return values[Math.min(calls++,values.length-1)].clone()};return ()=>calls;}
 test('provider schemas derive exactly from Zod and close all nested objects',()=>{

@@ -1,6 +1,8 @@
-const { decision,evaluation,decisionJsonSchema,evaluationJsonSchema,weightedScore } = require('./contracts');
+const { decision,commentary,decisionJsonSchema,commentaryJsonSchema } = require('./contracts');
 const store=require('./store');
 const conversation=require('./conversation');
+const progression=require('./progression');
+const {conceptKey,policy}=require('./grading');
 const {setTimeout:delay}=require('node:timers/promises');
 
 const SYSTEM=`You are EduFusion's academic oral examiner. The source evidence is the only source of truth.
@@ -15,6 +17,9 @@ First classify the student's latest response as intent:
 For repeat, clarify, dont_know and unclear: assessment and next are null and nothing is scored. reply is a short student-facing message of at most two sentences: for clarify, rephrase or explain what the question asks in simpler words; for dont_know, reassure and invite whatever they remember. reply must never state, hint at, quote or paraphrase the correct answer or the evidence. reply is null for repeat and unclear.
 For answer: assessment is required. When the answer was partial, the next question must be a follow_up on the same concept targeting exactly what was missing (the improvements you identified), unless two follow-ups were already asked in a row; then move to a new concept.
 Cover several concepts, avoid repeated questions and more than two consecutive follow-ups. Adjust difficulty to understanding.
+On the first request, propose core_concepts: a plan of distinct important concepts grounded in cited evidence, up to required_concepts. Use fewer only if the material genuinely cannot support the target; never invent topics. Use the exact plan names for core questions. On later requests core_concepts is null.
+Respect allowed_question_types. A follow_up stays on the current core concept. After all core concepts, bonus questions may explore harder applications or comparisons grounded in the evidence. Bonus is never a new required concept.
+For a scored answer, transition is one short, natural sentence acknowledging the response in the selected language and leading into the next question. Keep it content-neutral: never repeat or correct subject matter, quote source evidence, expose an expected answer, rubric, scores, private reasoning or excessive praise. Do not include a question in transition. For initial and control decisions transition is null. Do not add a separate call for transitions.
 In the final minute finish the active topic; stop if fewer than 15 seconds remain. Never invent content absent from evidence.
 Only return the requested JSON. Assessments are brief student-facing feedback, never private reasoning or chain-of-thought.
 Use the requested language. Do not score accent, disability, or speaking style; communication measures clarity of academic meaning.`;
@@ -33,6 +38,7 @@ function diagnostic(operation,error,attempt) {
 }
 // A short, safe reason for a failed operation; shown to the student and stored.
 function failureCode(error) {
+  if(error instanceof ProviderError&&error.code==='json_validate_failed')return 'invalid_model_output';
   if(error instanceof ProviderError)return [401,403].includes(error.status)?'model_auth':'model_unavailable';
   if(error?.name==='ZodError'||error instanceof SyntaxError||error instanceof ModelValidationError)return 'invalid_model_output';
   if(error?.name==='TimeoutError'||error?.name==='AbortError')return 'timeout';
@@ -82,12 +88,18 @@ async function jsonModel(messages,{operation,schemaName,schema,contract,signal,e
   }
 }
 function evidenceFor(session,transcript) {
+  if(!session.turns.length){
+    const chunks=session.context.chunks,count=Math.min(8,chunks.length);
+    return Array.from({length:count},(_,i)=>chunks[count===1?0:Math.round(i*(chunks.length-1)/(count-1))]).map(({id,section,text})=>({id,section,text}));
+  }
   const terms=new Set(String(transcript||session.turns?.at(-1)?.question||'').toLowerCase().match(/[\p{L}\p{N}]{3,}/gu)||[]);
   const used=new Set(session.turns.flatMap(t=>t.citations));
   const active=new Set(session.turns.at(-1)?.citations||[]);
-  const chunks=session.context.chunks.map((c,index)=>({...c,index,rank:(active.has(c.id)?100:0)+[...terms].filter(t=>c.text.toLowerCase().includes(t)).length}));
+  const covered=new Set(session.turns.map(t=>conceptKey(t.concept)));
+  const upcoming=new Set((session.context.core_plan||[]).filter(c=>!covered.has(conceptKey(c.name))).slice(0,2).flatMap(c=>c.citations));
+  const chunks=session.context.chunks.map((c,index)=>({...c,index,rank:(active.has(c.id)?100:upcoming.has(c.id)?50:0)+[...terms].filter(t=>c.text.toLowerCase().includes(t)).length}));
   const selected=[...chunks].sort((a,b)=>b.rank-a.rank).slice(0,4);
-  for(const chunk of chunks.filter(c=>!used.has(c.id)).slice(0,4)) if(!selected.some(c=>c.id===chunk.id))selected.push(chunk);
+  for(const chunk of chunks.filter(c=>upcoming.has(c.id)||!used.has(c.id)).sort((a,b)=>b.rank-a.rank).slice(0,4)) if(!selected.some(c=>c.id===chunk.id))selected.push(chunk);
   return selected.map(({id,section,text})=>({id,section,text}));
 }
 const publicExchanges=turn=>(turn?.exchanges||[]).map(({kind,transcript})=>({kind,student_said:transcript}));
@@ -112,20 +124,27 @@ function checkControl(value,evidence,expected,question='') {
 async function next(session,transcript,signal,{forceAnswer=false}={}) {
   const evidence=evidenceFor(session,transcript);
   const remaining=Math.max(0,Math.floor((new Date(session.expires_at)-new Date(session.server_now||Date.now()))/1000));
+  const rules=session.context.oral_policy||policy(),permitted=progression.allowed(session,remaining);
   const current=session.turns.at(-1);
-  const format={intent:transcript===null||forceAnswer?'answer':'answer | repeat | clarify | dont_know | unclear',reply:'Short message for clarify or dont_know, otherwise null',
+  const format={intent:transcript===null||forceAnswer?'answer':'answer | repeat | clarify | dont_know | unclear',reply:'Short message for clarify or dont_know, otherwise null',transition:'One short content-neutral acknowledgement for an answer, otherwise null',core_concepts:transcript===null?[{name:'Distinct topic',citations:['evidence chunk id']}]:null,
     assessment:transcript===null?null:{understanding:0,accuracy:0,completeness:0,communication:0,feedback:'Concise feedback',strengths:[],improvements:[]},
     next:{question:'One question',concept:'Topic',question_type:transcript===null?'initial':'follow_up',difficulty:'foundation',citations:['evidence chunk id'],follow_up_reason:'Brief pedagogical label, no reasoning trace'}};
   const task=transcript===null?'Choose the first question.'
     :forceAnswer?'The student has used all repeat, clarification and hint allowances for this question. Treat this response as their answer of record: intent must be "answer", assess it exactly as it stands (a non-answer scores low, with brief encouraging feedback), and choose the next question; next may be null to end the exam.'
     :'Classify the student response. If it is an answer, assess it (0–100 dimensions) and choose the next question; next may be null to end the exam. Otherwise return the intent with a reply and no assessment or next question.';
   return jsonModel([{role:'system',content:SYSTEM},{role:'user',content:JSON.stringify({task,format,language:session.language,remaining_seconds:remaining,control_requests_exhausted:Boolean(forceAnswer),
-    evidence,covered:session.turns.map(t=>t.concept),consecutive_follow_ups:consecutiveFollowUps(session),
+    evidence,core_plan:session.context.core_plan||null,required_concepts:rules.required_concepts,allowed_question_types:permitted,covered:session.turns.map(t=>t.concept),consecutive_follow_ups:consecutiveFollowUps(session),
     current_question:current?{question:current.question,concept:current.concept,exchanges_so_far:publicExchanges(current)}:null,
     history:session.turns.slice(-8).map(t=>({question:t.question,answer:t.transcript,assessment:t.assessment})),student_response:transcript})}],
   {operation:'next_question',schemaName:'oral_exam_decision',schema:decisionJsonSchema,contract:decision,signal,expiresAt:session.expires_at,validate:value=>{
     if(transcript===null) {
       if(value.intent!=='answer'||value.assessment!==null||!value.next)throw new ModelValidationError('invalid_initial_decision');
+      if(value.core_concepts){
+        const keys=value.core_concepts.map(c=>conceptKey(c.name));
+        if(value.core_concepts.length>rules.required_concepts||new Set(keys).size!==keys.length||value.core_concepts.some(c=>c.citations.some(id=>!evidence.some(e=>e.id===id))))throw new ModelValidationError('invalid_core_plan');
+        if(!keys.includes(conceptKey(value.next.concept)))throw new ModelValidationError('question_outside_plan');
+      }else if(session.context.oral_policy)throw new ModelValidationError('missing_core_plan');
+      value.transition=null;
     } else if(value.intent!=='answer') {
       if(forceAnswer)throw new ModelValidationError('control_exhausted_not_assessed');
       return checkControl(value,evidence,undefined,current?.question);
@@ -133,7 +152,11 @@ async function next(session,transcript,signal,{forceAnswer=false}={}) {
     if(!session.turns.length&&!value.next)throw new ModelValidationError('missing_initial_question');
     if(value.next?.citations.some(id=>!evidence.some(c=>c.id===id)))throw new ModelValidationError('ungrounded_citation');
     if(session.turns.some(t=>t.question===value.next?.question))throw new ModelValidationError('repeated_question');
-    if((remaining<15||session.turns.length>=30)&&transcript!==null)value.next=null;
+    // Fail closed for unsafe acknowledgements without losing a valid assessment.
+    if(value.transition&&!conversation.safeTransition(value.transition,evidence,current?.question||'',session.language))value.transition=null;
+    const classified=progression.classifyNext(session,value.next,remaining);
+    if(value.next&&!classified&&remaining>60&&session.turns.length<30)throw new ModelValidationError('invalid_progression');
+    if((remaining<=15||session.turns.length>=30||!classified)&&transcript!==null)value.next=null;
     return value;
   }});
 }
@@ -158,20 +181,22 @@ const evaluations=new Map();
 async function evaluate(user,id) {
   if(evaluations.has(id))return evaluations.get(id);
   const work=(async()=>{
-    const session=await store.get(user,id);
+    const session=await store.ensureCore(user,id);
     if(['ready','active'].includes(session.status))return {status:'skipped',reason:'exam_active'};
     if(session.evaluation_status==='ready')return {status:'ready',cached:true};
-    const answered=session.turns.filter(t=>t.transcript);
-    if(!answered.length) {await store.saveEvaluation(id,{score:null,understanding:null,accuracy:null,completeness:null,communication:null,strengths:[],areasForImprovement:['Complete an answer to receive an evaluation.'],topicsCovered:[],summary:'No completed answers were recorded. This exam is not scored.'});return {status:'ready',unscored:true};}
+    const token=await store.claimFeedback(id);
+    if(!token)return {status:'pending'};
+    const core=session.core_evaluation;
+    const answered=session.turns.filter(t=>t.transcript&&t.assessment);
+    if(!core.assessed_answers) {await store.completeFeedback(id,token,{summary:session.language==='ar'?'لا توجد إجابات مكتملة ومقيّمة لمنح درجة.':'No completed, assessed answers were recorded. This exam is not scored.',strengths:[],areasForImprovement:[]});return {status:'ready',unscored:true};}
     try {
-      const report=await jsonModel([{role:'system',content:SYSTEM},{role:'user',content:JSON.stringify({task:'Create a final evaluation using only these actual answers and their validated assessments. Scores 0–100. Return understanding,accuracy,completeness,communication,strengths,areasForImprovement,topicsCovered,summary.',language:session.language,evidence:session.context.chunks,answers:answered.map(t=>({question:t.question,concept:t.concept,answer:t.transcript,assessment:t.assessment}))})}],
-        {operation:'final_evaluation',schemaName:'oral_exam_evaluation',schema:evaluationJsonSchema,contract:evaluation});
-      report.topicsCovered=[...new Set(answered.map(t=>t.concept))];
-      await store.saveEvaluation(id,{...report,score:weightedScore(report)});
+      const report=await jsonModel([{role:'system',content:SYSTEM},{role:'user',content:JSON.stringify({task:'Write concise supportive final commentary using these persisted assessments and computed results. Return summary,strengths,areasForImprovement only. Do not produce scores or claim untested concepts were tested. A technical interruption is not poor academic performance.',language:session.language,computed_evaluation:core,answers:answered.map(t=>({question:t.question,concept:t.concept,answer:t.transcript,assessment:t.assessment}))})}],
+        {operation:'final_evaluation',schemaName:'oral_exam_commentary',schema:commentaryJsonSchema,contract:commentary});
+      await store.completeFeedback(id,token,report);
       return {status:'ready'};
     } catch(error) {
       const code=failureCode(error);
-      await store.evaluationFailed(id,code);
+      await store.completeFeedback(id,token,null,code);
       console.error('Oral exam evaluation failed:',diagnostic('final_evaluation',error,0));
       return {status:'failed',error:code};
     }

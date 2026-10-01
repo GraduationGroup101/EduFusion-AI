@@ -25,11 +25,23 @@ async function main(){
   let tail=Promise.resolve();db.pool.connect=async()=>{const previous=tail;let release;tail=new Promise(r=>{release=r;});await previous;return {query:db.pool.query,release};};
   await require('./migrate').migrate();
   await database.query("INSERT INTO students(id_student,student_name,pin_hash,pin_format) VALUES(99001,'Browser Test Student','fixture-pin','legacy')");
-  global.fetch=async url=>{if(!String(url).startsWith('https://api.groq.com/'))throw new Error('Fixture blocks external network');return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(report)}}]}));};
+  global.fetch=async url=>{if(!String(url).startsWith('https://api.groq.com/'))throw new Error('Fixture blocks external network');return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({summary:report.summary,strengths:report.strengths,areasForImprovement:report.areasForImprovement})}}]}));};
+  if(process.env.ORAL_EXAM_FIXTURE_REPORTS==='true'){
+    const user={id_student:99001},plan=Array.from({length:5},(_,i)=>({name:['Routing','Switching','Addressing','Forwarding','Default routes'][i],citations:['text-1']}));
+    const row=await store.create(user,{source:{kind:'text',digest:'report-fixture'},title:'Networks — report recovery test',context:{chunks:[{id:'text-1',section:'Networks',text:'Routers select paths. Switches connect local devices. Addresses identify destinations. Forwarding uses next hops. Default routes handle other destinations.'}]}},'en',require('node:crypto').randomUUID());
+    await store.start(user,row.id);const lease=await store.claim(user,row.id);
+    const q=i=>({question:'Explain '+plan[i].name,concept:plan[i].name,question_type:i?'next_topic':'initial',difficulty:'foundation',citations:['text-1'],follow_up_reason:''});
+    await store.commit(row.id,lease.token,0,null,{assessment:null,core_concepts:plan,next:q(0)});
+    for(let i=0;i<5;i++)await store.commit(row.id,lease.token,i+1,'An explanation of '+plan[i].name,{assessment,next:i<4?q(i+1):null});
+    await store.ensureCore(user,row.id);
+    const goodFetch=global.fetch;global.fetch=async()=>new Response('{}',{status:503});
+    await examiner.evaluate(user,row.id);global.fetch=goodFetch;
+    console.log('Report recovery fixture: '+row.id);
+  }
   const app=require('../src/app');
   const port=Number(process.env.ORAL_EXAM_FIXTURE_PORT||5000);
   const server=app.listen(port,'127.0.0.1',()=>console.log(`Isolated Oral Exam fixture: http://localhost:${port}; student 99001 / fixture-pin`));
-  const realtime=require('../src/oralExam/realtime').attachRealtime(server,{examiner:{...examiner,next:async(session,text)=>({assessment:text===null?null:assessment,next:{question:text===null?'What is the role of a router in a computer network?':'How does a router decide where to forward a packet?',concept:'Routing',question_type:text===null?'initial':'follow_up',difficulty:'foundation',citations:[session.context.chunks[0].id],follow_up_reason:text===null?'':'Probe packet forwarding'}})},voice:{speak:async()=>wav(),transcriber:({onFinal})=>{
+  const realtime=require('../src/oralExam/realtime').attachRealtime(server,{examiner:{...examiner,next:async(session,text)=>({assessment:text===null?null:assessment,next:{question:text===null?'What is the role of a router in a computer network?':'How does a router decide where to forward a packet?',concept:session.turns.length<3?'Routing':'Switching',question_type:text===null?'initial':session.turns.length===3?'next_topic':'follow_up',difficulty:'foundation',citations:[session.context.chunks[0].id],follow_up_reason:text===null?'':'Probe packet forwarding'}})},voice:{speak:async()=>wav(),transcriber:({onFinal})=>{
     let bytes=0,done=false;return {opened:Promise.resolve(),close(){done=true;},send(chunk){bytes+=chunk.length;if(bytes>=answerBytes&&!done){done=true;onFinal('A router chooses a path and forwards packets between networks.');}return true;}};
   }}});
   // Safe local-only ownership snapshots for long-duration fault verification.

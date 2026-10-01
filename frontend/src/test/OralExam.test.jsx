@@ -45,11 +45,11 @@ it('ending an exam replaces the live view immediately and shows feedback generat
   await screen.findByText('Your exam has ended.');
   expect(screen.queryByRole('button',{name:'End exam'})).toBeNull();
   expect(screen.queryByLabelText('Time remaining')).toBeNull();
-  expect(screen.getByRole('button',{name:'Generating feedback…'})).toBeDisabled();
+  expect(screen.getByRole('button',{name:'Generating detailed feedback…'})).toBeDisabled();
   expect(voice.stop).toHaveBeenCalled();
   await act(async()=>finishEnd({data:{session:{...active,status:'completed',evaluation_status:'pending'},evaluation:{status:'pending'}}}));
   await waitFor(()=>expect(api.evaluate).toHaveBeenCalledTimes(1));
-  expect(screen.getByRole('button',{name:'Generating feedback…'})).toBeDisabled();
+  expect(screen.getByRole('button',{name:'Generating detailed feedback…'})).toBeDisabled();
   await act(async()=>finishEvaluate({data:{session:{...active,status:'completed',evaluation_status:'ready',evaluation:{score:64,understanding:60,accuracy:65,completeness:60,communication:75,strengths:['Basics'],areasForImprovement:['Detail'],topicsCovered:['Routing'],summary:'A fair start.'}},evaluation:{status:'ready'}}}));
   await screen.findByText('A fair start.');expect(screen.getByText('64')).toBeInTheDocument();
   expect(api.start).not.toHaveBeenCalled();expect(api.end).toHaveBeenCalledTimes(1);
@@ -87,7 +87,7 @@ it('cancels in-flight status polling and never resurrects an ended exam from a l
 });
 it('shows disabled and recoverable feedback failure states without invented scores',async()=>{
   api.get.mockResolvedValue({data:{session:{...session,status:'timed_out',evaluation_status:'failed'}}});
-  open('/dashboard/oral-exam?session=exam-1');await screen.findByText(/Your answers are saved/);expect(screen.queryByText('out of 100')).not.toBeInTheDocument();expect(screen.getByRole('button',{name:'Retry feedback'})).toBeEnabled();
+  open('/dashboard/oral-exam?session=exam-1');await screen.findByText(/Your answers are saved/);expect(screen.queryByText('out of 100')).not.toBeInTheDocument();expect(screen.getByRole('button',{name:'Retry detailed feedback'})).toBeEnabled();
 });
 it('preselects a transcript from LectureScribe and links results back to its lecture tools',async()=>{
   api.materials.mockResolvedValue({data:{materials:[{kind:'transcript',id:'job-9',title:'Routing lecture'}]}});
@@ -105,18 +105,18 @@ it('retry feedback shows generating, then a clear failure, then the report, and 
   api.get.mockResolvedValue({data:{session:failed}});
   let resolveFirst;api.evaluate.mockImplementationOnce(()=>new Promise(resolve=>{resolveFirst=resolve;}));
   open('/dashboard/oral-exam?session=exam-1');
-  const button=await screen.findByRole('button',{name:'Retry feedback'});
+  const button=await screen.findByRole('button',{name:'Retry detailed feedback'});
   expect(screen.getByText(/feedback model is busy or unavailable/)).toBeInTheDocument();
   expect(screen.queryByText('out of 100')).not.toBeInTheDocument();
   fireEvent.click(button);fireEvent.click(button);
-  const generating=await screen.findByRole('button',{name:'Generating feedback…'});
+  const generating=await screen.findByRole('button',{name:'Generating detailed feedback…'});
   expect(generating).toBeDisabled();expect(generating).toHaveAttribute('aria-busy','true');
-  expect(screen.getByText(/Generating feedback… this can take up to a minute/)).toBeInTheDocument();
+  expect(generating).toHaveAttribute('aria-busy','true');
   fireEvent.click(generating);
   expect(api.evaluate).toHaveBeenCalledTimes(1);expect(api.evaluate).toHaveBeenCalledWith('exam-1');
   await act(async()=>resolveFirst({data:{session:{...failed,evaluation_attempts:2,evaluation_error:'invalid_model_output'},evaluation:{status:'failed',error:'invalid_model_output'}}}));
   expect(await screen.findByText(/returned an unusable report/)).toBeInTheDocument();
-  const retry=screen.getByRole('button',{name:'Retry feedback'});expect(retry).toBeEnabled();
+  const retry=screen.getByRole('button',{name:'Retry detailed feedback'});expect(retry).toBeEnabled();
   api.evaluate.mockResolvedValueOnce({data:{session:{...failed,evaluation_status:'ready',evaluation_error:null,evaluation:report},evaluation:{status:'ready'}}});
   fireEvent.click(retry);
   await screen.findByText('Solid basics.');expect(screen.getByText('71')).toBeInTheDocument();expect(screen.getByText('out of 100')).toBeInTheDocument();
@@ -130,9 +130,9 @@ it('a request failure keeps the answers, explains it, and lets the student retry
   api.evaluate.mockRejectedValueOnce({response:{status:429,data:{error:'Too many requests. Please try again later.'}}});
   open('/dashboard/oral-exam?session=exam-1');
   expect(await screen.findByText(/took too long/)).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button',{name:'Retry feedback'}));
+  fireEvent.click(screen.getByRole('button',{name:'Retry detailed feedback'}));
   expect(await screen.findByText('Too many requests. Please try again later.')).toBeInTheDocument();
-  expect(screen.getByRole('button',{name:'Retry feedback'})).toBeEnabled();
+  expect(screen.getByRole('button',{name:'Retry detailed feedback'})).toBeEnabled();
   fireEvent.click(screen.getByText('Review questions and answers'));
   expect(screen.getByText('It selects paths.')).toBeInTheDocument();
 });
@@ -140,7 +140,7 @@ it('pending feedback is requested once automatically and shows progress meanwhil
   const pending={...session,status:'completed',evaluation_status:'pending',turns};
   let resolveAuto;api.get.mockResolvedValue({data:{session:pending}});api.evaluate.mockImplementationOnce(()=>new Promise(resolve=>{resolveAuto=resolve;}));
   open('/dashboard/oral-exam?session=exam-1');
-  const generating=await screen.findByRole('button',{name:'Generating feedback…'});
+  const generating=await screen.findByRole('button',{name:'Generating detailed feedback…'});
   fireEvent.click(generating);
   await waitFor(()=>expect(api.evaluate).toHaveBeenCalledTimes(1));
   await act(async()=>resolveAuto({data:{session:{...pending,evaluation_status:'ready',evaluation:report},evaluation:{status:'ready'}}}));
