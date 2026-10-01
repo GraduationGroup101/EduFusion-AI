@@ -15,7 +15,7 @@ const rating=z.enum(['met','partial','missing','incorrect']);
 const verdict=z.object({criterion_id:z.string().min(1).max(100),level:rating,answer_quote:z.string().max(800)}).strict();
 const groundedAssessment=z.object({grounding:z.object({citations:z.array(z.string()).min(1).max(6),criteria:z.array(verdict).min(1).max(5)}).strict(),communication:z.enum(['clear','unclear'])}).strict();
 const groundedQuestion=question.extend({criterion_ids:z.array(z.string().min(1).max(100)).min(1).max(5)});
-const {decision,commentary}=require('./contracts');
+const {decision}=require('./contracts');
 const groundedDecision=decision.extend({assessment:groundedAssessment.nullable(),next:groundedQuestion.nullable()});
 const groundedCommentary=z.object({summary:z.enum(['completed','practice','limited']),strength_ids:z.array(z.number().int().min(0)).max(8),improvement_ids:z.array(z.number().int().min(0)).max(8)}).strict();
 const enabled=s=>s.context?.grounding_version===1;
@@ -31,7 +31,7 @@ function rubric(proposal,generationEvidence,current=null,assessment=null){
     const missing=new Set(assessment?.grounding.criteria.filter(c=>c.level!=='met').map(c=>c.criterion_id)||[]);
     if(!current?.grading_criteria||selected.some(c=>!missing.has(c.id)||!current.grading_criteria.some(p=>p.id===c.id&&p.criterion===c.criterion)))reject('unsupported_follow_up');
   }
-  const {criterion_ids,...q}=proposal;return {...q,grading_criteria:selected};
+  const q={...proposal};delete q.criterion_ids;return {...q,grading_criteria:selected};
 }
 const labels=ar=>ar?{strength:'تناولت هذه النقطة: ',improvement:'راجع هذه النقطة من المادة: ',feedback:'التقييم مبني فقط على نقاط السؤال المدعومة بالمادة.'}:{strength:'You addressed this source point: ',improvement:'Review this source point: ',feedback:'Assessment uses only the source-supported points for this question.'};
 function assess(value,current,evidence,transcript,language){
