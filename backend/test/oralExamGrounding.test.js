@@ -104,3 +104,7 @@ test('private rubric is persisted, absent from public payloads, and ungrounded w
   global.fetch=async()=>response({summary:'completed',strength_ids:[0],improvement_ids:[]});assert.equal((await examiner.evaluate(user,row.id)).status,'ready');
   assert.equal((await store.get(user,row.id)).core_evaluation.score,100);
 });
+
+test('source topic label may name its cited chunk while the question and rubric remain restricted to the selected source sentence',()=>{
+ const loss=criteria[1];const q=proposal({question:'How does packet loss affect media quality?',concept:'UDP',criterion_ids:[loss.id]});assert.deepEqual(g.rubric(q,evidence).grading_criteria,[loss]);assert.throws(()=>g.rubric({...q,concept:'forward error correction'},evidence),{code:'unsupported_question_term'});assert.throws(()=>g.rubric({...q,question:'How does forward error correction affect media quality?'},evidence),{code:'unsupported_question_term'});
+});

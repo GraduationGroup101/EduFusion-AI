@@ -26,7 +26,7 @@ function rubric(proposal,generationEvidence,current=null,assessment=null){
   if(!Array.isArray(ids)||ids.length<1||ids.length>5||new Set(ids).size!==ids.length)reject('invalid_rubric');
   const selected=ids.map(id=>all.find(c=>c.id===id));
   if(selected.some(c=>!c)||selected.some(c=>!proposal.citations.includes(c.citations[0]))||proposal.citations.some(id=>!selected.some(c=>c.citations.includes(id))))reject('unsupported_rubric');
-  lexical(proposal.question,selected);lexical(proposal.concept,selected);
+  lexical(proposal.question,selected);lexical(proposal.concept,catalog(generationEvidence.filter(e=>proposal.citations.includes(e.id))));
   if(proposal.question_type==='follow_up'){
     const missing=new Set(assessment?.grounding.criteria.filter(c=>c.level!=='met').map(c=>c.criterion_id)||[]);
     if(!current?.grading_criteria||selected.some(c=>!missing.has(c.id)||!current.grading_criteria.some(p=>p.id===c.id&&p.criterion===c.criterion)))reject('unsupported_follow_up');
