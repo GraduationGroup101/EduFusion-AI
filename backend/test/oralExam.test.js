@@ -21,7 +21,7 @@ const user={id_student:900};
 const material={source:{kind:'text',digest:'test'},title:'Networks',context:boundedContext(chunksFromText('Packets travel through routers. A router selects a path across networks. '.repeat(20)))};
 const question={question:'What does a router do?',concept:'Routing',question_type:'initial',difficulty:'foundation',citations:['text-1'],follow_up_reason:''};
 const assessment={understanding:80,accuracy:80,completeness:75,communication:90,feedback:'You explained path selection.',strengths:['Path selection'],improvements:['Explain packets']};
-let database,server,realtime,finalizeSpeech,nextOverride,replyOverride;
+let database,server,realtime,finalizeSpeech,nextOverride,replyOverride,speakOverride;
 const spoken=[];
 const original={query:db.pool.query,connect:db.pool.connect,transaction:db.transaction,fetch:global.fetch};
 const api=(method,path,id=900)=>request(server)[method]('/api/oral-exam'+path).set('Authorization','Bearer '+jwt.sign({id_student:id},process.env.JWT_SECRET));
@@ -40,7 +40,7 @@ before(async()=>{
   server=app.listen(0,'127.0.0.1');await once(server,'listening');
   realtime=attachRealtime(server,{closingTimeoutMs:50,examiner:{...examiner,evaluate:async()=>{},next:async(_s,text,signal,options)=>nextOverride?nextOverride(_s,text,signal,options):({assessment:text===null?null:assessment,next:text===null?question:{...question,question:'Why is path selection useful?',question_type:'follow_up'}}),
     reply:async(_s,text,intent)=>replyOverride?replyOverride(_s,text,intent):({intent,reply:intent==='clarify'?'In other words, what job does this device do for packets?':'No problem. Share anything you remember about this device.',assessment:null,next:null})},voice:{
-    speak:async text=>{spoken.push(text);return Buffer.from('ID3fake-test-audio');},
+    speak:async text=>{spoken.push(text);if(speakOverride)return speakOverride(text);return Buffer.from('ID3fake-test-audio');},
     transcriber:({onFinal})=>{finalizeSpeech=onFinal;return {opened:Promise.resolve(),close(){},send(){return true;}};},
   }});
 });
@@ -544,4 +544,60 @@ test('historical pending reports cannot starve modern feedback in the bounded ba
   const modern=await create();await store.finish(user,modern.id);
   await database.query("UPDATE edufusion_oral_exam_sessions SET status='completed' WHERE id=$1",[modern.id]);
   assert.deepEqual((await store.pendingEvaluations()).map(row=>row.id),[modern.id]);
+});
+
+test('resume replays the current question without its already delivered transition',async()=>{
+  const a=await create(),started=await store.start(user,a.id);
+  nextOverride=async(_s,text)=>({assessment:text===null?null:assessment,transition:text===null?null:'Let us continue.',next:text===null?question:{...question,question:'Explain the next hop.',question_type:'follow_up'}});
+  const first=await socket(a.id);let resumed;
+  try{
+    await first.until(e=>e.type==='audio');first.ws.send(JSON.stringify({type:'played',sequence:1}));await first.until(e=>e.type==='state'&&e.state==='listening');
+    await say(first,'It forwards packets.');await first.until(e=>e.type==='audio'&&e.sequence===2);
+    assert.equal(spoken.at(-1),'Let us continue. Explain the next hop.');
+    first.ws.terminate();await first.closed;await new Promise(r=>setTimeout(r,100));
+    resumed=await socket(a.id);const replay=await resumed.until(e=>e.type==='question');await resumed.until(e=>e.type==='audio');
+    assert.equal(replay.sequence,2);assert.equal(replay.transition,'');assert.equal(spoken.at(-1),'Explain the next hop.');
+    const saved=await store.get(user,a.id);assert.equal(saved.turns[1].transition,'Let us continue.');assert.equal(saved.turns.length,2);assert.equal(+new Date(saved.expires_at),+new Date(started.expires_at));
+  }finally{nextOverride=undefined;first.ws.terminate();if(resumed){resumed.ws.terminate();await resumed.closed;}await store.finish(user,a.id);}
+});
+
+test('TTS outage keeps STT usable, later audio recovers, bonuses score and failed closing persists the report',async()=>{
+  const a=await create(),started=await store.start(user,a.id);
+  const plan=Array.from({length:5},(_,i)=>({name:'Concept '+i,citations:['text-1']}));
+  const q=i=>({...question,question:'Explain concept '+i,concept:plan[i].name,question_type:i?'next_topic':'initial'});
+  const score=n=>({...assessment,understanding:n,accuracy:n,completeness:n,communication:n});
+  nextOverride=async(s,text)=>({assessment:text===null?null:score(s.turns.length===6?20:s.turns.length===7?100:80),core_concepts:text===null?plan:null,transition:text===null?null:'Let us continue.',
+    next:s.turns.length<5?q(s.turns.length):s.turns.length<7?{...question,question:'Apply the concepts '+s.turns.length,concept:'Application',question_type:'bonus'}:null});
+  let failed=true;speakOverride=async()=>{if(failed)throw new Error('private provider response');return Buffer.from('ID3recovered');};
+  const c=await socket(a.id);
+  try{
+    for(let sequence=1;sequence<=7;sequence++){
+      const current=await c.until(e=>e.type==='question'&&e.sequence===sequence);
+      const from=c.events.indexOf(current);
+      if(failed){await c.until(e=>e.type==='audio_unavailable'&&e.sequence===sequence);assert.equal(c.events.slice(from).some(e=>e.type==='error'),false);}
+      else{await c.until(e=>e.type==='audio'&&e.sequence===sequence);c.ws.send(JSON.stringify({type:'played',sequence}));}
+      await c.until(e=>e.type==='state'&&e.state==='listening',from);
+      assert.equal(c.ws.readyState,WebSocket.OPEN);
+      if(sequence===5){const saved=await store.get(user,a.id);assert.equal(saved.turns.some(t=>t.category==='bonus'),false);}
+      failed=sequence>=6; // first fails, middle questions recover, final bonus and closing fail
+      finalizeSpeech('Synthetic answer '+sequence);
+    }
+    await c.until(e=>e.type==='closing');c.ws.send(Buffer.alloc(3200));const final=await c.until(e=>e.type==='ended');
+    assert.equal(final.session.evaluation.core_score,80);assert.equal(final.session.evaluation.bonus_score,5);assert.equal(final.session.evaluation.score,85);
+    assert.equal(final.session.evaluation.completed_core_concepts,5);assert.equal(final.session.evaluation.bonus_questions,2);
+    assert.equal(+new Date(final.session.expires_at),+new Date(started.expires_at));
+    const saved=await store.get(user,a.id);assert.equal(saved.turns.length,7);assert.equal(saved.core_evaluation.score,85);assert.equal(saved.technical_interruptions.length,2);
+    assert.ok(c.events.findIndex(e=>e.type==='closing')<c.events.findIndex(e=>e.type==='ended'));
+    assert.deepEqual((await store.ensureCore(user,a.id)).core_evaluation,saved.core_evaluation);
+  }finally{nextOverride=undefined;speakOverride=undefined;c.ws.terminate();await c.closed;await store.finish(user,a.id);}
+});
+
+test('browser playback failure falls back on the same socket and ignores duplicate failure frames',async()=>{
+  const a=await create();await store.start(user,a.id);const c=await socket(a.id);
+  try{
+    await c.until(e=>e.type==='audio');for(let i=0;i<2;i++)c.ws.send(JSON.stringify({type:'playback_failed',sequence:1}));
+    await c.until(e=>e.type==='state'&&e.state==='listening');assert.equal(c.ws.readyState,WebSocket.OPEN);
+    assert.equal(c.events.filter(e=>e.type==='audio_unavailable').length,1);
+    const saved=await store.get(user,a.id);assert.equal(saved.turns.length,1);assert.equal(saved.technical_interruptions.length,1);
+  }finally{c.ws.terminate();await c.closed;await store.finish(user,a.id);}
 });

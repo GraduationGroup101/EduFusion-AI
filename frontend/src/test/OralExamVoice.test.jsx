@@ -17,6 +17,8 @@ class Context {
   resume=async()=>{};close=async()=>{};
   createMediaStreamSource=()=>({connect(){},disconnect(){}});
   createGain=()=>({gain:{value:1},connect(){}});
+  async decodeAudioData(){return {};}
+  createBufferSource=()=>({connect(){},start(){},stop(){}});
 }
 const snapshot=(elapsed=0)=>({id:'exam-1',status:'active',expires_at:new Date(600000).toISOString(),server_now:new Date(elapsed).toISOString()});
 beforeEach(()=>{
@@ -202,4 +204,31 @@ it('does not invent a timeout when transport drops during a normal closing',asyn
   expect(hook.result.current.state).toBe('ended');expect(sockets).toHaveLength(1);
   // The page's HTTP polling recovers the authoritative terminal snapshot.
   expect(hook.onSession).not.toHaveBeenCalled();hook.unmount();
+});
+
+it('keeps the question and microphone usable during TTS outage and clears the warning when audio recovers',async()=>{
+  const hook=await ready();welcome(sockets[0]);const ws=sockets[0];
+  act(()=>{ws.message({type:'question',question:'Explain routing.',sequence:1});ws.message({type:'audio_unavailable',sequence:1});ws.message({type:'state',state:'listening'});});
+  expect(hook.result.current.question).toBe('Explain routing.');expect(hook.result.current.audioUnavailable).toBe(true);expect(hook.result.current.mic).toBe(true);expect(hook.result.current.error).toBe('');
+  await act(async()=>{ws.message({type:'state',state:'speaking'});ws.message({type:'audio',sequence:2,audio:btoa('ID3fixture')});});
+  expect(hook.result.current.audioUnavailable).toBe(false);expect(sockets).toHaveLength(1);expect(track.stop).not.toHaveBeenCalled();hook.unmount();
+});
+it('a resumed question clears the previous transition from the display',async()=>{
+  const hook=await ready();welcome(sockets[0]);
+  act(()=>sockets[0].message({type:'question',question:'Next question?',sequence:2,transition:'Let us continue.'}));
+  expect(hook.result.current.remark?.text).toBe('Let us continue.');
+  act(()=>sockets[0].closed());act(()=>vi.advanceTimersByTime(1100));welcome(sockets[1]);
+  act(()=>sockets[1].message({type:'question',question:'Next question?',sequence:2,transition:''}));
+  expect(hook.result.current.remark).toBeNull();expect(hook.result.current.question).toBe('Next question?');hook.unmount();
+});
+it('client decoding failure requests text fallback without disconnecting or blocking closing',async()=>{
+  const hook=await ready();welcome(sockets[0]);const ws=sockets[0];
+  const decode=vi.spyOn(Context.prototype,'decodeAudioData');
+  decode.mockRejectedValue(new Error('Audio decode failed'));
+  await act(async()=>{ws.message({type:'state',state:'speaking'});ws.message({type:'audio',sequence:1,audio:btoa('invalid')});});
+  expect(ws.sent.at(-1)).toEqual({type:'playback_failed',sequence:1});expect(ws.readyState).toBe(1);
+  act(()=>{ws.message({type:'audio_unavailable',sequence:1});ws.message({type:'state',state:'listening'});});
+  expect(hook.result.current.state).toBe('listening');
+  await act(async()=>{ws.message({type:'closing',text:'Thank you.'});ws.message({type:'audio',kind:'closing',audio:btoa('invalid')});});
+  expect(ws.sent.at(-1)).toEqual({type:'played',kind:'closing'});decode.mockRestore();hook.unmount();
 });

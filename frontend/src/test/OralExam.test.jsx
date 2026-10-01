@@ -8,11 +8,18 @@ vi.mock('../hooks/useOralExamVoice',()=>({useOralExamVoice:update=>{voice.update
 vi.mock('../services/oralExam',()=>({oralExamService:{status:vi.fn(),materials:vi.fn(),sessions:vi.fn(),get:vi.fn(),create:vi.fn(),start:vi.fn(),end:vi.fn(),evaluate:vi.fn()}}));
 const session={id:'exam-1',material_title:'Computer networks',language:'en',status:'ready',turns:[],evaluation_status:'pending'};
 beforeEach(()=>{
-  vi.resetAllMocks();Object.assign(voice,{state:'idle',error:'',mic:false,muted:false,question:'',remark:null});
+  vi.resetAllMocks();Object.assign(voice,{state:'idle',error:'',mic:false,muted:false,question:'',remark:null,audioUnavailable:false});
   api.status.mockResolvedValue({data:{enabled:true}});api.materials.mockResolvedValue({data:{materials:[{kind:'lecture',id:'lecture-1',title:'Computer networks'}]}});api.sessions.mockResolvedValue({data:{sessions:[]}});
   api.create.mockResolvedValue({data:{session}});api.get.mockResolvedValue({data:{session}});voice.checkMic.mockResolvedValue(true);
 });
 const open=(path='/dashboard/oral-exam')=>render(<MemoryRouter initialEntries={[path]}><OralExamPage/></MemoryRouter>);
+it('shows the localized audio fallback alongside the question and an available microphone',async()=>{
+  Object.assign(voice,{state:'listening',mic:true,audioUnavailable:true,question:'Explain routing.'});
+  api.get.mockResolvedValue({data:{session:{...session,status:'active',expires_at:new Date(Date.now()+600000).toISOString(),server_now:new Date().toISOString()}}});
+  open('/dashboard/oral-exam?session=exam-1');
+  await screen.findByText('Audio is temporarily unavailable. You can continue with the question shown on screen.');
+  expect(screen.getByRole('heading',{name:'Explain routing.'})).toBeInTheDocument();expect(screen.getByRole('button',{name:'Mute'})).toBeEnabled();expect(screen.queryByRole('button',{name:'Reconnect'})).toBeNull();
+});
 it('opening an unscored historical exam does not automatically request modern feedback',async()=>{
   api.get.mockResolvedValue({data:{session:{...session,status:'completed',evaluation_status:'unavailable',evaluation:{version:0,legacy:true,unscored:true,score:null,summary:'No complete evaluation was saved for this historical exam.'}}}});
   open('/dashboard/oral-exam?session=exam-1');

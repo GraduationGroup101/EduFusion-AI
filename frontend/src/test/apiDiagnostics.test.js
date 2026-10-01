@@ -10,7 +10,7 @@ it('distinguishes network/CORS, timeout, authorization and backend failure witho
       reportApiFailure({ ...privateData, response: { ...privateData.response, status } });
     }
     reportApiFailure({ ...privateData, code: 'ECONNABORTED' });
-    expect(warn.mock.calls.map(([, details]) => details.category)).toEqual([
+    expect(warn.mock.calls.map(([message]) => JSON.parse(message.slice('API request failed: '.length)).category)).toEqual([
       'network_or_cors', 'authorization', 'authorization', 'request_rejected', 'server', 'service_unavailable', 'timeout',
     ]);
     expect(JSON.stringify(warn.mock.calls)).not.toContain('private');

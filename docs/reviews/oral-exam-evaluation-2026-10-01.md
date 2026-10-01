@@ -1,5 +1,17 @@
 # Oral Exam evaluation and conversation
 
+## Production follow-up: speech resilience
+
+The first production verification of `5ecc19c` applied migration 011 and deployed matching Render/Vercel revisions without merging PR #23. A pre-migration report retained its saved 91/100 and dimensions 90/95/85/90, original commentary and topics across refreshes; no modern coverage was fabricated. PDF and DOCX extraction passed.
+
+The disposable live-provider exam retained seven assessed answers after transport recovery. It ended with a persisted deterministic score of 75, four of five concepts, three follow-ups and zero bonus. Independent arithmetic reproduced dimensions 74.3/79/68.5/81 and concept scores 51.6/91.3/85.8/73.2. Commentary succeeded separately. Closing text and MP3 delivery completed before the terminal snapshot. The original deadline never changed.
+
+Two issues required follow-up: reconnect replayed the stored acknowledgement; repeated ElevenLabs TTS failures on the fifth question closed the connection and prevented answering despite usable text. Original diagnostics recorded only `stage: tts, error_class: Error`, so the HTTP status and quota/throttle/response cause cannot be recovered from those logs.
+
+Resume now speaks only the current question, retaining its original transition in persistence. A failed synthesis or client playback sends `audio_unavailable` and starts STT on the same fenced connection, with localized text-plus-microphone guidance. Each future question tries TTS again. STT or answer-provider failures still use bounded recovery. Closing remains bounded and does not accept new answers. Safe speech diagnostics distinguish known provider codes, HTTP status, invalid media and timeout classes without logging provider bodies or answer content. Browser API diagnostics serialize only their existing sanitized fields so captured warnings can identify the affected service.
+
+Regression coverage includes acknowledgement replay, same-socket STT fallback, later audio recovery, browser decoding failure, poor/strong bonus after fallback, failed closing synthesis and persisted scores. Transition variety uses recent acknowledgements in the existing model request; the vocabulary and leakage filter remain unchanged. No additional migration is required. The sections below describe the original implementation and pre-rollout evidence; final production follow-up results are recorded separately.
+
 ## Observed failure
 
 Render service `srv-d998b91o3t8c73f1mtr0` production logs on October 1 show `final_evaluation` failing with provider HTTP 400 `json_validate_failed` at 07:00:24 UTC. At 07:06:16–17 UTC, its attempts failed first with 400 `json_validate_failed`, then 429 `rate_limit_exceeded`. This establishes both output-validation rejection and throttling, not only rate limiting. The existing provider diagnostics lack session identifiers, so these entries cannot uniquely identify an individual student's failed report. No provider response text or student content was collected.

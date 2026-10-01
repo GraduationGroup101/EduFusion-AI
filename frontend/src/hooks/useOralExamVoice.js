@@ -9,6 +9,7 @@ const LEASE_BUSY_WINDOW_MS=60000;
 
 export function useOralExamVoice(onSession) {
   const [state,setState]=useState('idle'),[error,setError]=useState(''),[mic,setMic]=useState(false),[muted,setMuted]=useState(false),[question,setQuestion]=useState(''),[remark,setRemark]=useState(null);
+  const [audioUnavailable,setAudioUnavailable]=useState(false);
   const runtime=useRef({}),onSessionRef=useRef(onSession);onSessionRef.current=onSession;
   // A per-tab capability: survives a refresh of this tab, never shared with another live tab.
   const resume=useRef({});
@@ -19,7 +20,7 @@ export function useOralExamVoice(onSession) {
   },[]);
   useEffect(()=>()=>{stop();resume.current.claim?.release();resume.current={};},[stop]);
   const checkMic=useCallback(async()=>{
-    stop();setError('');
+    stop();setError('');setAudioUnavailable(false);
     const r={stopped:false,muted:false};runtime.current=r;setMuted(false);
     try {
       if(!navigator.mediaDevices?.getUserMedia)throw new Error('Use a supported browser over HTTPS to access your microphone.');
@@ -110,6 +111,7 @@ export function useOralExamVoice(onSession) {
           // A conversational reply (repeat, clarification, nudge, retry) keeps the
           // same question and sequence; the remark is what the examiner just said.
           if(msg.type==='question'){setQuestion(msg.question);setRemark(msg.transition?{kind:'transition',text:msg.transition}:msg.kind&&msg.kind!=='question'?{kind:msg.kind,text:msg.remark||''}:null);}
+          if(msg.type==='audio_unavailable'){r.source?.stop();setAudioUnavailable(true);}
           if(msg.type==='closing'){r.phase='closing';setState('closing');clearTimeout(r.retry);clearTimeout(r.deadline);r.stream?.getTracks().forEach(t=>t.stop());setMic(false);setRemark({kind:'closing',text:msg.text});}
           if(msg.type==='error'){setError(msg.message);r.phase='error';setState('error');r.source?.stop();if(msg.retryable){disconnected(4500,'recoverable_exam_failure',msg.retry_after_ms);ws.close(4500,'Recoverable exam failure');}}
           if(msg.type==='ended'){r.phase='ended';forgetResumeKey(r.sessionId);setState('ended');onSessionRef.current(msg.session);stop();}
@@ -122,9 +124,15 @@ export function useOralExamVoice(onSession) {
             if(r.context.state!=='running')throw new Error('Audio playback is blocked');
             r.source=r.context.createBufferSource();r.source.buffer=decoded;r.source.connect(r.context.destination);
             r.source.onended=()=>{if(current()&&['speaking','closing'].includes(r.phase)&&ws.readyState===1)ws.send(JSON.stringify({type:'played',sequence:msg.sequence,kind:msg.kind}));};
-            r.source.start();
+            r.source.start();setAudioUnavailable(false);
           }
-        }catch{if(current()){log('playback_failure');setError('Audio could not play. Reconnect to hear the question again.');setState('error');r.phase='error';}}
+        }catch{if(current()){
+          log('playback_failure');setAudioUnavailable(true);r.source?.stop();
+          if(ws.readyState===1){
+            if(r.phase==='closing')ws.send(JSON.stringify({type:'played',kind:'closing'}));
+            else if(r.phase==='speaking')ws.send(JSON.stringify({type:'playback_failed',sequence:JSON.parse(event.data).sequence}));
+          }
+        }}
       };
       ws.onerror=()=>{};
       ws.onclose=event=>disconnected(event.code,event.reason);
@@ -132,5 +140,5 @@ export function useOralExamVoice(onSession) {
     dial();
   },[stop]);
   const toggleMute=()=>{const r=runtime.current;r.muted=!r.muted;setMuted(r.muted);r.stream?.getAudioTracks().forEach(t=>{t.enabled=!r.muted;});};
-  return {state,error,mic,muted,question,remark,checkMic,connect,stop,toggleMute};
+  return {state,error,mic,muted,question,remark,audioUnavailable,checkMic,connect,stop,toggleMute};
 }

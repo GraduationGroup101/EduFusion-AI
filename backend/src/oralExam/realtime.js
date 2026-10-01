@@ -71,7 +71,7 @@ function attachRealtime(server,dependencies={}) {
             (async()=>{const data=await audio.speak(text,session.language,controller.signal);if(closed)return;
               const played=new Promise(resolve=>{closingPlayed=resolve;});
               send({type:'audio',audio:data.toString('base64'),kind:'closing'});await played;})()]);
-        }catch(err){log('closing_audio_unavailable',{error_class:err.name});}
+        }catch(err){log('closing_audio_unavailable',audio.diagnostic?.(err)||{error_class:err.name});}
         finally{clearTimeout(timeout);controller.abort();closingPlayed=null;}
         if(!closed){state('ended');send({type:'ended',session:store.publicView(await store.get(user,session.id))});ws.close(1000,'Exam ended');}
       })();
@@ -93,21 +93,36 @@ function attachRealtime(server,dependencies={}) {
     // `question` event always carries the persisted question and sequence; a
     // repeat re-reads it, while a clarification, nudge or retry prompt is
     // spoken on its own and shown as the examiner's remark.
-    async function speakQuestion(kind='question',remark='') {
+    async function speakQuestion(kind='question',remark='',resuming=false) {
       const current=++generation;
       state('thinking');
       const question=session.turns.at(-1);
-      const transition=kind==='question'?question.transition||'':'';
+      // Keep the saved acknowledgement for review, but never replay it on resume.
+      const transition=kind==='question'&&!resuming?question.transition||'':'';
       send({type:'question',question:question.question,sequence:question.sequence,kind,remark,transition});
-      const introduction=session.turns.length===1&&kind==='question'?(session.language==='ar'?'مرحباً. سنجري امتحاناً شفهياً قصيراً بناءً على مادتك. ':'Welcome. We will explore your material in a short oral exam. '):'';
+      const introduction=!resuming&&session.turns.length===1&&kind==='question'?(session.language==='ar'?'مرحباً. سنجري امتحاناً شفهياً قصيراً بناءً على مادتك. ':'Welcome. We will explore your material in a short oral exam. '):'';
       const text=kind==='question'?introduction+(transition?transition+' ':'')+question.question:conversation.spoken(kind,remark,question.question);
       try {
         const data=await audio.speak(text,session.language,abort.signal);
         if(closed||abort.signal.aborted||current!==generation)return;
         state('speaking');
         send({type:'audio',audio:data.toString('base64'),sequence:question.sequence});
-        playbackTimer=setTimeout(()=>{if(phase==='speaking')error('Audio playback did not finish. Reconnect to retry.');},60000);
-      }catch(err) {if(!abort.signal.aborted){log('provider_failure',{stage:'tts',error_class:err.name});error('The examiner’s audio could not play. Reconnect to hear the question again.');}}
+        playbackTimer=setTimeout(()=>{if(phase==='speaking')textFallback('playback_timeout').catch(()=>error('Microphone transcription is unavailable. Reconnect to retry.'));},60000);
+      }catch(err) {
+        if(closed||abort.signal.aborted||current!==generation)return;
+        log('provider_failure',{stage:'tts',...(audio.diagnostic?.(err)||{error_class:err.name})});
+        await textFallback('tts_unavailable');
+      }
+    }
+    async function textFallback(reason){
+      if(closed||abort.signal.aborted||closingWork)return;
+      stopAudio();state('connecting_audio');
+      log('audio_unavailable',{reason});
+      await store.interruption(session.id,token,reason);
+      if(closed||abort.signal.aborted||closingWork)return;
+      send({type:'audio_unavailable',sequence:session.turns.at(-1)?.sequence});
+      // TTS is optional; the persisted question and STT remain usable.
+      await listen();
     }
     // Handles a non-answer utterance: nothing is scored, no question is
     // consumed, and the exchange is stored on the current turn for the review.
@@ -217,8 +232,9 @@ function attachRealtime(server,dependencies={}) {
           if(!session.turns.length&&remaining<=60000)await finish('insufficient_time');
           else if(!session.turns.length)await advance(null);
           else if(session.turns.at(-1).transcript&&!session.turns.at(-1).assessment)await advance(session.turns.at(-1).transcript);
-          else await speakQuestion();
+          else await speakQuestion('question','',true);
         }else if(msg.type==='played'&&phase==='speaking'&&msg.sequence===session.turns.at(-1)?.sequence){clearTimeout(playbackTimer);await listen();}
+        else if(msg.type==='playback_failed'&&phase==='speaking'&&msg.sequence===session.turns.at(-1)?.sequence)await textFallback('playback_unavailable');
         else if(msg.type==='end'&&user&&session)await finish('student_ended');
         else if(msg.type==='hello')ws.close(4400,'Repeated handshake');
       })().catch(err=>{
