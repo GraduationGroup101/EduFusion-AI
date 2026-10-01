@@ -2,6 +2,7 @@ const { decision,commentary,decisionJsonSchema,commentaryJsonSchema } = require(
 const store=require('./store');
 const conversation=require('./conversation');
 const progression=require('./progression');
+const legacy=require('./legacy');
 const {conceptKey,policy}=require('./grading');
 const {setTimeout:delay}=require('node:timers/promises');
 
@@ -183,6 +184,7 @@ async function evaluate(user,id) {
   const work=(async()=>{
     const session=await store.ensureCore(user,id);
     if(['ready','active'].includes(session.status))return {status:'skipped',reason:'exam_active'};
+    if(legacy.isLegacy(session))return legacy.report(session).unscored?{status:'unavailable',reason:'historical_evaluation_missing'}:{status:'ready',cached:true};
     if(session.evaluation_status==='ready')return {status:'ready',cached:true};
     const token=await store.claimFeedback(id);
     if(!token)return {status:'pending'};

@@ -488,3 +488,60 @@ test('a persisted core report is available while commentary is pending and stale
   await store.completeFeedback(a.id,first,null,'timeout');
   const after=await store.get(user,a.id);assert.equal(after.evaluation_status,'ready');assert.deepEqual(after.core_evaluation,saved.core_evaluation);
 });
+
+const historicalReport={score:84,understanding:86,accuracy:82,completeness:80,communication:90,strengths:['Original strength'],areasForImprovement:['Original improvement'],topicsCovered:['Routing'],summary:'  Original saved commentary.  '};
+async function historicalSession(evaluation,status='ready'){
+  await database.query("UPDATE edufusion_oral_exam_sessions SET created_at=NOW()-INTERVAL '2 days'");
+  const row=await create();await store.start(user,row.id);const lease=await store.claim(user,row.id);
+  await store.commit(row.id,lease.token,0,null,{assessment:null,next:question});
+  await store.commit(row.id,lease.token,1,'Original answer',{assessment,next:null});
+  await database.query("UPDATE edufusion_oral_exam_sessions SET context=context-'oral_policy'-'core_plan',core_evaluation=NULL,evaluation=$2,evaluation_status=$3 WHERE id=$1",[row.id,evaluation,status]);
+  await database.query('UPDATE edufusion_oral_exam_turns SET category=NULL,concept_key=NULL,parent_sequence=NULL WHERE session_id=$1',[row.id]);
+  return row.id;
+}
+test('historical API reads and feedback retries preserve the exact saved report without writing core results',async()=>{
+  const id=await historicalSession(historicalReport);
+  const before=(await database.query('SELECT * FROM edufusion_oral_exam_sessions WHERE id=$1',[id])).rows[0];
+  const beforeTurns=(await database.query('SELECT * FROM edufusion_oral_exam_turns WHERE session_id=$1',[id])).rows;
+  const fetch=global.fetch;global.fetch=()=>{throw new Error('A historical report must not request a provider');};
+  try{
+    for(let i=0;i<3;i++){
+      const response=await api('get',`/sessions/${id}`);assert.equal(response.status,200);
+      const view=response.body.session;
+      assert.deepEqual(view.evaluation,{...historicalReport,version:0,legacy:true});
+      assert.equal(view.evaluation_status,'ready');assert.equal(view.turns[0].category,null);
+      assert.equal(view.turns[0].concept_key,null);assert.equal(view.evaluation.required_concepts,undefined);
+    }
+    assert.equal((await store.ensureCore(user,id)).core_evaluation,null);
+    const retry=await api('post',`/sessions/${id}/evaluation`);
+    assert.equal(retry.status,200);assert.deepEqual(retry.body.evaluation,{status:'ready',cached:true});
+    assert.deepEqual(retry.body.session.evaluation,{...historicalReport,version:0,legacy:true});
+    assert.equal((await api('post',`/sessions/${id}/end`)).body.evaluation.status,'ready');
+  }finally{global.fetch=fetch;}
+  assert.deepEqual((await database.query('SELECT * FROM edufusion_oral_exam_sessions WHERE id=$1',[id])).rows[0],before);
+  assert.deepEqual((await database.query('SELECT * FROM edufusion_oral_exam_turns WHERE session_id=$1',[id])).rows,beforeTurns);
+});
+
+test('historical missing or unusable reports remain unscored, without policy inference or provider writes',async()=>{
+  for(const [evaluation,status] of [[null,'pending'],[null,'failed'],[{score:84},'ready']]){
+    const id=await historicalSession(evaluation,status);
+    const before=(await database.query('SELECT * FROM edufusion_oral_exam_sessions WHERE id=$1',[id])).rows[0];
+    const view=(await api('get',`/sessions/${id}`)).body.session;
+    assert.equal(view.evaluation.version,0);assert.equal(view.evaluation.legacy,true);
+    assert.equal(view.evaluation.score,null);assert.equal(view.evaluation.unscored,true);
+    assert.equal(view.evaluation.required_concepts,undefined);assert.equal(view.evaluation_status,'unavailable');
+    assert.equal(view.turns[0].transcript,'Original answer');
+    const retry=await api('post',`/sessions/${id}/evaluation`);
+    assert.equal(retry.status,200);assert.equal(retry.body.evaluation.status,'unavailable');
+    assert.equal((await api('post',`/sessions/${id}/end`)).body.evaluation.status,'unavailable');
+    assert.deepEqual((await database.query('SELECT * FROM edufusion_oral_exam_sessions WHERE id=$1',[id])).rows[0],before);
+  }
+});
+
+test('historical pending reports cannot starve modern feedback in the bounded background queue',async()=>{
+  await database.query("UPDATE edufusion_oral_exam_sessions SET evaluation_status='failed' WHERE evaluation_status='pending'");
+  for(let i=0;i<4;i++)await historicalSession(null,'pending');
+  const modern=await create();await store.finish(user,modern.id);
+  await database.query("UPDATE edufusion_oral_exam_sessions SET status='completed' WHERE id=$1",[modern.id]);
+  assert.deepEqual((await store.pendingEvaluations()).map(row=>row.id),[modern.id]);
+});

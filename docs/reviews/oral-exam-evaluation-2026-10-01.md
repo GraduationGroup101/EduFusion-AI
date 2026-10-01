@@ -20,7 +20,21 @@ Examples: initial 60 + follow-up 90 → concept 72. Core 78 + bonus performance 
 
 The first terminal read can derive a core report without a provider request. End/evaluation/closing persist an immutable `core_evaluation` before asking for commentary. Written feedback has a separate status via the existing `evaluation_status`; `ready` means commentary is ready, `failed` means only commentary failed. The numeric report remains returned in either case. Retry cannot change stored core scores. An in-process promise and a database claim token/150-second lease prevent concurrent or stale feedback workers from overwriting newer outcomes. Provider requests are bounded to two 25-second attempts with at most 60 seconds between attempts.
 
-The report exposes required/completed concepts, follow-ups and bonuses asked, per-concept scores, assessed/unassessed answer counts, covered topics, termination reason and recorded technical interruptions. Untested concepts and saved but unassessed answers receive no fabricated score. Interruptions never change numeric marks. Historical question categories are derived conservatively from initial/next_topic/follow_up order; old reports and answer rows are not destructively rewritten.
+The version-1 report exposes required/completed concepts, follow-ups and bonuses asked, per-concept scores, assessed/unassessed answer counts, covered topics, termination reason and recorded technical interruptions. Untested concepts and saved but unassessed answers receive no fabricated score. Interruptions never change numeric marks.
+
+## Historical compatibility
+
+`legacy.js` explicitly identifies a historical session when `core_evaluation`, `context.oral_policy` and `context.core_plan` are all absent/null. A saved core evaluation or either policy marker retains the version-1 path, including new exams closed before a plan was generated. Historical question order is never used to infer new grading policy.
+
+A usable saved historical evaluation is returned as `version: 0, legacy: true`, preserving the exact persisted score, four dimensions, strengths, improvements, topics and summary. Validation uses the previous report contract plus its persisted numeric score; validated text is returned unchanged, not trimmed by parsing. The UI displays these saved values and omits modern coverage, bonuses, concept formulas and weighting annotations. Neither reads, `ensureCore`, ending an already-ended session nor evaluation retries rewrite the saved report or fabricate `core_evaluation`.
+
+Without a usable historical evaluation, the API returns a version-0 unscored report with null dimensions/score and `evaluation_status: unavailable`. It explains that no complete evaluation was saved and preserves access to the original question/answer review. It does not calculate a substitute score or request provider regrading. This is a read-time representation only: the stored pending/failed status and original data remain untouched. Background feedback selection excludes these historical rows before its four-row limit, preventing them from starving new reports.
+
+Migration 011 is unchanged and remains additive; there is no historical data or score migration. Production verification must compare at least one existing pre-011 report's score, dimensions and commentary with its pre-rollout values and confirm absence of invented coverage. That live comparison has not yet been performed.
+
+## Written feedback presentation
+
+For version-1 reports, aggregated per-answer strengths and improvements remain visible immediately. Optional AI summary, strengths and suggestions appear separately under Overall feedback, with the lists explicitly labelled AI feedback. Retry detailed feedback retrieves all three commentary fields without replacing deterministic feedback or numeric results. Historical reports continue to display their original summary and original lists once.
 
 ## Core plan and conversation
 
@@ -46,7 +60,7 @@ Use the frontend and backend from this branch together for the new report UI. Ol
 
 Automated tests cover deterministic formulas, no-answer/incomplete/technical cases, failure → fallback → successful commentary retry, stale feedback-worker fencing, persisted five-core/follow-up/bonus coverage, transition order, unsafe-transition omission, final-minute/30-second/15-second progression, hard timeout and closing, and the existing authentication/upload/reconnect/lease protections.
 
-`npm run check` passed: 153 backend tests, 106 frontend tests, ESLint and the production Vite build. A subsequent targeted 24-test backend run passed after adding expired-feedback-worker recovery: an abandoned pending worker exposes a retryable commentary timeout while its numeric report remains available. The browser also preserves the server's terminal status if transport drops during normal closing.
+After the compatibility fix, full validation passed: 158 backend tests, 110 frontend tests, ESLint and the production Vite build. The focused grading/legacy/Oral Exam integration run also passed all 37 tests, including feedback failure/retry, refresh stability, core/follow-up/bonus, closing and reconnect. The historical regressions compare complete stored session/answer rows before and after repeated GET, evaluation retry and end requests, not only rendered scores. The browser preserves the server's terminal status if transport drops during normal closing. CI results for the exact commit are available on PR #23.
 
 The 210-second isolated real WebSocket/database soak passed with 40 clocks, two welcomes, three retained answers and unchanged start/deadline. Providers in this soak are deterministic fixtures. In the in-app browser, isolated account 99001 saw 82/100, 5/5 core concepts and all four dimensions after an injected final-provider 503. Clicking Retry detailed feedback restored commentary without changing scores; refreshing preserved the complete report and localized closing text. These checks use real local authentication, HTTP, database and UI, with fixture providers; they do not prove live provider availability. No production academic records were changed.
 
@@ -54,9 +68,9 @@ Production diagnostics were inspected before implementation. This PR has not bee
 
 ## Changed files
 
-- Backend scoring and progression: `backend/src/oralExam/grading.js`, `progression.js`, `contracts.js`, `conversation.js`, `examiner.js`, `store.js`, `realtime.js`, and `backend/src/routes/oralExam.js`.
+- Backend scoring and progression: `backend/src/oralExam/grading.js`, `progression.js`, `legacy.js`, `contracts.js`, `conversation.js`, `examiner.js`, `store.js`, `realtime.js`, and `backend/src/routes/oralExam.js`.
 - Persistence/configuration: `backend/migrations/011_oral_exam_evaluation.sql`, `backend/.env.example`.
 - Report and lifecycle UI: `frontend/src/components/oralExam/ExamReport.jsx`, `frontend/src/pages/OralExamPage.jsx`, `frontend/src/hooks/useOralExamVoice.js`, `frontend/src/styles/oral-exam.css`.
-- Backend tests/fixtures: `backend/test/oralExamGrading.test.js`, `oralExam.test.js`, `oralExamConversation.test.js`, `oralExamModel.test.js`, `authMigration.test.js`, `lectureStudy.test.js`, `platform.test.js`, and `backend/scripts/verifyOralExam.js`. The three broader suites only update their expected migration count.
+- Backend tests/fixtures: `backend/test/oralExamGrading.test.js`, `oralExamLegacy.test.js`, `oralExam.test.js`, `oralExamConversation.test.js`, `oralExamModel.test.js`, `authMigration.test.js`, `lectureStudy.test.js`, `platform.test.js`, and `backend/scripts/verifyOralExam.js`. The three broader suites only update their expected migration count.
 - Frontend tests: `frontend/src/test/OralExamReport.test.jsx`, `OralExam.test.jsx`, `OralExamVoice.test.jsx`.
 - Documentation: this report, `docs/oral-exam.md`, `docs/api-contracts.md`.

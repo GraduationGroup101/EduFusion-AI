@@ -13,6 +13,11 @@ beforeEach(()=>{
   api.create.mockResolvedValue({data:{session}});api.get.mockResolvedValue({data:{session}});voice.checkMic.mockResolvedValue(true);
 });
 const open=(path='/dashboard/oral-exam')=>render(<MemoryRouter initialEntries={[path]}><OralExamPage/></MemoryRouter>);
+it('opening an unscored historical exam does not automatically request modern feedback',async()=>{
+  api.get.mockResolvedValue({data:{session:{...session,status:'completed',evaluation_status:'unavailable',evaluation:{version:0,legacy:true,unscored:true,score:null,summary:'No complete evaluation was saved for this historical exam.'}}}});
+  open('/dashboard/oral-exam?session=exam-1');
+  await screen.findByText('Not scored');expect(api.evaluate).not.toHaveBeenCalled();expect(screen.queryByRole('button',{name:/Retry detailed feedback/})).toBeNull();
+});
 it('prepares owned material with a stable request key and shows the pre-exam microphone controls',async()=>{
   open();await screen.findByLabelText('Saved lecture');fireEvent.change(screen.getByLabelText('Saved lecture'),{target:{value:'lecture:lecture-1'}});
   fireEvent.click(screen.getByRole('button',{name:/Prepare exam/}));

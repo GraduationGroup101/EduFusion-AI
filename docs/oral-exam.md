@@ -42,6 +42,8 @@ All routes use existing JWT/account authentication; IDs from the browser never e
 
 Final scoring is deterministic and independent of final-model availability. Terminal responses include a usable core evaluation immediately; only detailed AI commentary can have `evaluation_status=failed`. Retry targets commentary and cannot change core scores. Concurrent retries are fenced in the database. See [the grading and lifecycle design](reviews/oral-exam-evaluation-2026-10-01.md) for formulas, coverage, closing and migration 011.
 
+These rules apply to version-1 exams. Historical exams without core/policy/plan metadata retain their saved evaluation as `version: 0, legacy: true`; no modern coverage, weights or bonus are inferred. A historical exam lacking a usable saved report remains unscored (`evaluation_status: unavailable`) with its answers available for review. Reads and retries never migrate or regrade historical results. Optional AI strengths and suggestions for new exams are labelled separately from deterministic per-answer feedback.
+
 ## Conversation: repeat, clarify, "I don't know"
 
 A committed transcript is not always an answer. Each utterance is classified as one of `answer`, `repeat`, `clarify`, `dont_know` or `unclear` (`backend/src/oralExam/conversation.js`):

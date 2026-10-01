@@ -3,7 +3,6 @@ const {randomUUID}=require('node:crypto');
 const jwt=require('jsonwebtoken');
 const {getAllowedOrigins}=require('../lib/corsOrigins');
 const queries=require('../db/queries');
-const db=require('../db');
 const store=require('./store');
 const examiner=require('./examiner');
 const conversation=require('./conversation');
@@ -257,7 +256,7 @@ function attachRealtime(server,dependencies={}) {
     if(sweeping||!configured())return;sweeping=true;
     try {
       await store.expire();
-      const pending=(await db.query("SELECT id,id_student,user_id FROM edufusion_oral_exam_sessions WHERE status IN ('completed','timed_out') AND evaluation_status='pending' ORDER BY ended_at LIMIT 4")).rows;
+      const pending=await store.pendingEvaluations();
       for(const row of pending)await model.evaluate(row.id_student==null?{id:row.user_id}:{id_student:row.id_student},row.id);
     }catch(err){console.error('Oral exam finalization failed:',err.code||err.name);}finally{sweeping=false;}
   },5000);
