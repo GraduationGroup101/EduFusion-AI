@@ -7,6 +7,7 @@ export const oralExamService={
   sessions:()=>api.get('/oral-exam/sessions',options),
   get:(id,requestOptions={})=>api.get(`/oral-exam/sessions/${id}`,{...requestOptions,...options}),
   create:(body,key)=>api.post('/oral-exam/sessions',body,{...options,headers:{'Idempotency-Key':key}}),
+  remove:id=>api.delete(`/oral-exam/sessions/${id}`,options),
   start:id=>api.post(`/oral-exam/sessions/${id}/start`,{},options),
   end:id=>api.post(`/oral-exam/sessions/${id}/end`,{},options),
   evaluate:id=>api.post(`/oral-exam/sessions/${id}/evaluation`,{},options),

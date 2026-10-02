@@ -90,7 +90,7 @@ test('a grounded follow-up persists under fencing and keeps the verified 60/40 a
   assert.equal(saved.core_evaluation.understanding,76);assert.equal(saved.core_evaluation.score,78);
 });
 test('private rubric is persisted, absent from public payloads, and ungrounded writes fail closed',async()=>{
-  const row=await store.create(user,material,'en',randomUUID());assert.equal(row.context.grounding_version,1);await store.start(user,row.id);const lease=await store.claim(user,row.id);
+  const row=await store.create(user,material,'en',randomUUID());assert.equal(row.context.grounding_version,2);await store.start(user,row.id);const lease=await store.claim(user,row.id);
   const q=g.rubric(proposal(),evidence);await store.commit(row.id,lease.token,0,null,{next:q,assessment:null,core_concepts:[{name:'UDP',citations:['text-1']}]});
   let saved=await store.get(user,row.id);assert.deepEqual(saved.turns[0].grading_criteria,[udp]);assert.ok(!JSON.stringify(store.publicView(saved)).includes('grading_criteria'));assert.ok(!JSON.stringify(store.publicView(saved)).includes(udp.criterion));
   const answer='UDP does not guarantee delivery.';await store.recordAnswer(row.id,lease.token,1,answer);
@@ -177,8 +177,8 @@ test('source fallback never opens an uncovered core or bonus in the final minute
   assert.equal(await examiner.recoverNext({...p.s,expires_at:new Date(Date.now()+55000)}),null);assert.equal(calls,0);await store.finish(user,p.row.id);
 });
 test('invalid model follow-up uses only incomplete saved criteria and preserves the authoritative grade',async()=>{
-  const p=await savedAnswer();let calls=0;global.fetch=async()=>{calls++;return response({next:unsupportedFollow()});};
-  const next=await examiner.recoverNext(p.s);assert.equal(calls,1);assert.equal(next.question,'Explain UDP in more detail.');assert.equal(next.question_type,'follow_up');assert.deepEqual(next.grading_criteria,[udp]);
+  const p=await savedAnswer();let calls=0;global.fetch=async(_url,o)=>{calls++;return response(JSON.parse(o.body).response_format.json_schema.name==='source_support'?{supported:false}:{next:unsupportedFollow()});};
+  const next=await examiner.recoverNext(p.s);assert.equal(calls,2);assert.equal(next.question,'Explain UDP in more detail.');assert.equal(next.question_type,'follow_up');assert.deepEqual(next.grading_criteria,[udp]);
   await store.commit(p.row.id,p.lease.token,1,null,{assessment:null,next});const after=await store.get(user,p.row.id);
   assert.equal(after.turns[1].parent_sequence,1);assert.deepEqual(after.turns[0].assessment,p.a);assert.equal(+after.expires_at,+p.s.expires_at);await store.finish(user,p.row.id);
 });
@@ -202,7 +202,9 @@ test('reconnect during next recovery preserves the committed grade and fences th
   await store.commit(row.id,initial.token,0,null,{assessment:null,next:g.rubric(proposal(),evidence),core_concepts:[{name:'UDP',citations:['text-1']},{name:'DNS',citations:['text-2']}]});await store.release(row.id,initial.token);
   let onFinal,assessmentCalls=0,recoveryCalls=0,releaseOld;
   global.fetch=async(_url,options)=>{
-    const input=JSON.parse(JSON.parse(options.body).messages[1].content);
+    const body=JSON.parse(options.body);
+    if(body.response_format.json_schema.name==='source_support')return response({supported:false});
+    const input=JSON.parse(body.messages[1].content);
     if(Object.hasOwn(input,'student_response')){assessmentCalls++;return response(value(rawAssessment('partial','UDP.'),unsupportedFollow()));}
     recoveryCalls++;
     if(recoveryCalls===1)return new Promise(resolve=>{releaseOld=()=>resolve(response({next:proposal({question:'Explain UDP delivery.',question_type:'follow_up'})}));});
@@ -235,4 +237,16 @@ test('dense short-line source catalog encoding preserves every original criterio
  const decoded=Object.entries(encoded).flatMap(([citation,entries])=>entries.map(([id,criterion])=>({id,criterion,citations:[citation]})));
  assert.equal(decoded.length,315);assert.deepEqual(decoded,original);
  assert.ok(JSON.stringify(encoded).length<JSON.stringify(original).length*0.65);
+});
+
+
+test('a reviewed translated rubric persists in a new exam without relaxing assessment integrity',async()=>{
+ const row=await store.create(user,material,'ar',randomUUID());await store.start(user,row.id);const lease=await store.claim(user,row.id);
+ try{
+  const q=g.rubric(proposal({question:'هل يضمن البروتوكول وصول البيانات؟',concept:'بروتوكول البيانات'}),evidence,null,null,g.wordingOptions(row));
+  await store.commit(row.id,lease.token,0,null,{next:q,assessment:null,core_concepts:[{name:q.concept,citations:q.citations}]});
+  const saved=await store.get(user,row.id);assert.equal(saved.turns[0].question,q.question);assert.deepEqual(saved.turns[0].grading_criteria,[udp]);
+  await assert.rejects(()=>store.commit(row.id,lease.token,1,'إجابة',{assessment:{understanding:100},next:null}),{code:'ungrounded_assessment'});
+  assert.throws(()=>g.storedRubric({...q,grading_criteria:[{...udp,criterion:'invented fact'}]},evidence,g.wordingOptions(row)),{code:'altered_rubric'});
+ }finally{await store.finish(user,row.id);}
 });

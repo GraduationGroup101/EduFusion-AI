@@ -47,6 +47,10 @@ function attachRealtime(server,dependencies={}) {
       // Exhausted generation stays explicitly failed but connected: another
       // handshake cannot repair a persistent provider/configuration rejection.
       const reconnect=!err?.generationFailure;
+      if(err?.name==='ProviderError'&&err.status===429){
+        const minutes=Math.max(1,Math.ceil(retryAfterMs/60000));
+        message=session?.language==='ar'?'وصل مزوّد الأسئلة إلى حد الاستخدام. تقدير الانتظار '+minutes+' دقيقة. إجاباتك محفوظة؛ تبديل الحساب لن يغيّر حصة المزوّد.':'The question provider has reached its usage limit. Estimated wait: '+minutes+' minute(s). Your answers are saved; switching accounts will not change the provider quota.';
+      }
       send({type:'error',message,retryable:reconnect,retry_after_ms:retryAfterMs});
       if(reconnect)closeFailure(stage,err,'Recoverable exam failure');
     }

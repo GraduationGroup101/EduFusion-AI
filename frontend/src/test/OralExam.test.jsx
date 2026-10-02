@@ -5,7 +5,7 @@ import OralExamPage from '../pages/OralExamPage';
 import {oralExamService as api} from '../services/oralExam';
 const voice=vi.hoisted(()=>({state:'idle',error:'',mic:false,muted:false,question:'',remark:null,checkMic:vi.fn(),connect:vi.fn(),stop:vi.fn(),toggleMute:vi.fn()}));
 vi.mock('../hooks/useOralExamVoice',()=>({useOralExamVoice:update=>{voice.update=update;return voice;}}));
-vi.mock('../services/oralExam',()=>({oralExamService:{status:vi.fn(),materials:vi.fn(),sessions:vi.fn(),get:vi.fn(),create:vi.fn(),start:vi.fn(),end:vi.fn(),evaluate:vi.fn()}}));
+vi.mock('../services/oralExam',()=>({oralExamService:{status:vi.fn(),materials:vi.fn(),sessions:vi.fn(),get:vi.fn(),create:vi.fn(),start:vi.fn(),end:vi.fn(),evaluate:vi.fn(),remove:vi.fn()}}));
 const session={id:'exam-1',material_title:'Computer networks',language:'en',status:'ready',turns:[],evaluation_status:'pending'};
 beforeEach(()=>{
   vi.resetAllMocks();Object.assign(voice,{state:'idle',error:'',mic:false,muted:false,question:'',remark:null,audioUnavailable:false});
@@ -177,4 +177,23 @@ it('the review lists conversational exchanges under their question without treat
   expect(within(article).getByText('Asked for clarification')).toBeInTheDocument();
   expect(within(article).getByText(/In other words, what job does this device do\?/)).toBeInTheDocument();
   expect(within(article).getByText('It selects paths.')).toBeInTheDocument();
+});
+
+
+it('deleting a previous exam requires confirmation, preserves it on failure and removes it on success',async()=>{
+ const old={...session,status:'completed'};api.sessions.mockResolvedValue({data:{sessions:[old,{...session,id:'active',material_title:'Current exam',status:'active'}]}});
+ open();fireEvent.click(await screen.findByRole('button',{name:'Delete Computer networks'}));
+ expect(screen.queryByRole('button',{name:'Delete Current exam'})).toBeNull();expect(api.remove).not.toHaveBeenCalled();
+ fireEvent.click(within(screen.getByRole('dialog')).getByRole('button',{name:'Cancel'}));expect(api.remove).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByRole('button',{name:'Delete Computer networks'}));api.remove.mockRejectedValueOnce(new Error('Deletion unavailable'));
+ fireEvent.click(within(screen.getByRole('dialog')).getByRole('button',{name:'Delete exam'}));await screen.findByText('Deletion unavailable');expect(screen.getByRole('button',{name:'Delete Computer networks'})).toBeInTheDocument();
+ api.remove.mockResolvedValueOnce({status:204});fireEvent.click(within(screen.getByRole('dialog')).getByRole('button',{name:'Delete exam'}));
+ await waitFor(()=>expect(screen.queryByRole('dialog')).toBeNull());expect(screen.queryByRole('button',{name:'Delete Computer networks'})).toBeNull();expect(api.remove).toHaveBeenLastCalledWith('exam-1');
+});
+it('deleting the displayed exam returns to setup and removes the stale URL selection',async()=>{
+ api.remove.mockResolvedValue({status:204});open('/dashboard/oral-exam?session=exam-1');fireEvent.click(await screen.findByRole('button',{name:'Delete exam'}));
+ fireEvent.click(within(screen.getByRole('dialog')).getByRole('button',{name:'Delete exam'}));await screen.findByLabelText('Saved lecture');expect(screen.queryByRole('button',{name:/Start oral exam/})).toBeNull();expect(voice.stop).toHaveBeenCalled();
+});
+it('the spoken closing panel calls it an exam, not an interview',async()=>{
+ Object.assign(voice,{state:'closing',remark:{text:'That brings us to the end of the exam.'}});open();await screen.findByRole('heading',{name:'Closing the exam'});expect(screen.queryByText(/interview/i)).toBeNull();
 });

@@ -97,5 +97,5 @@ test('transitions reject answer leakage, scores, grading, explanations and langu
   assert.equal(conversation.safeTransition('You identified the main idea clearly.',evidence,'','en'),true);
   assert.equal(conversation.safeTransition('خلينا نكمل من زاوية ثانية.',evidence,'','ar'),true);
   assert.equal(conversation.safeTransition('Good work.',evidence,'','ar'),false);
-  assert.match(conversation.closing('ar'),/نهاية/);assert.match(conversation.closing('en'),/end/);
+  assert.match(conversation.closing('ar'),/نهاية الاختبار/);assert.match(conversation.closing('en'),/end of the exam/);assert.doesNotMatch(conversation.closing('ar'),/مقابلة/);assert.doesNotMatch(conversation.closing('en'),/interview/);
 });

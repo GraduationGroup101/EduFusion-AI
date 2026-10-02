@@ -344,3 +344,25 @@ test('oral session creation and lifecycle have no daily or shared AI request quo
   for(let i=0;i<32;i++)assert.equal((await request(server).post('/api/oral-exam/sessions/'+first.id+'/evaluation').set('Authorization',auth)).status,409);
  }finally{await store.finish(user,first.id);}
 });
+
+
+test('deletion is owner-only, refuses active exams and cascades saved turns',async()=>{
+ const row=await session(),auth='Bearer '+jwt.sign(user,process.env.JWT_SECRET,{expiresIn:'1h'});
+ const url='/api/oral-exam/sessions/'+row.id;
+ assert.equal((await request(server).delete(url)).status,401);
+ await assert.rejects(()=>store.remove({id_student:991},row.id),{statusCode:404});
+ assert.equal((await request(server).delete(url).set('Authorization',auth)).status,409);
+ const c=await connect(row.id,randomUUID());try{await c.until(e=>e.type==='question');}finally{c.ws.terminate();await c.closed;}
+ await store.finish(user,row.id);
+ assert.equal((await request(server).delete(url).set('Authorization',auth)).status,204);
+ assert.equal((await request(server).get(url).set('Authorization',auth)).status,404);
+ assert.equal((await database.query('SELECT * FROM edufusion_oral_exam_turns WHERE session_id=$1',[row.id])).rows.length,0);
+ assert.equal((await request(server).delete(url).set('Authorization',auth)).status,404);
+});
+
+test('provider quota failures explain the shared provider limit without reconnect loops',async()=>{
+ const row=await session(),next=runtimeDependencies.examiner.next;let c;
+ try{runtimeDependencies.examiner.next=async()=>{throw Object.assign(new Error('private provider detail'),{name:'ProviderError',status:429,retryAfterMs:120000});};
+ c=await connect(row.id,randomUUID());const error=await c.until(e=>e.type==='error');assert.match(error.message,/provider.*usage limit/);assert.match(error.message,/2 minute/);assert.equal(error.retryable,false);assert.doesNotMatch(error.message,/private provider detail/);
+ }finally{runtimeDependencies.examiner.next=next;if(c){c.ws.terminate();await c.closed;}await store.finish(user,row.id);}
+});

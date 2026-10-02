@@ -97,7 +97,7 @@ test('large grounded initialization omits duplicated source text and passes the 
  const grounding=require('../src/oralExam/grounding');const points=['Routing: A router connects different IP networks and forwards packets using a routing table that maps destination prefixes to a next hop.','Switching: A switch connects devices in the same local network, learns source MAC addresses and forwards frames to a known destination port.','DHCP: DHCP supplies an IP address, subnet mask, gateway and DNS server using Discover, Offer, Request and Acknowledge.','DNS: DNS translates domain names into IP addresses and uses cached records whose freshness is controlled by time to live.','Transport: TCP provides a reliable ordered byte stream using sequence numbers, acknowledgements and retransmission.'];
  const chunks=Array.from({length:12},(_,i)=>({id:'text-'+(i+1),section:'Material',text:Array(Math.ceil(1500/points[i%5].length)).fill(points[i%5]).join(' ')}));
  const s={...session(),context:{chunks,grounding_version:1,oral_policy:{version:1,required_concepts:5,max_follow_ups:2,max_bonus:5}}};const evidence=examiner.evidenceFor(s,null),criteria=grounding.catalog(evidence);const plan=points.map(point=>{const name=point.split(':')[0],chunk=evidence.find(c=>c.text.startsWith(name+':'));return {name,citations:[chunk.id]};});const first=plan[0],criterion=criteria.find(c=>c.citations.includes(first.citations[0]));let calls=0;
- global.fetch=async(_url,o)=>{calls++;const b=JSON.parse(o.body),payload=JSON.parse(b.messages[1].content);assert.deepEqual(payload.source_criteria,JSON.parse(JSON.stringify(grounding.promptCatalog(criteria))));assert.match(b.messages[0].content,/citations arrays MUST use chunk keys/);assert.match(b.messages[0].content,/copy a SHORT exact source phrase/);assert.equal(b.max_tokens,4096);assert.equal(b.response_format.json_schema.strict,true);const duplicate=JSON.stringify({...b,messages:[b.messages[0],{...b.messages[1],content:JSON.stringify({...payload,question_generation_evidence:evidence})}]});assert.ok(Buffer.byteLength(duplicate)>35000);assert.ok(Buffer.byteLength(o.body)<35000);
+ global.fetch=async(_url,o)=>{calls++;const b=JSON.parse(o.body),payload=JSON.parse(b.messages[1].content);assert.deepEqual(payload.source_criteria,JSON.parse(JSON.stringify(grounding.promptCatalog(criteria))));assert.match(b.messages[0].content,/citations arrays MUST use chunk keys/);assert.match(b.messages[0].content,/source-supported concepts/);assert.equal(b.max_tokens,4096);assert.equal(b.response_format.json_schema.strict,true);const duplicate=JSON.stringify({...b,messages:[b.messages[0],{...b.messages[1],content:JSON.stringify({...payload,question_generation_evidence:evidence})}]});assert.ok(Buffer.byteLength(duplicate)>35000);assert.ok(Buffer.byteLength(o.body)<35000);
  return reply({...decision,core_concepts:plan,next:{...question,question:'Explain how a router forwards packets.',concept:first.name,citations:first.citations,criterion_ids:[criterion.id]}});};
  const result=await examiner.next(s,null);assert.equal(calls,1);assert.equal(result.core_concepts.length,5);assert.deepEqual(result.next.grading_criteria,[criterion]);
 });
@@ -105,4 +105,18 @@ test('large grounded initialization omits duplicated source text and passes the 
 test('provider JSON rejection logs only missing known contract fields without exposing failed output',async()=>{
  global.fetch=async()=>new Response(JSON.stringify({error:{code:'json_validate_failed',failed_generation:JSON.stringify({intent:'answer',reply:null,assessment:null,next:null,transition:'private-student-content'})}}),{status:400});
  await assert.rejects(()=>examiner.jsonModel([],{operation:'fixture',schemaName:'fixture',schema:contracts.decisionJsonSchema,contract:contracts.decision,maxAttempts:1}),e=>{const d=examiner.diagnostic('fixture',e,1);assert.deepEqual(d.missing_required_fields,['core_concepts']);assert.doesNotMatch(JSON.stringify(d),/private-student-content/);return true;});
+});
+
+
+test('new exams accept reviewed Arabic translations while rejecting unsupported question meaning',async()=>{
+ const g=require('../src/oralExam/grounding');
+ const s={...session(),language:'ar',context:{...session().context,grounding_version:2,oral_policy:{version:1,required_concepts:1,max_follow_ups:2,max_bonus:5}}};
+ const criterion=g.catalog(s.context.chunks)[0];
+ const translated={...decision,core_concepts:[{name:'توجيه البيانات',citations:['text-1']}],next:{...question,question:'كيف يختار الموجّه مسار الحزم؟',concept:'توجيه البيانات',criterion_ids:[criterion.id]}};
+ let review=true,calls=0;
+ global.fetch=async(_url,o)=>{calls++;const b=JSON.parse(o.body);return reply(b.response_format.json_schema.name==='source_support'?{supported:review}:translated);};
+ const result=await examiner.next(s,null);assert.equal(result.next.question,translated.next.question);assert.deepEqual(result.next.grading_criteria,[criterion]);assert.equal(calls,2);
+ review=false;await assert.rejects(()=>examiner.next(s,null),e=>e.code==='unsupported_question_meaning');
+ // Historical exams retain their old validation; no saved report is reinterpreted.
+ await assert.rejects(()=>examiner.next({...s,context:{...s.context,grounding_version:1}},null),e=>e.code==='unsupported_question_term');
 });

@@ -28,15 +28,16 @@ const groundedDecision=decision.extend({assessment:groundedAssessment.nullable()
 const assessmentDecision=groundedDecision.extend({next:z.unknown().nullable(),core_concepts:z.unknown().nullable().default(null),transition:z.unknown().nullable().default(null)});
 const nextDecision=z.object({next:groundedQuestion.nullable()}).strict();
 const groundedCommentary=z.object({summary:z.enum(['completed','practice','limited']),strength_ids:z.array(z.number().int().min(0)).max(8),improvement_ids:z.array(z.number().int().min(0)).max(8)}).strict();
-const enabled=s=>s.context?.grounding_version===1;
-function validatePlan(plan,evidence,max){if(!Array.isArray(plan)||!plan.length||plan.length>max)reject('invalid_core_plan');for(const c of plan){if(!c.citations?.length||c.citations.some(id=>!evidence.some(e=>e.id===id)))reject('invalid_core_plan');lexical(c.name,catalog(evidence.filter(e=>c.citations.includes(e.id))));}return plan;}
+const enabled=s=>[1,2].includes(s.context?.grounding_version);
+const wordingOptions=s=>({strictWording:s.context?.grounding_version!==2});
+function validatePlan(plan,evidence,max,{strictWording=true}={}){if(!Array.isArray(plan)||!plan.length||plan.length>max)reject('invalid_core_plan');for(const c of plan){if(!c.citations?.length||c.citations.some(id=>!evidence.some(e=>e.id===id)))reject('invalid_core_plan');if(strictWording)lexical(c.name,catalog(evidence.filter(e=>c.citations.includes(e.id))));}return plan;}
 const evidenceFor=s=>{const cited=new Set(s.turns.at(-1)?.citations||[]);return s.context.chunks.filter(c=>cited.has(c.id)).map(({id,section,text})=>({id,section,text}));};
-function rubric(proposal,generationEvidence,current=null,assessment=null){
+function rubric(proposal,generationEvidence,current=null,assessment=null,{strictWording=true}={}){
   const all=catalog(generationEvidence),ids=proposal.criterion_ids;
   if(!Array.isArray(ids)||ids.length<1||ids.length>5||new Set(ids).size!==ids.length)reject('invalid_rubric');
   const selected=ids.map(id=>all.find(c=>c.id===id));
   if(selected.some(c=>!c)||selected.some(c=>!proposal.citations.includes(c.citations[0]))||proposal.citations.some(id=>!selected.some(c=>c.citations.includes(id))))reject('unsupported_rubric');
-  lexical(proposal.question,selected);lexical(proposal.concept,catalog(generationEvidence.filter(e=>proposal.citations.includes(e.id))));
+  if(strictWording){lexical(proposal.question,selected);lexical(proposal.concept,catalog(generationEvidence.filter(e=>proposal.citations.includes(e.id))));}
   if(proposal.question_type==='follow_up'){
     const missing=new Set(assessment?.grounding.criteria.filter(c=>c.level!=='met').map(c=>c.criterion_id)||[]);
     if(!current?.grading_criteria||selected.some(c=>!missing.has(c.id)||!current.grading_criteria.some(p=>p.id===c.id&&p.criterion===c.criterion)))reject('unsupported_follow_up');
@@ -62,10 +63,10 @@ function storedAssessment(a,current,evidence,transcript,language){
   const rebuilt=assess({grounding:{citations:a.grounding.citations,criteria:a.grounding.criteria},communication:a.grounding.communication},current,evidence,transcript,language);
   if(!isDeepStrictEqual(rebuilt,a))reject('altered_grounded_assessment');return rebuilt;
 }
-function storedRubric(q,evidence){const rebuilt=rubric({...q,question_type:'initial',criterion_ids:q.grading_criteria?.map(c=>c.id)},evidence);if(!isDeepStrictEqual(rebuilt.grading_criteria,q.grading_criteria))reject('altered_rubric');return q;}
+function storedRubric(q,evidence,options){const rebuilt=rubric({...q,question_type:'initial',criterion_ids:q.grading_criteria?.map(c=>c.id)},evidence,null,null,options);if(!isDeepStrictEqual(rebuilt.grading_criteria,q.grading_criteria))reject('altered_rubric');return q;}
 function finalCommentary(value,core,language){
   if(value.strength_ids.some(i=>i>=core.strengths.length)||value.improvement_ids.some(i=>i>=core.areasForImprovement.length))reject('unsupported_commentary_reference');
   const summaries=language==='ar'?{completed:'أكملت التقييم. يعرض هذا التقرير النقاط التي تم اختبارها من مادتك فقط.',practice:'استخدم النقاط المدعومة بالمادة أدناه لمواصلة التدريب.',limited:'يعتمد التقرير على الإجابات المكتملة والمقيّمة فقط.'}:{completed:'You completed the assessment. This report covers only the source points tested.',practice:'Use the source-supported points below to continue practising.',limited:'This report uses completed, assessed answers only.'};
   return {summary:summaries[value.summary],strengths:value.strength_ids.map(i=>core.strengths[i]),areasForImprovement:value.improvement_ids.map(i=>core.areasForImprovement[i])};
 }
-module.exports={promptCatalog,promptCatalogFormat,enabled,validatePlan,catalog,lexical,evidenceFor,rubric,assess,storedAssessment,storedRubric,finalCommentary,groundedDecision,assessmentDecision,nextDecision,nextSchema:providerSchema(nextDecision),groundedCommentary,decisionSchema:providerSchema(groundedDecision),commentarySchema:providerSchema(groundedCommentary)};
+module.exports={wordingOptions,promptCatalog,promptCatalogFormat,enabled,validatePlan,catalog,lexical,evidenceFor,rubric,assess,storedAssessment,storedRubric,finalCommentary,groundedDecision,assessmentDecision,nextDecision,nextSchema:providerSchema(nextDecision),groundedCommentary,decisionSchema:providerSchema(groundedDecision),commentarySchema:providerSchema(groundedCommentary)};

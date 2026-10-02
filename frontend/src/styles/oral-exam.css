@@ -36,3 +36,5 @@
 .oral-file-change{justify-self:start;color:#087f75;text-decoration:underline;font-size:14px}
 
 .oral-coverage{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px;margin:24px 0}.oral-coverage div{padding:16px;background:#f4f8f6;border-radius:12px}.oral-coverage dt{font-size:13px;color:#4c6660}.oral-coverage dd{margin:8px 0 0;font-size:22px;font-weight:600}
+
+.oral-history-row{display:flex;align-items:center;gap:16px}.oral-history-row>button:first-child{flex:1;min-width:0}.oral-history-row>.oral-delete{width:auto;color:#b42318;padding:12px;flex-shrink:0}
