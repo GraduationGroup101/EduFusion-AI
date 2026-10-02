@@ -66,10 +66,12 @@ router.post('/sessions/:id/start',aiLimiter,wrap(async(req,res)=>{
 // the background (shared with the evaluation route and the sweep), so the
 // browser can show the ended exam and "Generating feedback…" immediately.
 router.post('/sessions/:id/end',wrap(async(req,res)=>{
-  const session=await store.finish(req.user,id.parse(req.params.id));
-  const evaluation=session.evaluation_status==='ready'?{status:'ready',cached:true}:{status:'pending'};
+  await store.finish(req.user,id.parse(req.params.id));
+  const session=await store.ensureCore(req.user,req.params.id);
+  const view=store.publicView(session);
+  const evaluation=view.evaluation_status==='ready'?{status:'ready',cached:true}:view.evaluation_status==='unavailable'?{status:'unavailable'}:{status:'pending'};
   if(evaluation.status==='pending')examiner.evaluate(req.user,req.params.id).catch(error=>console.error('Oral exam evaluation failed:',error.code||error.name));
-  res.json({session:store.publicView(session),evaluation});
+  res.json({session:view,evaluation});
 }));
 // Retrying feedback is idempotent: a ready report is returned as-is, a
 // concurrent attempt is shared, and a failed attempt reports a safe reason

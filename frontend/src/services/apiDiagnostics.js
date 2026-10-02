@@ -11,5 +11,5 @@ export const reportApiFailure = (error) => {
   const services=['oral-exam','lecture-scribe','lecture-study','chatbot','question-generator','student','auth','dashboard','admin','services'];
   let service='unknown';
   try {service=new URL(error.config?.url||'',window.location.origin).pathname.split('/').find(part=>services.includes(part))||'unknown';}catch { /* Never print arbitrary URLs. */ }
-  console.warn('API request failed:', { category, status: status || null, service });
+  console.warn('API request failed: ' + JSON.stringify({ category, status: status || null, service }));
 };

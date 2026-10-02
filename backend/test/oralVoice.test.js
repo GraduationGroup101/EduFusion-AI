@@ -29,7 +29,7 @@ test('STT failure is fixed-message and never exposes a provider error payload',a
 test('TTS validates content type and audio signature before returning playback',async()=>{
   const signal=new AbortController().signal;
   await assert.rejects(()=>speak('Question','en',signal,async()=>new Response('{"error":"private"}',{headers:{'content-type':'application/json'}})),/Speech playback unavailable/);
-  await assert.rejects(()=>speak('Question','en',signal,async()=>new Response('not mp3',{headers:{'content-type':'audio/mpeg'}})),/Invalid speech audio/);
+  await assert.rejects(()=>speak('Question','en',signal,async()=>new Response('not mp3',{headers:{'content-type':'audio/mpeg'}})),{name:'SpeechProviderError',code:'invalid_audio'});
   const audio=await speak('Question','en',signal,async()=>new Response(Buffer.from('ID3test'),{headers:{'content-type':'audio/mpeg'}}));
   assert.equal(audio.toString(),'ID3test');
 });

@@ -1,4 +1,10 @@
 const WebSocket=require('ws');
+const providerCodes=new Set(['quota_exceeded','rate_limit_exceeded','too_many_concurrent_requests','system_busy','invalid_api_key','insufficient_permissions','voice_not_found','model_not_found','invalid_request','invalid_request_body','payment_required','subscription_required']);
+class SpeechProviderError extends Error {
+  constructor(status,code){super('Speech playback unavailable');this.name='SpeechProviderError';this.status=status;this.code=code;}
+}
+function diagnostic(error){return {error_class:error?.name||'Error',provider:'elevenlabs',provider_status:Number.isInteger(error?.status)?error.status:undefined,
+  provider_code:providerCodes.has(error?.code)||['invalid_content_type','invalid_audio','response_too_large'].includes(error?.code)?error.code:undefined};}
 
 // Adapted from Candidexa's composed STT/TTS ports: PCM16 input, a server-only
 // ElevenLabs connection, partial/final transcript events, and disposable audio.
@@ -44,11 +50,19 @@ async function speak(text,language,signal,fetchImpl=fetch) {
     headers:{'xi-api-key':process.env.ELEVENLABS_API_KEY,'Content-Type':'application/json',Accept:'audio/mpeg'},
     body:JSON.stringify({text,language_code:language,model_id:'eleven_flash_v2_5'}),
   });
-  if(!response.ok||!response.headers.get('content-type')?.includes('audio/mpeg')){await response.body?.cancel();throw new Error('Speech playback unavailable');}
+  if(!response.ok){
+    // Read only a bounded error body and retain only a known machine code.
+    let code;
+    try{let body='';for await(const part of response.body){body+=Buffer.from(part).toString('utf8');if(body.length>8192)break;}
+      const detail=JSON.parse(body);const value=detail.detail?.status||detail.error?.code;code=providerCodes.has(value)?value:undefined;
+    }catch{/* Never log provider text. */}
+    throw new SpeechProviderError(response.status,code);
+  }
+  if(!response.headers.get('content-type')?.includes('audio/mpeg')){await response.body?.cancel();throw new SpeechProviderError(response.status,'invalid_content_type');}
   const parts=[];let size=0;
-  for await(const part of response.body){size+=part.length;if(size>2*1024*1024)throw new Error('Speech response too large');parts.push(Buffer.from(part));}
+  for await(const part of response.body){size+=part.length;if(size>2*1024*1024)throw new SpeechProviderError(response.status,'response_too_large');parts.push(Buffer.from(part));}
   const audio=Buffer.concat(parts);
-  if(!(audio.subarray(0,3).toString()==='ID3'||(audio[0]===255&&(audio[1]&224)===224)))throw new Error('Invalid speech audio');
+  if(!(audio.subarray(0,3).toString()==='ID3'||(audio[0]===255&&(audio[1]&224)===224)))throw new SpeechProviderError(response.status,'invalid_audio');
   return audio;
 }
-module.exports={transcriber,speak};
+module.exports={transcriber,speak,diagnostic};
