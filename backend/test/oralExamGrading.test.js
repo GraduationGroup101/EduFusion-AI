@@ -6,6 +6,38 @@ const conversation=require('../src/oralExam/conversation');
 const scored=value=>({understanding:value,accuracy:value,completeness:value,communication:value,feedback:'Assessment',strengths:[],improvements:[]});
 const turn=(sequence,value,kind='core',concept='Routing')=>({sequence,concept,category:kind,concept_key:concept.toLowerCase(),question_type:kind==='core'?'initial':kind,transcript:'Saved answer',assessment:scored(value)});
 const exam=turns=>({status:'completed',termination_reason:'exam_completed',language:'en',context:{oral_policy:policy()},turns});
+const grounding=require('../src/oralExam/grounding');
+const source=[{id:'text-1',text:'A router forwards packets between networks.'}];
+const criterion=grounding.catalog(source)[0];
+const groundedTurn=sequence=>{
+  const t={...turn(sequence,100),citations:['text-1'],grading_criteria:[criterion],transcript:criterion.criterion};
+  t.assessment=grounding.assess({grounding:{citations:['text-1'],criteria:[{criterion_id:criterion.id,level:'met',answer_quote:t.transcript}]},communication:'clear'},t,source,t.transcript,'en');
+  return t;
+};
+const groundedExam=turns=>({...exam(turns),context:{oral_policy:policy(),grounding_version:1,chunks:source}});
+
+test('valid grounded assessment scores and counts only as assessed',()=>{
+  const s=groundedExam([groundedTurn(1)]),r=evaluateCore(s);
+  assert.equal(r.score,100);assert.equal(r.core_score,100);
+  assert.equal(r.assessed_answers,1);assert.equal(r.unassessed_answers,0);
+  assert.equal(r.assessed_answers+r.unassessed_answers,s.turns.filter(t=>t.transcript).length);
+});
+
+test('missing and invalid grounded assessments count as unassessed, excluding unanswered turns',()=>{
+  const good=groundedTurn(1),missing={...groundedTurn(2),assessment:null},invalid=groundedTurn(3);
+  invalid.assessment={...invalid.assessment,accuracy:0};
+  const s=groundedExam([good,missing,invalid,{...groundedTurn(4),transcript:null}]),r=evaluateCore(s);
+  assert.equal(r.score,100);assert.equal(r.completed_core_concepts,1);
+  assert.equal(r.assessed_answers,1);assert.equal(r.unassessed_answers,2);
+  assert.equal(r.assessed_answers+r.unassessed_answers,s.turns.filter(t=>t.transcript).length);
+});
+
+test('legacy valid, missing and invalid assessments keep their score and exhaustive answered counts',()=>{
+  const invalid={...turn(3,80,'core','DNS'),assessment:{...scored(80),accuracy:101}};
+  const s=exam([turn(1,80),{...turn(2,80,'core','Switching'),assessment:null},invalid,{...turn(4,100,'bonus'),transcript:null}]),r=evaluateCore(s);
+  assert.equal(r.score,80);assert.equal(r.assessed_answers,1);assert.equal(r.unassessed_answers,2);
+  assert.equal(r.assessed_answers+r.unassessed_answers,s.turns.filter(t=>t.transcript).length);
+});
 test('initial 60 and follow-up 90 produce a concept result of 72; multiple follow-ups share 40%',()=>{
   const s=exam([turn(1,60),turn(2,90,'follow_up')]);
   assert.equal(evaluateCore(s).core_score,72);

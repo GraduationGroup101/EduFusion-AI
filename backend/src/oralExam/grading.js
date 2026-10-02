@@ -17,8 +17,8 @@ function classified(turns){
 function evaluateCore(session){
   const turns=classified(session.turns||[]),rules=session.context?.oral_policy||policy();
   const grounding=require('./grounding');
-  const valid=turns.filter(t=>{
-    if(!t.transcript)return false;
+  const answered=turns.filter(t=>t.transcript);
+  const valid=answered.filter(t=>{
     if(!grounding.enabled(session))return assessment.safeParse(t.assessment).success;
     try{grounding.storedAssessment(t.assessment,t,session.context.chunks.filter(c=>t.citations.includes(c.id)),t.transcript,session.language);return true;}catch{return false;}
   });
@@ -43,7 +43,7 @@ function evaluateCore(session){
   const best=bonuses.length?Math.max(...bonuses.map(t=>weighted(t.assessment))):0;
   const bonus=concepts.length>=required?round(Math.min(5,rules.max_bonus)*Math.max(0,(best-60)/40)):0;
   const unique=items=>[...new Set(items)].slice(0,12);
-  const unassessed=turns.filter(t=>t.transcript&&!assessment.safeParse(t.assessment).success).length;
+  const unassessed=answered.length-valid.length;
   return {version:1,...dimensions,weights:DIMENSIONS,core_score:coreScore,bonus_score:bonus,score:coreScore===null?null:Math.min(100,round(coreScore+bonus)),
     required_concepts:required,requested_concepts:rules.required_concepts,completed_core_concepts:concepts.length,concepts,
     follow_up_questions:turns.filter(t=>t.category==='follow_up').length,bonus_questions:turns.filter(t=>t.category==='bonus').length,

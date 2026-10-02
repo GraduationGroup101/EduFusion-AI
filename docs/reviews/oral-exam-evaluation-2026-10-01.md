@@ -120,3 +120,10 @@ Production diagnostics were inspected before implementation. This PR has not bee
 - Backend tests/fixtures: `backend/test/oralExamGrading.test.js`, `oralExamLegacy.test.js`, `oralExam.test.js`, `oralExamConversation.test.js`, `oralExamModel.test.js`, `authMigration.test.js`, `lectureStudy.test.js`, `platform.test.js`, and `backend/scripts/verifyOralExam.js`. The three broader suites only update their expected migration count.
 - Frontend tests: `frontend/src/test/OralExamReport.test.jsx`, `OralExam.test.jsx`, `OralExamVoice.test.jsx`.
 - Documentation: this report, `docs/oral-exam.md`, `docs/api-contracts.md`.
+
+
+## Authoritative assessed-answer counts (October 2, 2026)
+
+The report counter used the legacy strict assessment schema while scoring accepted persisted grounded assessments through storedAssessment. This counted a valid grounded answer as both assessed and unassessed. The reducer now collects answered turns once, builds the validated set using the existing grounded/legacy validation path, and derives unassessed_answers as answered.length - valid.length. Score mathematics, strict grounding, persisted historical reports, realtime progression and migrations are unchanged.
+
+Three new grading regressions prove grounded score/count correctness, missing/forged grounded assessment counts, unanswered exclusion, unchanged legacy behavior and exhaustive answered totals. Both grounded count cases failed before the fix; all 11 grading tests pass after it. Full local validation: 221 backend tests, 156 frontend tests, 15 Python tests, lint and build passed. CI, Vercel checks and the single new targeted production exam are recorded in the latest PR verification section after deployment. No Oral 011/012 migration rerun is required.
