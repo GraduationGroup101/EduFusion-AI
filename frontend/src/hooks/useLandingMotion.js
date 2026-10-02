@@ -17,6 +17,7 @@ export default function useLandingMotion(rootRef) {
     const caption = stage.querySelector('.toolkit-current');
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
     let frame = 0, pinned = false, top = 96, padding = 0, stepTravel = 320;
+    let stackX = 12, stackY = 24;
     let selected = 0, focused = null;
     const last = cards.length - 1;
     section.setAttribute('data-toolkit-enhanced', '');
@@ -33,16 +34,18 @@ export default function useLandingMotion(rootRef) {
 
       cards.forEach((card, index) => {
         const outgoing = index === from;
-        const incoming = index === to && transition > 0;
-        const visible = reduce.matches ? index === active : outgoing || incoming;
-        // Keep the foreground opaque: two translucent text faces would ghost together.
-        const opacity = index === active ? 1 : outgoing ? (1 - transition) * 0.4 : incoming ? transition * 0.4 : 0;
-        const y = outgoing ? -20 * transition : 28 * (1 - transition);
-        const x = outgoing ? -12 * transition : 16 * (1 - transition);
-        const scale = outgoing ? 1 - 0.025 * transition : 0.965 + 0.035 * transition;
+        const depth = index - from;
+        const visible = reduce.matches ? index === active : depth >= 0 && depth <= 2;
+        // The next two real cards form a quiet stack; only the foreground has copy.
+        const opacity = index === active ? 1 : outgoing ? 1 - transition : visible ? 1 : 0;
+        const travelDepth = depth - transition;
+        const y = outgoing ? -20 * transition : stackY * travelDepth;
+        const x = outgoing ? -12 * transition : stackX * travelDepth;
+        const scale = outgoing ? 1 - 0.025 * transition : 1 - 0.012 * travelDepth;
+        const rotation = outgoing ? -0.55 - transition : depth === 1 ? 1.2 - 1.75 * transition : -0.8 + 2 * transition;
         card.style.opacity = String(reduce.matches ? Number(index === active) : opacity);
-        card.style.transform = reduce.matches ? 'none' : `translate3d(${x.toFixed(2)}px, ${y.toFixed(2)}px, 0) scale(${scale.toFixed(4)})`;
-        card.style.zIndex = String(index === active ? 3 : 2);
+        card.style.transform = reduce.matches ? 'none' : `translate3d(${x.toFixed(2)}px, ${y.toFixed(2)}px, 0) scale(${scale.toFixed(4)}) rotate(${rotation.toFixed(2)}deg)`;
+        card.style.zIndex = String(index === active ? 4 : 3 - depth);
         card.style.setProperty('--card-emphasis', '0');
         card.style.setProperty('--card-face', index === active ? '1' : '0');
         card.toggleAttribute('data-visible', visible);
@@ -67,6 +70,9 @@ export default function useLandingMotion(rootRef) {
       padding = parseFloat(getComputedStyle(section).paddingTop) || 0;
       const stacked = getComputedStyle(stage).gridTemplateColumns.split(' ').length === 1;
       const gap = parseFloat(getComputedStyle(stage).rowGap) || 0;
+      const gridStyle = getComputedStyle(grid);
+      stackX = parseFloat(gridStyle.getPropertyValue('--toolkit-stack-x')) || 12;
+      stackY = parseFloat(gridStyle.getPropertyValue('--toolkit-stack-y')) || 24;
       const contentHeight = stacked ? context.offsetHeight + grid.offsetHeight + gap : Math.max(context.offsetHeight, grid.offsetHeight);
       const available = parseFloat(getComputedStyle(stage).minHeight) || innerHeight - top - 16;
       pinned = contentHeight <= available;

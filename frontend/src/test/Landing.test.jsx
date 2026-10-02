@@ -120,6 +120,7 @@ test('scrolling visits each tool, reverses cleanly, and releases with only Oral 
     expect(toolkit.querySelectorAll('.tool-card[data-active]')).toHaveLength(1);
     expect(toolkit.querySelector('.tool-card[data-active]')).toHaveAttribute('data-tool-name', names[i]);
     expect(toolkit.querySelectorAll('.tool-card[aria-hidden="false"]')).toHaveLength(1);
+    expect(toolkit.querySelectorAll('.tool-card[data-visible]')).toHaveLength(Math.min(3, 5 - i));
     expect(toolkit.querySelectorAll('.toolkit-step a[aria-current="step"]')).toHaveLength(1);
     expect(toolkit.querySelector('.toolkit-current')).toHaveTextContent(names[i]);
     toolkit.querySelectorAll('.tool-card').forEach(card => expect(card.style.transform).not.toMatch(/NaN|undefined/));
@@ -127,7 +128,7 @@ test('scrolling visits each tool, reverses cleanly, and releases with only Oral 
   sectionTop = top - stepTravel * 0.78;
   fireEvent.scroll(window);
   act(() => nextFrame());
-  expect(toolkit.querySelectorAll('.tool-card[data-visible]')).toHaveLength(2);
+  expect(toolkit.querySelectorAll('.tool-card[data-visible]')).toHaveLength(3);
   expect(toolkit.querySelectorAll('.tool-card[aria-hidden="false"]')).toHaveLength(1);
   expect(toolkit.querySelector('.tool-card[data-active]').style.getPropertyValue('--card-face')).toBe('1');
   toolkit.querySelectorAll('.tool-card:not([data-active])').forEach(card => expect(card.inert).toBe(true));
