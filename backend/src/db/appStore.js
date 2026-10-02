@@ -31,7 +31,7 @@ const appendExchange = (user, sessionId, question, data, { persistent = false } 
   const created_at = new Date().toISOString();
   const messages = [...(current.rows[0]?.messages || []), { role: 'user', content: question, created_at },
     { role: 'assistant', content: String(data.answer || data.response || '').slice(0, 20000), sources: data.top_chunks || data.sources || [],
-      ...(typeof data.covered === 'boolean' ? { covered: data.covered } : {}), created_at }].slice(-HISTORY_LIMIT);
+      ...(typeof data.covered === 'boolean' ? { covered: data.covered } : {}), ...(typeof data.source === 'string' ? { source: data.source.slice(0, 40) } : {}), created_at }].slice(-HISTORY_LIMIT);
   await client.query(
     `INSERT INTO edufusion_chat_history (owner_key,session_id,messages,expires_at)
      VALUES ($1,$2,$3,CASE WHEN $4::boolean THEN 'infinity'::timestamptz ELSE NOW()+INTERVAL '24 hours' END)
