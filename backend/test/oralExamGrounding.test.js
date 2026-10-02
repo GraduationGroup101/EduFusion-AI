@@ -132,7 +132,7 @@ test('valid assessment is saved before rejected follow-up recovery and one recov
   const after=await store.get(user,p.row.id);assert.deepEqual(after.turns[0].assessment,p.a);assert.equal(after.turns[1].category,'follow_up');assert.equal(after.turns[1].parent_sequence,1);assert.equal(+after.expires_at,+p.s.expires_at);await store.finish(user,p.row.id);
 });
 test('failed follow-up recovery advances to the next uncovered core without reassessing or extending time',async()=>{
-  const p=await savedAnswer();let calls=0;
+  const p=await savedAnswer();p.s.turns[0].question='Explain UDP in more detail.';let calls=0;
   global.fetch=async(_url,options)=>{const input=JSON.parse(JSON.parse(options.body).messages[1].content);assert.equal(input.question_type,calls?'next_topic':'follow_up');return response({next:++calls===1?unsupportedFollow():dnsProposal()});};
   const next=await examiner.recoverNext(p.s);assert.equal(calls,1);assert.equal(next.question,'Explain DNS.');await store.commit(p.row.id,p.lease.token,1,null,{assessment:null,next});
   const after=await store.get(user,p.row.id);assert.deepEqual(after.turns[0].assessment,p.a);assert.equal(after.turns[1].concept,'DNS');assert.equal(+after.expires_at,+p.s.expires_at);await store.finish(user,p.row.id);
@@ -140,7 +140,7 @@ test('failed follow-up recovery advances to the next uncovered core without reas
 test('unsafe recovery with no source-derived fallback closes safely with the authoritative assessment saved',async()=>{
   const p=await savedAnswer();await database.query("UPDATE edufusion_oral_exam_sessions SET context=jsonb_set(context,'{core_plan}',$2::jsonb) WHERE id=$1",[p.row.id,JSON.stringify([{name:'UDP',citations:['text-1']},{name:'Absent concept',citations:['text-2']}])]);p.s=await store.get(user,p.row.id);
   let calls=0;global.fetch=async()=>{calls++;return response({next:unsupportedFollow()});};
-  const next=await examiner.recoverNext(p.s);assert.equal(calls,1);assert.equal(next,null);await store.commit(p.row.id,p.lease.token,1,null,{assessment:null,next});
+  const next=await examiner.recoverNext(p.s,undefined,{followUp:false});assert.equal(calls,1);assert.equal(next,null);await store.commit(p.row.id,p.lease.token,1,null,{assessment:null,next});
   const after=await store.ensureCore(user,p.row.id);assert.equal(after.status,'completed');assert.equal(after.turns.length,1);assert.deepEqual(after.turns[0].assessment,p.a);assert.equal(after.core_evaluation.assessed_answers,1);assert.equal(+after.expires_at,+p.s.expires_at);
 });
 test('last fifteen seconds close without a recovery call and preserve the assessed answer',async()=>{
@@ -175,6 +175,19 @@ test('invalid bonus generation uses a grounded source comparison after both core
 test('source fallback never opens an uncovered core or bonus in the final minute',async()=>{
   const p=await savedAnswer('met');let calls=0;global.fetch=async()=>{calls++;throw Error('Unexpected model call');};
   assert.equal(await examiner.recoverNext({...p.s,expires_at:new Date(Date.now()+55000)}),null);assert.equal(calls,0);await store.finish(user,p.row.id);
+});
+test('invalid model follow-up uses only incomplete saved criteria and preserves the authoritative grade',async()=>{
+  const p=await savedAnswer();let calls=0;global.fetch=async()=>{calls++;return response({next:unsupportedFollow()});};
+  const next=await examiner.recoverNext(p.s);assert.equal(calls,1);assert.equal(next.question,'Explain UDP in more detail.');assert.equal(next.question_type,'follow_up');assert.deepEqual(next.grading_criteria,[udp]);
+  await store.commit(p.row.id,p.lease.token,1,null,{assessment:null,next});const after=await store.get(user,p.row.id);
+  assert.equal(after.turns[1].parent_sequence,1);assert.deepEqual(after.turns[0].assessment,p.a);assert.equal(+after.expires_at,+p.s.expires_at);await store.finish(user,p.row.id);
+});
+test('source follow-up refuses completed criteria, unsupported labels and duplicate prompts',()=>{
+  const {sourceFollow}=require('../src/oralExam/sourceNext');const a=g.assess(rawAssessment('partial','UDP.'),current,[evidence[0]],'UDP.','en'),s=session({...current,assessment:a});
+  assert.ok(sourceFollow(s,[udp]));assert.ok(sourceFollow({...s,language:'ar'},[udp]));assert.equal(sourceFollow(s,[sequence]),null);
+  assert.equal(sourceFollow(session({...current,assessment:g.assess(rawAssessment(),current,[evidence[0]],'UDP does not guarantee delivery.','en')}),[udp]),null);
+  assert.equal(sourceFollow(session({...current,concept:'invented technique',assessment:a}),[udp]),null);
+  assert.equal(sourceFollow(session({...current,question:'Explain UDP in more detail.',assessment:a}),[udp]),null);
 });
 test('source fallback selects the target source unit instead of an earlier topic mentioning it',()=>{
   const {sourceNext}=require('../src/oralExam/sourceNext');

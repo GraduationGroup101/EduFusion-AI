@@ -28,4 +28,13 @@ function sourceNext(session,target,bonus=false){
   }
   return null;
 }
-module.exports={sourceNext};
+function sourceFollow(session,missing){
+  const current=session.turns.at(-1),selected=missing.slice(0,5);
+  if(!selected.length)return null;
+  const question=session.language==='ar'?`اشرح ${current.concept} بشكل واضح.`:`Explain ${current.concept} in more detail.`;
+  if(session.turns.some(t=>t.question===question))return null;
+  const next={question,concept:current.concept,question_type:'follow_up',difficulty:'foundation',citations:[...new Set(selected.flatMap(c=>c.citations))],criterion_ids:selected.map(c=>c.id),follow_up_reason:'The saved source points need more detail.'};
+  try{grounding.nextDecision.parse({next});grounding.rubric(next,session.context.chunks,current,current.assessment);return next;}
+  catch{return null;}
+}
+module.exports={sourceNext,sourceFollow};
