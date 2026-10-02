@@ -19,8 +19,6 @@ async function create(user,material,language,key) {
       if(!isDeepStrictEqual(previous.source,material.source)||previous.language!==language) fail(409,'This request key belongs to different material');
       return previous;
     }
-    const count=(await client.query(`SELECT COUNT(*)::int n FROM ${TABLE} WHERE owner_key=$1 AND created_at>NOW()-INTERVAL '1 day'`,[ownerKey(user)])).rows[0].n;
-    if(count>=12) fail(429,'Daily oral exam limit reached. Please return tomorrow.');
     return (await client.query(`INSERT INTO ${TABLE}(id,owner_key,id_student,user_id,request_key,source,material_title,context,language) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
       [randomUUID(),ownerKey(user),user.id_student??null,user.id_student==null?user.id:null,key,material.source,material.title,{...material.context,oral_policy:policy(),grounding_version:1},language])).rows[0];
   });

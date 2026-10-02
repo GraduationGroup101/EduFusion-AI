@@ -189,11 +189,10 @@ test('only a single file field is accepted',async()=>{
   assert.equal(json.status,400);
 });
 
-test('each student has a bounded upload budget',async()=>{
+test('repeated oral uploads keep validation without an upload count quota',async()=>{
   const statuses=[];
   for(let i=0;i<21;i++)statuses.push((await upload(Buffer.alloc(0),'empty.txt','text/plain',token(940))).status);
-  assert.equal(statuses.filter(s=>s===422).length,20);
-  assert.equal(statuses.at(-1),429);
+  assert.equal(statuses.filter(s=>s===422).length,21);
 });
 
 test('decks exported without title placeholders get headings and lose repeated notices',async()=>{

@@ -127,7 +127,7 @@ test('invalid next shape, rubric, duplicate and progression reject only next, wi
 });
 test('valid assessment is saved before rejected follow-up recovery and one recovery persists a grounded follow-up unchanged',async()=>{
   const p=await savedAnswer();let calls=0;
-  global.fetch=async(_url,options)=>{calls++;const input=JSON.parse(JSON.parse(options.body).messages[1].content);assert.equal(input.question_type,'follow_up');assert.deepEqual(input.source_criteria,[udp]);assert.equal((await store.get(user,p.row.id)).turns[0].assessment.completeness,60);return response({next:proposal({question:'Explain UDP delivery.',question_type:'follow_up'})});};
+  global.fetch=async(_url,options)=>{calls++;const input=JSON.parse(JSON.parse(options.body).messages[1].content);assert.equal(input.question_type,'follow_up');assert.deepEqual(input.source_criteria,JSON.parse(JSON.stringify(g.promptCatalog([udp]))));assert.equal((await store.get(user,p.row.id)).turns[0].assessment.completeness,60);return response({next:proposal({question:'Explain UDP delivery.',question_type:'follow_up'})});};
   const next=await examiner.recoverNext(p.s);assert.equal(calls,1);await store.commit(p.row.id,p.lease.token,1,null,{assessment:null,next});
   const after=await store.get(user,p.row.id);assert.deepEqual(after.turns[0].assessment,p.a);assert.equal(after.turns[1].category,'follow_up');assert.equal(after.turns[1].parent_sequence,1);assert.equal(+after.expires_at,+p.s.expires_at);await store.finish(user,p.row.id);
 });
@@ -224,6 +224,15 @@ test('reconnect during next recovery preserves the committed grade and fences th
 test('compact grounded requests retain every complete source criterion and the saved assessment rubric',async()=>{
  let payload;global.fetch=async(_url,o)=>{payload=JSON.parse(JSON.parse(o.body).messages[1].content);return response(value());};
  const s=session(),result=await examiner.next(s,'UDP does not guarantee delivery.');
- assert.deepEqual(payload.required_fields,g.decisionSchema.required);assert.equal(result.assessment.completeness,100);assert.deepEqual(payload.source_criteria,g.catalog(examiner.evidenceFor(s,'UDP does not guarantee delivery.')));
+ assert.deepEqual(payload.required_fields,g.decisionSchema.required);assert.equal(result.assessment.completeness,100);assert.deepEqual(payload.source_criteria,JSON.parse(JSON.stringify(g.promptCatalog(g.catalog(examiner.evidenceFor(s,'UDP does not guarantee delivery.'))))));
  assert.deepEqual(payload.current_question.grading_criteria,current.grading_criteria);assert.deepEqual(payload.assessment_evidence,[{id:'text-1',section:'UDP'}]);assert.ok(payload.question_generation_evidence.every(c=>!Object.hasOwn(c,'text')));
+});
+
+
+test('dense short-line source catalog encoding preserves every original criterion and citation',()=>{
+ const dense=Array.from({length:7},(_,i)=>({id:'text-'+i,text:Array.from({length:45},(_,j)=>'Routing point '+j+' forwards packets.').join('\n')}));
+ const original=g.catalog(dense),encoded=g.promptCatalog(original);
+ const decoded=Object.entries(encoded).flatMap(([citation,entries])=>entries.map(([id,criterion])=>({id,criterion,citations:[citation]})));
+ assert.equal(decoded.length,315);assert.deepEqual(decoded,original);
+ assert.ok(JSON.stringify(encoded).length<JSON.stringify(original).length*0.65);
 });
