@@ -1,6 +1,5 @@
 const express=require('express');
 const {authenticate}=require('../middleware/auth');
-const {aiLimiter,materialLimiter}=require('../middleware/limits');
 const {readMultipart}=require('../lib/multipart');
 const ingest=require('../oralExam/ingest');
 const {createInput,id,fail}=require('../oralExam/contracts');
@@ -34,7 +33,7 @@ router.get('/materials',wrap(async(req,res)=>{
 }));
 // Converts an uploaded study document to normalized text. Nothing is stored:
 // the student reviews the text, then creates a session from it like pasted notes.
-router.post('/materials/extract',materialLimiter,async(req,res)=>{
+router.post('/materials/extract',async(req,res)=>{
   try{
     const form=await readMultipart(req,{maxBytes:ingest.LIMITS.maxBytes+64*1024,fields:['file'],tooLarge:`This file is larger than ${ingest.LIMITS.maxBytes/1024/1024} MB. Upload a smaller file or only the chapters you need.`});
     const file=form.get('file');
@@ -48,7 +47,7 @@ router.post('/materials/extract',materialLimiter,async(req,res)=>{
   }
 });
 router.get('/sessions',wrap(async(req,res)=>res.json({sessions:await store.list(req.user)})));
-router.post('/sessions',aiLimiter,wrap(async(req,res)=>{
+router.post('/sessions',wrap(async(req,res)=>{
   const input=createInput.parse(req.body),key=req.get('Idempotency-Key');
   if(!key||!/^[\w-]{8,100}$/.test(key))fail(400,'A valid request key is required');
   const material=await resolveMaterial(req.user,input.source);
@@ -58,7 +57,7 @@ router.get('/sessions/:id',wrap(async(req,res)=>{
   const session=await store.get(req.user,id.parse(req.params.id));
   res.json({session:store.publicView(session)});
 }));
-router.post('/sessions/:id/start',aiLimiter,wrap(async(req,res)=>{
+router.post('/sessions/:id/start',wrap(async(req,res)=>{
   await store.start(req.user,id.parse(req.params.id));
   res.json({session:store.publicView(await store.get(req.user,req.params.id))});
 }));
@@ -76,7 +75,7 @@ router.post('/sessions/:id/end',wrap(async(req,res)=>{
 // Retrying feedback is idempotent: a ready report is returned as-is, a
 // concurrent attempt is shared, and a failed attempt reports a safe reason
 // while the saved answers stay untouched.
-router.post('/sessions/:id/evaluation',aiLimiter,wrap(async(req,res)=>{
+router.post('/sessions/:id/evaluation',wrap(async(req,res)=>{
   const session=await store.get(req.user,id.parse(req.params.id));
   if(['ready','active'].includes(session.status))fail(409,'End the exam before requesting feedback');
   const evaluation=await examiner.evaluate(req.user,req.params.id);
