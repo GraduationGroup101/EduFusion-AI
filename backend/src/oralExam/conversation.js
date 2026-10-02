@@ -102,6 +102,22 @@ function reply(intent,language,question,modelReply=null) {
 // What the student hears: the question is re-read after a repeat; a
 // clarification is itself a rephrasing, so it stands alone.
 const spoken=(kind,text,question)=>kind==='repeat'?`${text} ${question}`:text;
+const CLOSINGS={en:'That brings us to the end of the interview. Thank you, and best of luck.',ar:'هيك بنكون وصلنا لنهاية المقابلة. شكرًا إلك وبالتوفيق.'};
+const closing=language=>CLOSINGS[language]||CLOSINGS.en;
+// Acknowledgements may vary, but only use content-neutral vocabulary. Unknown
+// words fail closed, so paraphrased subject answers cannot bypass quote checks.
+const TRANSITION_WORDS={
+  en:new Set("i you your you've we we'll let's let us that that's this it it's the a an and but so to on in of from with for at as is was are be have has can could thank thanks good clear clearly identified explained described shared expressed main idea point part answer response understanding start useful thoughtful helpful partial almost one important missing more much some further another different angle perspective approach look explore focus consider continue move next now together briefly try build expand take step well okay right track direction clarify develop deepen reflect about into quite not yet let's keep going".split(' ')),
+  ar:new Set(normalize('أنا أنت إنت انتِ إحنا نحن خلينا نكمل من زاوية ثانية تانية أخرى شكرا إلك لك تمام كويس جيد جيدًا منيح ممتاز فهمت قصدك الفكرة الأساسية واضحة وضحت وصلت عبرت عن فكرتك إجابتك جوابك على الطريق الصحيح بس لسه في جزء مهم ناقص دعنا نركز عليه نفكر فيها بطريقة مختلفة ننتقل للخطوة التالية نستكشف أكثر شوي هلا الآن هذا هذه هيك مع بعض نقطة بداية مفيدة حاول نطور نفهم بعمق السؤال القادم').split(' ')),
+};
+function safeTransition(text,evidence,question,language){
+  if(!text||text.length>240||/[0-9٠-٩%?؟:]/u.test(text)||text.split(/[.!。]/).filter(s=>s.trim()).length>1)return false;
+  if(/\b(score|grade|rubric|correct answer|expected answer|because|therefore|reasoning|evidence|means|defined as)\b|درجتك|علامتك|الإجابة الصحيحة|الاجابة الصحيحة|لأن|لان|دليل|معيار/iu.test(text))return false;
+  if(language==='ar'&&!/[\u0600-\u06ff]/.test(text))return false;
+  if(language==='en'&&/[\u0600-\u06ff]/.test(text))return false;
+  if(words(normalize(text)).some(word=>!(TRANSITION_WORDS[language]||TRANSITION_WORDS.en).has(word)))return false;
+  return !leaks(text,evidence,question);
+}
 
 // A clarification or nudge must not quote the material it is examining.
 // Two rules: any eight consecutive words of evidence, or any three consecutive
@@ -120,4 +136,4 @@ function leaks(text,chunks,question='') {
   return chunks.some(chunk=>{const evidence=grams(chunk.text,3);return short.some(gram=>evidence.has(gram));});
 }
 
-module.exports={INTENTS,KIND,LIMITS,normalize,classify,resolve,reply,spoken,leaks};
+module.exports={INTENTS,KIND,LIMITS,normalize,classify,resolve,reply,spoken,leaks,closing,safeTransition};

@@ -15,7 +15,7 @@ it('an unrelated LectureScribe 502 preserves authentication and identifies the f
   try {
     await expect(lectureScribeService.health()).rejects.toThrow('provider failed');
     expect(localStorage.getItem('token')).toBe('healthy-exam-auth');
-    expect(warn).toHaveBeenCalledWith('API request failed:',{category:'service_unavailable',status:502,service:'lecture-scribe'});
+    expect(warn).toHaveBeenCalledWith('API request failed: '+JSON.stringify({category:'service_unavailable',status:502,service:'lecture-scribe'}));
   } finally {api.defaults.adapter=adapter;warn.mockRestore();localStorage.clear();}
 });
 it('keeps the clock idempotency key after an uncertain result', async () => {

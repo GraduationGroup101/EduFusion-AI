@@ -70,15 +70,19 @@ test('a clarification that copies the evidence is detected as a leak, including 
 const question={question:'What does a router do?',concept:'Routing',question_type:'initial',difficulty:'foundation',citations:['text-1'],follow_up_reason:''};
 const assessment={understanding:60,accuracy:50,completeness:40,communication:80,feedback:'Partly right.',strengths:['Mentions packets'],improvements:['Explain path selection']};
 const evidenceText='Routers select paths for packets by consulting a routing table before forwarding to the next hop.';
-const session=(turns=[])=>({language:'en',expires_at:new Date(Date.now()+60000),server_now:new Date(),turns,context:{chunks:[{id:'text-1',section:'Network',text:evidenceText}]}});
+const session=(turns=[])=>({language:'en',expires_at:new Date(Date.now()+600000),server_now:new Date(),turns,context:{chunks:[{id:'text-1',section:'Network',text:evidenceText}]}});
 const answered=()=>session([{question:question.question,concept:'Routing',question_type:'initial',citations:['text-1'],transcript:null,assessment:null,exchanges:[{kind:'repeat',transcript:'repeat'}]}]);
 const reply=value=>new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(value)}}]}));
-function mock(values) {const bodies=[];let calls=0;global.fetch=async(_url,options)=>{bodies.push(JSON.parse(options.body));return values[Math.min(calls++,values.length-1)].clone();};return {calls:()=>calls,bodies};}
+function mock(values) {
+  // Fresh bodies avoid Undici's reused tee-stream fixture failing under GC.
+  const templates=values.map(response=>({body:response.text(),status:response.status,headers:response.headers}));
+  const bodies=[];let calls=0;global.fetch=async(_url,options)=>{bodies.push(JSON.parse(options.body));const response=templates[Math.min(calls++,templates.length-1)];return new Response(await response.body,{status:response.status,headers:response.headers});};return {calls:()=>calls,bodies};
+}
 
 test('the decision contract carries intent and reply and the provider schema stays closed',()=>{
   assert.deepEqual(contracts.decisionJsonSchema.properties.intent,{type:'string',enum:['answer','repeat','clarify','dont_know','unclear']});
-  assert.deepEqual(contracts.decisionJsonSchema.required,['intent','reply','assessment','next']);
-  assert.equal(contracts.decision.safeParse({intent:'repeat',reply:null,assessment:null,next:null}).success,true);
+  assert.deepEqual(contracts.decisionJsonSchema.required,['intent','reply','assessment','next','transition','core_concepts']);
+  assert.equal(contracts.decision.safeParse({intent:'repeat',reply:null,assessment:null,next:null,transition:null,core_concepts:null}).success,true);
   assert.equal(contracts.decision.safeParse({intent:'maybe',reply:null,assessment:null,next:null}).success,false);
   assert.equal(contracts.decision.safeParse({reply:null,assessment:null,next:question}).success,false);
 });
@@ -93,8 +97,8 @@ test('the examiner is told about the current question, its exchanges and the fol
   assert.match(bodies[0].messages[0].content,/never state, hint at, quote or paraphrase the correct answer/);
 });
 test('a control intent may not score or advance, and a clarification may not reveal the evidence',async()=>{
-  let m=mock([reply({intent:'repeat',reply:null,assessment,next:question}),reply({intent:'repeat',reply:null,assessment:null,next:null})]);
-  assert.deepEqual(await examiner.next(answered(),'Please repeat that question for me once more'),{intent:'repeat',reply:null,assessment:null,next:null});
+  let m=mock([reply({intent:'repeat',reply:null,assessment,next:question}),reply({intent:'repeat',reply:null,assessment:null,next:null,transition:null,core_concepts:null})]);
+  assert.deepEqual(await examiner.next(answered(),'Please repeat that question for me once more'),{intent:'repeat',reply:null,assessment:null,next:null,transition:null,core_concepts:null});
   assert.equal(m.calls(),2);
   m=mock([reply({intent:'clarify',reply:`Remember that ${evidenceText}`,assessment:null,next:null}),reply({intent:'clarify',reply:'What job does this device do when a packet arrives?',assessment:null,next:null})]);
   const clarified=await examiner.next(answered(),'Sorry, I am really not following what you are asking me here');
@@ -103,7 +107,7 @@ test('a control intent may not score or advance, and a clarification may not rev
   await assert.rejects(()=>examiner.next(answered(),'Sorry, I am really not following what you are asking me here'),{code:'missing_reply'});
   mock([reply({intent:'answer',reply:null,assessment:null,next:question})]);
   await assert.rejects(()=>examiner.next(answered(),'A router forwards packets.'),{code:'missing_assessment'});
-  mock([reply({intent:'repeat',reply:null,assessment:null,next:null})]);
+  mock([reply({intent:'repeat',reply:null,assessment:null,next:null,transition:null,core_concepts:null})]);
   await assert.rejects(()=>examiner.next(session(),null),{code:'invalid_initial_decision'});
 });
 test('reply generation asks only about the current question and rejects the requested intent being ignored',async()=>{
@@ -118,7 +122,7 @@ test('reply generation asks only about the current question and rejects the requ
   await assert.rejects(()=>examiner.reply(answered(),'I do not understand','clarify'),{code:'reply_reveals_evidence'});assert.equal(m.calls(),2);
 });
 test('once requests are exhausted the model must assess the response; a control decision is rejected and retried',async()=>{
-  const m=mock([reply({intent:'dont_know',reply:'Take your time.',assessment:null,next:null}),reply({intent:'answer',reply:null,assessment,next:{...question,question:'What is a routing table?',question_type:'next_topic'}})]);
+  const m=mock([reply({intent:'dont_know',reply:'Take your time.',assessment:null,next:null}),reply({intent:'answer',reply:null,assessment,next:{...question,question:'What is a routing table?',concept:'Routing tables',question_type:'next_topic'}})]);
   const decided=await examiner.next(answered(),"I don't know",undefined,{forceAnswer:true});
   assert.equal(decided.intent,'answer');assert.equal(decided.next.question,'What is a routing table?');assert.equal(m.calls(),2);
   const user=JSON.parse(m.bodies[0].messages[1].content);

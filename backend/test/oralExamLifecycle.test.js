@@ -46,6 +46,8 @@ after(async()=>{
 async function session(){
   await store.expire();
   const row=await store.create(user,material,'en',randomUUID());
+  // Exercise recovery of sessions persisted before the private-rubric contract.
+  await database.query("UPDATE edufusion_oral_exam_sessions SET context=context-'grounding_version' WHERE id=$1",[row.id]);
   return store.start(user,row.id);
 }
 // Each browser capability numbers its connection attempts, like the real client.
@@ -272,20 +274,52 @@ test('overlapping handshakes: a delayed older authentication cannot replace a ne
   }
 });
 
-test('provider failure closes the socket and resumes the same saved answer and deadline',async()=>{
+test('transient generation failure recovers on the same socket with the saved answer and deadline',async()=>{
   const row=await session(),key=randomUUID(),first=await connect(row.id,key);
-  const next=runtimeDependencies.examiner.next;let resumed;
+  const next=runtimeDependencies.examiner.next;
   try {
     await first.until(e=>e.type==='audio');first.ws.send(JSON.stringify({type:'played',sequence:1}));
     await first.until(e=>e.type==='state'&&e.state==='listening');
-    runtimeDependencies.examiner.next=async()=>{throw Object.assign(new Error('provider throttled'),{retryAfterMs:1000});};
+    let attempts=0;runtimeDependencies.examiner.next=async(...args)=>{if(!attempts++)throw Object.assign(new Error('provider throttled'),{name:'ProviderError',status:503,retryAfterMs:150});return next(...args);};
     finalizers.at(-1)('Saved answer before provider failure.');
-    const failed=await first.until(e=>e.type==='error');assert.equal(failed.retryable,true);assert.equal(failed.retry_after_ms,1000);
-    assert.equal((await first.closed)[0],4500);
-    runtimeDependencies.examiner.next=next;
-    resumed=await connect(row.id,key);const welcome=await resumed.until(e=>e.type==='welcome');
-    assert.equal(welcome.session.id,row.id);assert.equal(+new Date(welcome.session.expires_at),+new Date(row.expires_at));
-    await resumed.until(e=>e.type==='question'&&e.sequence===2);
-    const saved=await store.get(user,row.id);assert.equal(saved.turns[0].transcript,'Saved answer before provider failure.');assert.ok(saved.turns[0].assessment);
-  } finally {runtimeDependencies.examiner.next=next;first.ws.terminate();if(resumed){resumed.ws.terminate();await resumed.closed;}await store.finish(user,row.id);}
+    await first.until(e=>e.type==='question'&&e.sequence===2);
+    assert.equal(first.ws.readyState,WebSocket.OPEN);assert.equal(attempts,2);
+    assert.equal(first.events.filter(e=>e.type==='welcome').length,1);
+    assert.equal(first.events.some(e=>e.type==='error'),false);
+    const saved=await store.get(user,row.id);assert.equal(saved.turns[0].transcript,'Saved answer before provider failure.');assert.ok(saved.turns[0].assessment);assert.equal(+new Date(saved.expires_at),+new Date(row.expires_at));
+  } finally {runtimeDependencies.examiner.next=next;first.ws.terminate();await first.closed;await store.finish(user,row.id);}
+});
+
+test('welcome survives transient initialization and reconnect fences delayed generation with the same timer',async()=>{
+ const row=await session(),key=randomUUID(),next=runtimeDependencies.examiner.next;let attempts=0,first,second;
+ try{
+  runtimeDependencies.examiner.next=async(...args)=>{if(!attempts++)throw Object.assign(new Error('transient'),{name:'ProviderError',status:503,retryAfterMs:500});return next(...args);};
+  first=await connect(row.id,key);await first.until(e=>e.type==='welcome');
+  second=await connect(row.id,key);await second.until(e=>e.type==='question');
+  assert.equal((await first.closed)[0],4001);await new Promise(r=>setTimeout(r,600));
+  assert.equal(second.ws.readyState,WebSocket.OPEN);assert.equal(second.events.some(e=>e.type==='error'),false);
+  const saved=await store.get(user,row.id);assert.equal(saved.turns.length,1);assert.equal(+new Date(saved.expires_at),+new Date(row.expires_at));assert.ok(await store.renew(row.id,saved.lease_token));
+ }finally{runtimeDependencies.examiner.next=next;for(const c of [first,second])if(c){c.ws.terminate();await c.closed;}await store.finish(user,row.id);}
+});
+test('persistent oversized generation is explicit without a 4500 reconnect loop and can close normally',async()=>{
+ // Only age isolated terminal fixtures; this suite now exceeds the daily cap.
+ await database.query("UPDATE edufusion_oral_exam_sessions SET created_at=clock_timestamp()-INTERVAL '1 day' WHERE id_student=990 AND status IN ('completed','timed_out')");
+ const row=await session(),next=runtimeDependencies.examiner.next;let client,calls=0;
+ try{
+  runtimeDependencies.examiner.next=async()=>{calls++;throw Object.assign(new Error('content must not be logged'),{name:'ProviderError',status:413,code:'rate_limit_exceeded'});};
+  client=await connect(row.id,randomUUID());await client.until(e=>e.type==='welcome');
+  const failed=await client.until(e=>e.type==='error');assert.equal(failed.retryable,false);assert.equal(calls,1);assert.equal(client.ws.readyState,WebSocket.OPEN);
+  const saved=await store.get(user,row.id);assert.equal(saved.turns.length,0);assert.equal(+new Date(saved.expires_at),+new Date(row.expires_at));
+  client.ws.send(JSON.stringify({type:'end'}));await client.until(e=>e.type==='closing');client.ws.send(JSON.stringify({type:'played',kind:'closing'}));await client.until(e=>e.type==='ended');assert.equal((await client.closed)[0],1000);
+ }finally{runtimeDependencies.examiner.next=next;if(client){client.ws.terminate();await client.closed;}await store.finish(user,row.id);}
+});
+
+test('initial JSON validation provider rejection recovers on the welcomed connection',async()=>{
+ const row=await session(),next=runtimeDependencies.examiner.next;let client,calls=0;
+ try{
+  runtimeDependencies.examiner.next=async(...args)=>{if(!calls++)throw Object.assign(new Error('temporary model outage'),{name:'ProviderError',status:400,code:'json_validate_failed'});return next(...args);};
+  client=await connect(row.id,randomUUID());await client.until(e=>e.type==='question');
+  assert.equal(calls,2);assert.equal(client.ws.readyState,WebSocket.OPEN);assert.equal(client.events.filter(e=>e.type==='welcome').length,1);assert.equal(client.events.some(e=>e.type==='error'),false);
+  const saved=await store.get(user,row.id);assert.equal(saved.turns.length,1);assert.equal(+new Date(saved.expires_at),+new Date(row.expires_at));
+ }finally{runtimeDependencies.examiner.next=next;if(client){client.ws.terminate();await client.closed;}await store.finish(user,row.id);}
 });

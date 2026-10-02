@@ -34,3 +34,5 @@
 .oral-file-summary p,.oral-file-error{display:flex;gap:8px;align-items:flex-start;font-size:14px;margin:0 0 8px!important;line-height:1.5!important}.oral-file-summary svg,.oral-file-error svg{flex:none;margin-top:3px}.oral-file-summary>p:first-child svg{color:#087f75}
 .oral-file-error{color:#7c4320!important}.oral-file-warning{background:#fff3eb;border-radius:10px;padding:10px 12px;color:#7c4320!important}
 .oral-file-change{justify-self:start;color:#087f75;text-decoration:underline;font-size:14px}
+
+.oral-coverage{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px;margin:24px 0}.oral-coverage div{padding:16px;background:#f4f8f6;border-radius:12px}.oral-coverage dt{font-size:13px;color:#4c6660}.oral-coverage dd{margin:8px 0 0;font-size:22px;font-weight:600}
