@@ -134,12 +134,13 @@ test('valid assessment is saved before rejected follow-up recovery and one recov
 test('failed follow-up recovery advances to the next uncovered core without reassessing or extending time',async()=>{
   const p=await savedAnswer();let calls=0;
   global.fetch=async(_url,options)=>{const input=JSON.parse(JSON.parse(options.body).messages[1].content);assert.equal(input.question_type,calls?'next_topic':'follow_up');return response({next:++calls===1?unsupportedFollow():dnsProposal()});};
-  const next=await examiner.recoverNext(p.s);assert.equal(calls,2);await store.commit(p.row.id,p.lease.token,1,null,{assessment:null,next});
+  const next=await examiner.recoverNext(p.s);assert.equal(calls,1);assert.equal(next.question,'Explain DNS.');await store.commit(p.row.id,p.lease.token,1,null,{assessment:null,next});
   const after=await store.get(user,p.row.id);assert.deepEqual(after.turns[0].assessment,p.a);assert.equal(after.turns[1].concept,'DNS');assert.equal(+after.expires_at,+p.s.expires_at);await store.finish(user,p.row.id);
 });
-test('two unsafe next proposals close safely with the authoritative assessment saved and no invented turn',async()=>{
-  const p=await savedAnswer();let calls=0;global.fetch=async()=>{calls++;return response({next:unsupportedFollow()});};
-  const next=await examiner.recoverNext(p.s);assert.equal(calls,2);assert.equal(next,null);await store.commit(p.row.id,p.lease.token,1,null,{assessment:null,next});
+test('unsafe recovery with no source-derived fallback closes safely with the authoritative assessment saved',async()=>{
+  const p=await savedAnswer();await database.query("UPDATE edufusion_oral_exam_sessions SET context=jsonb_set(context,'{core_plan}',$2::jsonb) WHERE id=$1",[p.row.id,JSON.stringify([{name:'UDP',citations:['text-1']},{name:'Absent concept',citations:['text-2']}])]);p.s=await store.get(user,p.row.id);
+  let calls=0;global.fetch=async()=>{calls++;return response({next:unsupportedFollow()});};
+  const next=await examiner.recoverNext(p.s);assert.equal(calls,1);assert.equal(next,null);await store.commit(p.row.id,p.lease.token,1,null,{assessment:null,next});
   const after=await store.ensureCore(user,p.row.id);assert.equal(after.status,'completed');assert.equal(after.turns.length,1);assert.deepEqual(after.turns[0].assessment,p.a);assert.equal(after.core_evaluation.assessed_answers,1);assert.equal(+after.expires_at,+p.s.expires_at);
 });
 test('last fifteen seconds close without a recovery call and preserve the assessed answer',async()=>{
@@ -159,6 +160,27 @@ test('recovery offers a source-grounded bonus only after all planned core concep
   const p=await savedAnswer('met');await database.query("UPDATE edufusion_oral_exam_sessions SET context=jsonb_set(context,'{core_plan}',$2::jsonb) WHERE id=$1",[p.row.id,JSON.stringify([{name:'UDP',citations:['text-1']}])]);
   const s=await store.get(user,p.row.id);let calls=0;global.fetch=async(_url,options)=>{calls++;const input=JSON.parse(JSON.parse(options.body).messages[1].content);assert.equal(input.question_type,'bonus');return response({next:proposal({question:'Why would you choose UDP?',question_type:'bonus'})});};
   const next=await examiner.recoverNext(s);assert.equal(calls,1);await store.commit(p.row.id,p.lease.token,1,null,{assessment:null,next});assert.equal((await store.get(user,p.row.id)).turns[1].category,'bonus');await store.finish(user,p.row.id);
+});
+test('invalid bonus generation uses a grounded source comparison after both cores, preserving every grade',async()=>{
+  const p=await savedAnswer('met');const next=g.rubric(dnsProposal(),evidence);
+  await store.commit(p.row.id,p.lease.token,1,null,{assessment:null,next});
+  let s=await store.get(user,p.row.id);const text='DNS translates domain names into IP addresses.';
+  const a=g.assess(rawAssessment('met',text,dns.id,['text-2']),s.turns[1],[evidence[1]],text,'en');
+  await store.recordAnswer(p.row.id,p.lease.token,2,text);await store.saveAssessment(p.row.id,p.lease.token,2,text,a);s=await store.get(user,p.row.id);
+  let calls=0;global.fetch=async()=>{calls++;return response({next:unsupportedFollow()});};
+  const bonus=await examiner.recoverNext(s);assert.equal(calls,1);assert.equal(bonus.question_type,'bonus');assert.equal(bonus.question,'Compare UDP and DNS.');g.storedRubric(bonus,evidence);
+  await store.commit(p.row.id,p.lease.token,2,null,{assessment:null,next:bonus});const after=await store.get(user,p.row.id);
+  assert.deepEqual(after.turns.slice(0,2).map(t=>t.assessment),s.turns.map(t=>t.assessment));assert.equal(after.turns[2].category,'bonus');assert.equal(+after.expires_at,+s.expires_at);await store.finish(user,p.row.id);
+});
+test('source fallback never opens an uncovered core or bonus in the final minute',async()=>{
+  const p=await savedAnswer('met');let calls=0;global.fetch=async()=>{calls++;throw Error('Unexpected model call');};
+  assert.equal(await examiner.recoverNext({...p.s,expires_at:new Date(Date.now()+55000)}),null);assert.equal(calls,0);await store.finish(user,p.row.id);
+});
+test('source fallback selects the target source unit instead of an earlier topic mentioning it',()=>{
+  const {sourceNext}=require('../src/oralExam/sourceNext');
+  const chunks=[{id:'text-1',text:'DHCP: DHCP supplies an address and DNS server. DNS: DNS translates domain names into addresses.'}];
+  const next=sourceNext({language:'en',context:{chunks},turns:[]},{name:'DNS'});
+  assert.deepEqual(next.criterion_ids,['text-1:1']);assert.equal(g.rubric(next,chunks).grading_criteria[0].criterion,'DNS: DNS translates domain names into addresses.');
 });
 test('reconnect during next recovery preserves the committed grade and fences the old proposal without duplicate turns',async()=>{
   process.env.ORAL_EXAM_ENABLED='true';for(const k of ['GROQ_API_KEY','ELEVENLABS_API_KEY','ELEVENLABS_EN_VOICE_ID','ELEVENLABS_AR_VOICE_ID'])process.env[k]='fixture-only';
