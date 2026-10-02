@@ -55,7 +55,7 @@ function attachRealtime(server,dependencies={}) {
         try{return await work();}
         catch(err){
           if(closed||abort.signal.aborted)throw err;
-          const transient=['TimeoutError','ZodError','ModelValidationError'].includes(err.name)||err instanceof TypeError||[408,429].includes(err.status)||err.status>=500;
+          const transient=['TimeoutError','SyntaxError','ZodError','ModelValidationError'].includes(err.name)||err instanceof TypeError||[408,429].includes(err.status)||err.status>=500||err.status===400&&err.code==='json_validate_failed';
           const waitMs=Math.max(150,err.retryAfterMs||150);
           log('generation_failure',{stage,attempt,...details(err)});
           if(!transient||attempt===2||waitMs>60000||Date.now()+waitMs+15000>=new Date(session.expires_at).getTime()){

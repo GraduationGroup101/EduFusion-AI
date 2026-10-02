@@ -314,10 +314,10 @@ test('persistent oversized generation is explicit without a 4500 reconnect loop 
  }finally{runtimeDependencies.examiner.next=next;if(client){client.ws.terminate();await client.closed;}await store.finish(user,row.id);}
 });
 
-test('initial transient failure reaches the first question on the welcomed connection',async()=>{
+test('initial JSON validation provider rejection recovers on the welcomed connection',async()=>{
  const row=await session(),next=runtimeDependencies.examiner.next;let client,calls=0;
  try{
-  runtimeDependencies.examiner.next=async(...args)=>{if(!calls++)throw Object.assign(new Error('temporary model outage'),{name:'ProviderError',status:503});return next(...args);};
+  runtimeDependencies.examiner.next=async(...args)=>{if(!calls++)throw Object.assign(new Error('temporary model outage'),{name:'ProviderError',status:400,code:'json_validate_failed'});return next(...args);};
   client=await connect(row.id,randomUUID());await client.until(e=>e.type==='question');
   assert.equal(calls,2);assert.equal(client.ws.readyState,WebSocket.OPEN);assert.equal(client.events.filter(e=>e.type==='welcome').length,1);assert.equal(client.events.some(e=>e.type==='error'),false);
   const saved=await store.get(user,row.id);assert.equal(saved.turns.length,1);assert.equal(+new Date(saved.expires_at),+new Date(row.expires_at));

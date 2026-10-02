@@ -73,7 +73,11 @@ const evidenceText='Routers select paths for packets by consulting a routing tab
 const session=(turns=[])=>({language:'en',expires_at:new Date(Date.now()+600000),server_now:new Date(),turns,context:{chunks:[{id:'text-1',section:'Network',text:evidenceText}]}});
 const answered=()=>session([{question:question.question,concept:'Routing',question_type:'initial',citations:['text-1'],transcript:null,assessment:null,exchanges:[{kind:'repeat',transcript:'repeat'}]}]);
 const reply=value=>new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(value)}}]}));
-function mock(values) {const bodies=[];let calls=0;global.fetch=async(_url,options)=>{bodies.push(JSON.parse(options.body));return values[Math.min(calls++,values.length-1)].clone();};return {calls:()=>calls,bodies};}
+function mock(values) {
+  // Fresh bodies avoid Undici's reused tee-stream fixture failing under GC.
+  const templates=values.map(response=>({body:response.text(),status:response.status,headers:response.headers}));
+  const bodies=[];let calls=0;global.fetch=async(_url,options)=>{bodies.push(JSON.parse(options.body));const response=templates[Math.min(calls++,templates.length-1)];return new Response(await response.body,{status:response.status,headers:response.headers});};return {calls:()=>calls,bodies};
+}
 
 test('the decision contract carries intent and reply and the provider schema stays closed',()=>{
   assert.deepEqual(contracts.decisionJsonSchema.properties.intent,{type:'string',enum:['answer','repeat','clarify','dont_know','unclear']});

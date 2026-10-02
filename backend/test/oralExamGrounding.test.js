@@ -224,6 +224,6 @@ test('reconnect during next recovery preserves the committed grade and fences th
 test('compact grounded requests retain every complete source criterion and the saved assessment rubric',async()=>{
  let payload;global.fetch=async(_url,o)=>{payload=JSON.parse(JSON.parse(o.body).messages[1].content);return response(value());};
  const s=session(),result=await examiner.next(s,'UDP does not guarantee delivery.');
- assert.equal(result.assessment.completeness,100);assert.deepEqual(payload.source_criteria,g.catalog(examiner.evidenceFor(s,'UDP does not guarantee delivery.')));
+ assert.deepEqual(payload.required_fields,g.decisionSchema.required);assert.equal(result.assessment.completeness,100);assert.deepEqual(payload.source_criteria,g.catalog(examiner.evidenceFor(s,'UDP does not guarantee delivery.')));
  assert.deepEqual(payload.current_question.grading_criteria,current.grading_criteria);assert.deepEqual(payload.assessment_evidence,[{id:'text-1',section:'UDP'}]);assert.ok(payload.question_generation_evidence.every(c=>!Object.hasOwn(c,'text')));
 });

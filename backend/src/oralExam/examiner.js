@@ -28,7 +28,7 @@ On the first request, propose core_concepts: a plan of distinct important concep
 Respect allowed_question_types. A follow_up stays on the current core concept. After all core concepts, bonus questions may explore harder applications or comparisons grounded in the evidence. Bonus is never a new required concept.
 For a scored answer, transition is one short, natural sentence acknowledging the response in the selected language and leading into the next question. Keep it content-neutral: never repeat or correct subject matter, quote source evidence, expose an expected answer, rubric, scores, private reasoning or excessive praise. Do not include a question in transition. For initial and control decisions transition is null. Do not add a separate call for transitions. Vary brief neutral wording rather than repeating the previous transition; for example "Thank you for your response.", "Let us explore another angle.", or "Let us continue." Safety matters more than variety.
 In the final minute finish the active topic; stop if fewer than 15 seconds remain. Never invent content absent from evidence.
-Only return the requested JSON. Assessments are brief student-facing feedback, never private reasoning or chain-of-thought.
+Only return the requested JSON. Always include ALL six top-level fields: intent, reply, assessment, next, transition, core_concepts. Never omit nullable fields; core_concepts MUST be null after initialization. Assessments are brief student-facing feedback, never private reasoning or chain-of-thought.
 Use the requested language. Do not score accent, disability, or speaking style; communication measures clarity of academic meaning.`;
 
 class ProviderError extends Error {
@@ -40,7 +40,7 @@ class ModelValidationError extends Error {
 const safeCode=value=>typeof value==='string'&&/^[a-zA-Z0-9_.-]{1,80}$/.test(value)?value:undefined;
 function diagnostic(operation,error,attempt) {
   return {operation,attempt,error_class:error?.name||'Error',provider_status:Number.isInteger(error?.status)?error.status:undefined,
-    provider_code:safeCode(error?.code),rate_limits:error?.rateLimits,zod_issue_paths:error?.issues?.map(issue=>issue.path.map(String).join('.')),
+    provider_code:safeCode(error?.code),rate_limits:error?.rateLimits,missing_required_fields:error?.missingFields,zod_issue_paths:error?.issues?.map(issue=>issue.path.map(String).join('.')),
     zod_issue_codes:error?.issues?.map(issue=>issue.code)};
 }
 // A short, safe reason for a failed operation; shown to the student and stored.
@@ -57,7 +57,6 @@ function active(signal,expiresAt) {
   if(expiresAt&&Date.now()>=new Date(expiresAt).getTime())throw new DOMException('Exam expired','AbortError');
 }
 async function jsonModel(messages,{operation,schemaName,schema,contract,signal,expiresAt,validate,maxAttempts=2}) {
-  let completionBudget;
   for(let attempt=1;attempt<=maxAttempts;attempt++) {
     active(signal,expiresAt);
     try {
@@ -65,8 +64,7 @@ async function jsonModel(messages,{operation,schemaName,schema,contract,signal,e
       // GPT-OSS reasoning and structured JSON share generation headroom.
       // Use its supported low effort without changing the strict contract.
       const reasoningModel=/^openai\/gpt-oss-(?:20b|120b)$/.test(model);
-      const maxTokens=completionBudget||(reasoningModel?4096:1800);
-      const body=JSON.stringify({model,temperature:0.2,max_tokens:maxTokens,...(reasoningModel?{reasoning_effort:'low'}:{}),
+      const body=JSON.stringify({model,temperature:0.2,max_tokens:reasoningModel?4096:1800,...(reasoningModel?{reasoning_effort:'low'}:{}),
         response_format:{type:'json_schema',json_schema:{name:schemaName,strict:true,schema}},messages});
       const response=await modelQuota.run(model,body,{signal,expiresAt,check:()=>active(signal,expiresAt)},()=>{
         const remaining=expiresAt?new Date(expiresAt).getTime()-Date.now():25000;
@@ -77,24 +75,23 @@ async function jsonModel(messages,{operation,schemaName,schema,contract,signal,e
         body,
       });});
       if(!response.ok) {
-        let code,requested;
+        let code,requested,missingFields;
         try {const body=await response.text(),failure=JSON.parse(body.slice(0,8192))?.error;code=safeCode(failure?.code);
           // Extract numbers only; never log a provider message or student content.
           const match=typeof failure?.message==='string'&&failure.message.match(/\bRequested[:\s]+(\d{1,9})\b/i);
           if(match)requested=Number(match[1]);
+          if(response.status===400&&code==='json_validate_failed'&&typeof failure.failed_generation==='string'&&failure.failed_generation.length<=8192){
+            const rejected=JSON.parse(failure.failed_generation);
+            if(rejected&&typeof rejected==='object'&&!Array.isArray(rejected))missingFields=schema.required?.filter(key=>!Object.hasOwn(rejected,key));
+          }
         }catch { /* Provider body is not trusted diagnostic data. */ }
         const retryAfter=response.headers.get('retry-after');
         const retryAfterMs=retryAfter===null?10000:Number.isFinite(Number(retryAfter))?Number(retryAfter)*1000:Date.parse(retryAfter)-Date.now();
         const error=new ProviderError(response.status,code,response.status===429?Math.max(1000,Number.isFinite(retryAfterMs)?retryAfterMs:10000):150);
+        error.missingFields=missingFields;
         if([413,429].includes(response.status)){
           const numeric=key=>{const value=response.headers.get(key);return value!==null&&/^\d{1,10}$/.test(value)?Number(value):undefined;};
-          error.rateLimits={token_limit:numeric('x-ratelimit-limit-tokens'),remaining_tokens:numeric('x-ratelimit-remaining-tokens'),remaining_requests:numeric('x-ratelimit-remaining-requests'),token_reset_ms:duration(response.headers.get('x-ratelimit-reset-tokens'))};
-        }
-        if(response.status===413&&code==='rate_limit_exceeded'&&requested>=maxTokens&&error.rateLimits.token_limit){
-          // A bucket reset cannot fit an oversized single request. Keep every
-          // source criterion and the strict schema, reducing generation only.
-          const budget=Math.floor((error.rateLimits.token_limit-(requested-maxTokens)-256)/128)*128;
-          if(budget>=1800&&budget<maxTokens){completionBudget=budget;error.resizeRetry=true;}
+          error.rateLimits={token_limit:numeric('x-ratelimit-limit-tokens'),requested_tokens:requested,remaining_tokens:numeric('x-ratelimit-remaining-tokens'),remaining_requests:numeric('x-ratelimit-remaining-requests'),token_reset_ms:duration(response.headers.get('x-ratelimit-reset-tokens'))};
         }
         throw error;
       }
@@ -105,7 +102,7 @@ async function jsonModel(messages,{operation,schemaName,schema,contract,signal,e
       return validate?validate(value):value;
     } catch(error) {
       console.error('Oral exam model failure:',diagnostic(operation,error,attempt));
-      const recoverable=error.resizeRetry||error?.name==='ZodError'||error instanceof SyntaxError||error?.name==='ModelValidationError'||
+      const recoverable=error?.name==='ZodError'||error instanceof SyntaxError||error?.name==='ModelValidationError'||
         error instanceof ProviderError&&([408,429].includes(error.status)||error.status>=500||error.status===400&&error.code==='json_validate_failed')||
         error?.name==='TimeoutError'||error instanceof TypeError;
       if(attempt===maxAttempts||!recoverable||signal?.aborted||expiresAt&&Date.now()>=new Date(expiresAt).getTime())throw error;
@@ -179,8 +176,8 @@ async function next(session,transcript,signal,{forceAnswer=false}={}) {
   const task=transcript===null?'This is exam initialization, not a student response. Return intent answer, assessment null, reply null, transition null, a source-derived core_concepts plan, and a non-null first next question. Choose the first question.'
     :forceAnswer?'The student has used all repeat, clarification and hint allowances for this question. Treat this response as their answer of record: intent must be "answer", assess it exactly as it stands (a non-answer scores low, with brief encouraging feedback), and choose the next question; next may be null to end the exam.'
     :'Classify the student response. If it is an answer, assess it (0–100 dimensions) and choose the next question; next may be null to end the exam. Otherwise return the intent with a reply and no assessment or next question.';
-  const groundingInstructions=grounded?'Assessment must evaluate EVERY saved criterion, and ONLY those criteria. No numeric scores or academic prose are allowed in assessment. General knowledge must never create expectations. Use current_question.grading_criteria as the assessment source; assessment_evidence identifies only their allowed citation chunks. Communication judges clarity, not omitted knowledge. For next, select criterion_ids from source_criteria and cite exactly their chunks. These source-extractive criteria are private. Question academic terms must appear in the SELECTED criteria, even for bonus/application. Concept labels must use terms in their cited chunks. For core plan names prefer the exact headings in the source. Keep question wording simple, for example Explain [source term], How does [source term] work, or Compare [source term] and [source term]. Use only generic question scaffolding otherwise. Keep academic terms in their source language. Do not quote the criteria as an answer in the question. A follow_up must select only current saved criteria rated partial/missing/incorrect. Never introduce an industry technique not present in those criteria.':'';
-  return jsonModel([{role:'system',content:SYSTEM+'\n'+groundingInstructions},{role:'user',content:JSON.stringify({task,...(grounded?{}:{format}),language:session.language,remaining_seconds:remaining,control_requests_exhausted:Boolean(forceAnswer),
+  const groundingInstructions=grounded?'Assessment must evaluate EVERY saved criterion, and ONLY those criteria. No numeric scores or academic prose are allowed in assessment. General knowledge must never create expectations. Each answer_quote MUST be an exact substring of student_response, never a quote from the source; use an empty string only for missing. Use current_question.grading_criteria as the assessment source; assessment_evidence identifies only their allowed citation chunks. Communication judges clarity, not omitted knowledge. For next, select criterion_ids from source_criteria and cite exactly their chunks. These source-extractive criteria are private. Question academic terms must appear in the SELECTED criteria, even for bonus/application. Concept labels must use terms in their cited chunks. For core plan names prefer the exact headings in the source. Keep question wording simple, for example Explain [source term], How does [source term] work, or Compare [source term] and [source term]. Use only generic question scaffolding otherwise. Keep academic terms in their source language. Do not quote the criteria as an answer in the question. A follow_up must select only current saved criteria rated partial/missing/incorrect. Never introduce an industry technique not present in those criteria.':'';
+  return jsonModel([{role:'system',content:SYSTEM+'\n'+groundingInstructions},{role:'user',content:JSON.stringify({task,required_fields:['intent','reply','assessment','next','transition','core_concepts'],...(grounded?{}:{format}),language:session.language,remaining_seconds:remaining,control_requests_exhausted:Boolean(forceAnswer),
     ...(grounded?{assessment_evidence:assessmentEvidence.map(({id,section})=>({id,section})),question_generation_evidence:evidence.map(({id,section})=>({id,section})),source_criteria:grounding.catalog(evidence)}:{evidence}),core_plan:session.context.core_plan||null,required_concepts:rules.required_concepts,allowed_question_types:permitted,recent_transitions:session.turns.slice(-3).map(t=>t.transition).filter(Boolean),covered:session.turns.map(t=>t.concept),consecutive_follow_ups:consecutiveFollowUps(session),
     current_question:current?{question:current.question,concept:current.concept,exchanges_so_far:publicExchanges(current),...(grounded?{grading_criteria:current.grading_criteria}: {})}:null,
     history:session.turns.slice(-8).map(t=>({question:t.question,answer:t.transcript,...(grounded?{}:{assessment:t.assessment})})),student_response:transcript})}],

@@ -86,15 +86,23 @@ test('models without GPT-OSS reasoning retain their existing budget and receive 
  finally{process.env.ORAL_EXAM_MODEL=prior;}
 });
 
-test('actual 9883-token initialization rejection resizes once to fit an 8000-token bucket without changing sources or schema',async()=>{
- const s=session(),deadline=s.expires_at,bodies=[];
- global.fetch=async(_url,o)=>{const b=JSON.parse(o.body);bodies.push(b);return bodies.length===1?new Response(JSON.stringify({error:{code:'rate_limit_exceeded',message:'Limit 8000, Requested 9883'}}),{status:413,headers:{'x-ratelimit-limit-tokens':'8000'}}):reply(decision);};
- assert.deepEqual(await examiner.next(s,null),decision);assert.equal(bodies.length,2);assert.equal(bodies[0].max_tokens,4096);assert.equal(bodies[1].max_tokens,1920);
- assert.ok(9883-4096+bodies[1].max_tokens<8000);assert.deepEqual(bodies[1].messages,bodies[0].messages);assert.deepEqual(bodies[1].response_format,bodies[0].response_format);assert.equal(bodies[1].reasoning_effort,'low');assert.equal(s.expires_at,deadline);
-});
-test('413 with insufficient JSON headroom or unknown size is never blindly retried',async()=>{
- for(const message of ['Limit 8000, Requested 12000','untrusted payload']){
+test('413 input size rejection is never retried with an ineffective smaller output budget',async()=>{
+ for(const message of ['Limit 8000, Requested 9883','Limit 8000, Requested 12000','untrusted payload']){
   const calls=mock([new Response(JSON.stringify({error:{code:'rate_limit_exceeded',message}}),{status:413,headers:{'x-ratelimit-limit-tokens':'8000'}})]);
   await assert.rejects(()=>examiner.next(session(),null),{status:413});assert.equal(calls(),1);
  }
+});
+
+test('large grounded initialization omits duplicated source text and passes the request size gate with all criteria intact',async()=>{
+ const grounding=require('../src/oralExam/grounding');const points=['Routing: A router connects different IP networks and forwards packets using a routing table that maps destination prefixes to a next hop.','Switching: A switch connects devices in the same local network, learns source MAC addresses and forwards frames to a known destination port.','DHCP: DHCP supplies an IP address, subnet mask, gateway and DNS server using Discover, Offer, Request and Acknowledge.','DNS: DNS translates domain names into IP addresses and uses cached records whose freshness is controlled by time to live.','Transport: TCP provides a reliable ordered byte stream using sequence numbers, acknowledgements and retransmission.'];
+ const chunks=Array.from({length:12},(_,i)=>({id:'text-'+(i+1),section:'Material',text:Array(Math.ceil(1500/points[i%5].length)).fill(points[i%5]).join(' ')}));
+ const s={...session(),context:{chunks,grounding_version:1,oral_policy:{version:1,required_concepts:5,max_follow_ups:2,max_bonus:5}}};const evidence=examiner.evidenceFor(s,null),criteria=grounding.catalog(evidence);const plan=points.map(point=>{const name=point.split(':')[0],chunk=evidence.find(c=>c.text.startsWith(name+':'));return {name,citations:[chunk.id]};});const first=plan[0],criterion=criteria.find(c=>c.citations.includes(first.citations[0]));let calls=0;
+ global.fetch=async(_url,o)=>{calls++;const b=JSON.parse(o.body),payload=JSON.parse(b.messages[1].content);assert.deepEqual(payload.source_criteria,criteria);assert.equal(b.max_tokens,4096);assert.equal(b.response_format.json_schema.strict,true);const duplicate=JSON.stringify({...b,messages:[b.messages[0],{...b.messages[1],content:JSON.stringify({...payload,question_generation_evidence:evidence})}]});assert.ok(Buffer.byteLength(duplicate)>35000);assert.ok(Buffer.byteLength(o.body)<35000);
+ return reply({...decision,core_concepts:plan,next:{...question,question:'Explain how a router forwards packets.',concept:first.name,citations:first.citations,criterion_ids:[criterion.id]}});};
+ const result=await examiner.next(s,null);assert.equal(calls,1);assert.equal(result.core_concepts.length,5);assert.deepEqual(result.next.grading_criteria,[criterion]);
+});
+
+test('provider JSON rejection logs only missing known contract fields without exposing failed output',async()=>{
+ global.fetch=async()=>new Response(JSON.stringify({error:{code:'json_validate_failed',failed_generation:JSON.stringify({intent:'answer',reply:null,assessment:null,next:null,transition:'private-student-content'})}}),{status:400});
+ await assert.rejects(()=>examiner.jsonModel([],{operation:'fixture',schemaName:'fixture',schema:contracts.decisionJsonSchema,contract:contracts.decision,maxAttempts:1}),e=>{const d=examiner.diagnostic('fixture',e,1);assert.deepEqual(d.missing_required_fields,['core_concepts']);assert.doesNotMatch(JSON.stringify(d),/private-student-content/);return true;});
 });
