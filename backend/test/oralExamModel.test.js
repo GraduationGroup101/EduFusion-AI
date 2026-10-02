@@ -114,7 +114,7 @@ test('new exams accept reviewed Arabic translations while rejecting unsupported 
  const criterion=g.catalog(s.context.chunks)[0];
  const translated={...decision,core_concepts:[{name:'توجيه البيانات',citations:['text-1']}],next:{...question,question:'كيف يختار الموجّه مسار الحزم؟',concept:'توجيه البيانات',criterion_ids:[criterion.id]}};
  let review=true,calls=0;
- global.fetch=async(_url,o)=>{calls++;const b=JSON.parse(o.body);return reply(b.response_format.json_schema.name==='source_support'?{supported:review}:translated);};
+ global.fetch=async(_url,o)=>{calls++;const b=JSON.parse(o.body);if(b.response_format.json_schema.name==='oral_exam_decision'&&JSON.parse(b.messages[1].content).language==='ar'&&review)assert.match(b.messages[0].content,/natural Arabic wording/);return reply(b.response_format.json_schema.name==='source_support'?{supported:review}:translated);};
  const result=await examiner.next(s,null);assert.equal(result.next.question,translated.next.question);assert.deepEqual(result.next.grading_criteria,[criterion]);assert.equal(calls,2);
  review=false;await assert.rejects(()=>examiner.next(s,null),e=>e.code==='unsupported_question_meaning');
  // Historical exams retain their old validation; no saved report is reinterpreted.
