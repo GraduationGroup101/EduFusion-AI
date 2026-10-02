@@ -20,7 +20,7 @@ async function create(user,material,language,key) {
       return previous;
     }
     return (await client.query(`INSERT INTO ${TABLE}(id,owner_key,id_student,user_id,request_key,source,material_title,context,language) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-      [randomUUID(),ownerKey(user),user.id_student??null,user.id_student==null?user.id:null,key,material.source,material.title,{...material.context,oral_policy:policy(),grounding_version:1},language])).rows[0];
+      [randomUUID(),ownerKey(user),user.id_student??null,user.id_student==null?user.id:null,key,material.source,material.title,{...material.context,oral_policy:policy(),grounding_version:2},language])).rows[0];
   });
 }
 async function get(user,id) {
@@ -33,6 +33,14 @@ async function get(user,id) {
 async function list(user) {
   await expire();
   return (await db.query(`SELECT id,material_title,status,created_at,expires_at,evaluation_status FROM ${TABLE} WHERE owner_key=$1 ORDER BY created_at DESC LIMIT 30`,[ownerKey(user)])).rows;
+}
+async function remove(user,id) {
+  return db.transaction(async client=>{
+    const row=(await client.query(`SELECT status FROM ${TABLE} WHERE id=$1 AND owner_key=$2 FOR UPDATE`,[id,ownerKey(user)])).rows[0];
+    if(!row)fail(404,'Exam not found');
+    if(row.status==='active')fail(409,'End the exam before deleting it');
+    await client.query(`DELETE FROM ${TABLE} WHERE id=$1 AND owner_key=$2`,[id,ownerKey(user)]);
+  });
 }
 async function start(user,id) {
   return db.transaction(async client=>{
@@ -116,11 +124,11 @@ async function commit(id,token,expectedSequence,transcript,decision) {
     const last=turns.at(-1);
     if((last?.sequence||0)!==expectedSequence) fail(409,'The exam has already advanced');
     if(grounding.enabled(session)){
-      if(!last)grounding.validatePlan(decision.core_concepts,session.context.chunks,session.context.oral_policy.required_concepts);
+      if(!last)grounding.validatePlan(decision.core_concepts,session.context.chunks,session.context.oral_policy.required_concepts,grounding.wordingOptions(session));
       const currentEvidence=session.context.chunks.filter(c=>last?.citations.includes(c.id));
       if(last&&transcript!==null)grounding.storedAssessment(decision.assessment,last,currentEvidence,transcript,session.language);
-      if(decision.next){grounding.storedRubric(decision.next,session.context.chunks);
-        if(decision.next.question_type==='follow_up')grounding.rubric({...decision.next,criterion_ids:decision.next.grading_criteria.map(c=>c.id)},session.context.chunks,last,decision.assessment||last?.assessment);}
+      if(decision.next){grounding.storedRubric(decision.next,session.context.chunks,grounding.wordingOptions(session));
+        if(decision.next.question_type==='follow_up')grounding.rubric({...decision.next,criterion_ids:decision.next.grading_criteria.map(c=>c.id)},session.context.chunks,last,decision.assessment||last?.assessment,grounding.wordingOptions(session));}
     }
     if(last && transcript!==null) {
       // An answer is only committed with its assessment; a control decision
@@ -192,4 +200,4 @@ function publicView(row) {
     turns:(historical?row.turns||[]:classified(row.turns||[])).map(({id,sequence,question,concept,transcript,assessment,exchanges,category,concept_key,parent_sequence,transition})=>({id,sequence,question,concept,transcript,category,concept_key,parent_sequence,transition,feedback:terminal?assessment?.feedback:undefined,
       exchanges:(exchanges||[]).map(({kind,transcript,reply,at})=>({kind,transcript,reply,at}))}))||[]};
 }
-module.exports={create,get,list,start,claim,renew,release,recordAnswer,saveAssessment,recordExchange,commit,finish,expire,saveEvaluation,evaluationFailed,publicView,ensureCore,claimFeedback,completeFeedback,interruption,pendingEvaluations};
+module.exports={create,get,list,remove,start,claim,renew,release,recordAnswer,saveAssessment,recordExchange,commit,finish,expire,saveEvaluation,evaluationFailed,publicView,ensureCore,claimFeedback,completeFeedback,interruption,pendingEvaluations};

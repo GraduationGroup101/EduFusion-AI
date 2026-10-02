@@ -102,7 +102,7 @@ function reply(intent,language,question,modelReply=null) {
 // What the student hears: the question is re-read after a repeat; a
 // clarification is itself a rephrasing, so it stands alone.
 const spoken=(kind,text,question)=>kind==='repeat'?`${text} ${question}`:text;
-const CLOSINGS={en:'That brings us to the end of the interview. Thank you, and best of luck.',ar:'هيك بنكون وصلنا لنهاية المقابلة. شكرًا إلك وبالتوفيق.'};
+const CLOSINGS={en:'That brings us to the end of the exam. Thank you, and best of luck.',ar:'هيك بنكون وصلنا لنهاية الاختبار. شكرًا إلك وبالتوفيق.'};
 const closing=language=>CLOSINGS[language]||CLOSINGS.en;
 // Acknowledgements may vary, but only use content-neutral vocabulary. Unknown
 // words fail closed, so paraphrased subject answers cannot bypass quote checks.

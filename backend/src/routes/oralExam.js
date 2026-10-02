@@ -57,6 +57,10 @@ router.get('/sessions/:id',wrap(async(req,res)=>{
   const session=await store.get(req.user,id.parse(req.params.id));
   res.json({session:store.publicView(session)});
 }));
+router.delete('/sessions/:id',wrap(async(req,res)=>{
+  await store.remove(req.user,id.parse(req.params.id));
+  res.sendStatus(204);
+}));
 router.post('/sessions/:id/start',wrap(async(req,res)=>{
   await store.start(req.user,id.parse(req.params.id));
   res.json({session:store.publicView(await store.get(req.user,req.params.id))});
