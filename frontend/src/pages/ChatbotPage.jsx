@@ -3,7 +3,8 @@ import { BrandMark } from '../components/Brand';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { chatbotService } from '../services/api';
-import { Send, Trash2, Bot, User, MessageSquare, RefreshCw } from 'lucide-react';
+import { Send, Trash2, Bot, User, MessageSquare, RefreshCw, ShieldCheck } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 import MarkdownText from '../components/ui/MarkdownText';
 
@@ -42,6 +43,7 @@ const normalizeCachedMessages = (data, sessionId) => {
       role: msg.role || (msg.type === 'human' || msg.sender === 'user' ? 'user' : 'assistant'),
       content: msg.content || msg.message || msg.answer || '',
       sources: msg.sources || msg.top_chunks || [],
+      source: msg.source,
       id: msg.id || `${sessionId}-${index}-${msg.role || msg.sender || 'message'}`,
     }))
     .filter(msg => msg.content);
@@ -88,6 +90,11 @@ const MessageBubble = ({ msg }) => {
             ? <p dir="auto" className="whitespace-pre-wrap" style={{ unicodeBidi: 'plaintext' }}>{msg.content}</p>
             : <MarkdownText text={msg.content} compact />
         )}
+        {msg.source === 'edufusion_records' && (
+          <p className="mt-2 pt-2 border-t border-light-accent/10 flex items-center gap-1.5 text-xs text-secondary">
+            <ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" />From EduFusion academic records
+          </p>
+        )}
         {msg.sources && msg.sources.length > 0 && (
           <div className="mt-2 pt-2 border-t border-light-accent/10">
             <p className="text-xs text-light-accent/40 font-mono">Sources referenced</p>
@@ -98,7 +105,12 @@ const MessageBubble = ({ msg }) => {
   );
 };
 
+const STUDENT_PROMPTS = ['Am I at risk in any of my courses?', 'What programmes can I study?', 'How do I apply for admission?', 'Explain the academic registration process.'];
+const STAFF_PROMPTS = ['Which students are at high risk right now?', 'What programmes can I study?', 'What student services are available?', 'Explain the academic registration process.'];
+
 export default function ChatbotPage() {
+  const user = useAuth()?.user;
+  const staff = ['admin', 'advisor'].includes(user?.role);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -182,6 +194,7 @@ export default function ChatbotPage() {
           role: 'assistant',
           content: data.answer || 'The assistant did not return an answer. Please try again.',
           sources: data.top_chunks,
+          source: data.source,
           id: Date.now() + 1,
         }
       ]);
@@ -263,9 +276,11 @@ export default function ChatbotPage() {
                 <h2 className="font-display text-xl font-semibold text-light-accent mb-2">
                   What would you like to know?
                 </h2>
-                <p className="text-sm text-light-accent/60 max-w-sm mx-auto leading-relaxed">Ask about university programmes, admissions, or student services.</p>
+                <p className="text-sm text-light-accent/60 max-w-sm mx-auto leading-relaxed">{staff
+                  ? 'Ask about the university, or about any student’s academic risk by name or ID.'
+                  : 'Ask about the university, or about your own academic progress and risk.'}</p>
                 <div className="prompt-grid">
-                  {['What programmes can I study?', 'How do I apply for admission?', 'What student services are available?', 'Explain the academic registration process.'].map(prompt => <button key={prompt} type="button" onClick={() => { setInput(prompt); inputRef.current?.focus(); }}>{prompt}</button>)}
+                  {(staff ? STAFF_PROMPTS : STUDENT_PROMPTS).map(prompt => <button key={prompt} type="button" onClick={() => { setInput(prompt); inputRef.current?.focus(); }}>{prompt}</button>)}
                 </div>
               </div>
             </motion.div>
