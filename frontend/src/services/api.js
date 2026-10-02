@@ -57,11 +57,17 @@ export const dashboardService = {
   getCourseStats: () => api.get('/dashboard/course-stats'),
 };
 
+// Chat goes to the long-lived gateway (Render in production) like Oral Exam and
+// lecture tools: it holds the model key that answers academic-standing questions
+// and has no serverless time limit for slow university-chatbot replies. Student
+// records are read there from the database, never sent from the browser.
+const chatBase = import.meta.env.VITE_CHATBOT_API_URL || import.meta.env.VITE_ORAL_EXAM_API_URL;
+const chatOptions = chatBase ? { baseURL: chatBase } : {};
 export const chatbotService = {
-  health: () => api.get('/chatbot/health', { timeout: 25000 }),
-  sendMessage: (question, session_id) => api.post('/chatbot/chat', { question, session_id }),
-  getHistory: (session_id) => api.get(`/chatbot/history/${session_id}`),
-  clearHistory: (session_id) => api.delete(`/chatbot/history/${session_id}`),
+  health: () => api.get('/chatbot/health', { ...chatOptions, timeout: 25000 }),
+  sendMessage: (question, session_id) => api.post('/chatbot/chat', { question, session_id }, chatOptions),
+  getHistory: (session_id) => api.get(`/chatbot/history/${session_id}`, chatOptions),
+  clearHistory: (session_id) => api.delete(`/chatbot/history/${session_id}`, chatOptions),
 };
 
 export const questionGeneratorService = {
