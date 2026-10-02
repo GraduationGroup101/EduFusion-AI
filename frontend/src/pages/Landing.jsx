@@ -283,13 +283,17 @@ export default function Landing() {
               One learning journey. Five connected tools.
             </p>
             <ol className="toolkit-steps" aria-label="Your toolkit sequence">
-              {tools.map((tool, i) => <li key={tool.name} className="toolkit-step"><span>0{i + 1}</span>{tool.name}</li>)}
+              {tools.map((tool, i) => <li key={tool.name} className="toolkit-step">
+                <a href={`#tool-${tool.route}`} data-tool-index={i} aria-controls={`tool-${tool.route}`}>
+                  <span className="toolkit-step-number">0{i + 1}</span>{" "}<span className="toolkit-step-name">{tool.name}</span>
+                </a>
+              </li>)}
             </ol>
             <p className="toolkit-current">One learning journey. Five connected tools.</p>
           </div>
           <div className="tool-grid">
             {tools.map((t, i) => (
-              <article key={t.name} className={`tool-card ${t.className}`} data-tool-name={t.name}>
+              <article key={t.name} id={`tool-${t.route}`} className={`tool-card ${t.className}`} data-tool-name={t.name} aria-labelledby={`tool-title-${t.route}`}>
                 <div className="tool-top">
                   <span className="tool-icon">
                     <t.icon size={25} />
@@ -299,7 +303,7 @@ export default function Landing() {
                   </span>
                   <ArrowUpRight size={21} />
                 </div>
-                <h3>{t.label}</h3>
+                <h3 id={`tool-title-${t.route}`}>{t.label}</h3>
                 <p>{t.description}</p>
                 <ul>
                   {t.points.map((p) => (

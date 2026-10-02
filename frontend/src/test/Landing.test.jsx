@@ -95,7 +95,7 @@ test('Escape dismisses mobile navigation and returns focus to its trigger', () =
   expect(screen.getByRole('button', { name: 'Open menu' })).toHaveFocus();
 });
 
-test('scrolling reaches Oral Exam before unfolding the complete five-tool deck', () => {
+test('scrolling visits each tool, reverses cleanly, and releases with only Oral Exam active', () => {
   vi.stubGlobal('matchMedia', vi.fn(query => ({ matches: !query.includes('reduced-motion'), addEventListener: vi.fn(), removeEventListener: vi.fn() })));
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
   let nextFrame;
@@ -107,36 +107,75 @@ test('scrolling reaches Oral Exam before unfolding the complete five-tool deck',
   });
   showLanding();
   const toolkit = screen.getByRole('region', { name: /^Make room for/ });
-  expect(toolkit).toHaveAttribute('data-toolkit-story');
+  expect(toolkit).toHaveAttribute('data-toolkit-pinned');
   act(() => nextFrame());
+  const stepTravel = parseFloat(toolkit.style.getPropertyValue('--toolkit-travel')) / 5;
+  const top = parseFloat(toolkit.style.getPropertyValue('--toolkit-top'));
+  const names = ['EduPredict', 'LectureScribe', 'Academic Chatbot', 'Quiz Generator', 'Oral Exam'];
+  for (const i of [0, 1, 2, 3, 4, 3, 2, 1, 0, 4]) {
+    sectionTop = top - (i + 0.2) * stepTravel;
+    fireEvent.scroll(window);
+    act(() => nextFrame());
+    expect(toolkit).toHaveAttribute('data-toolkit-step', String(i + 1));
+    expect(toolkit.querySelectorAll('.tool-card[data-active]')).toHaveLength(1);
+    expect(toolkit.querySelector('.tool-card[data-active]')).toHaveAttribute('data-tool-name', names[i]);
+    expect(toolkit.querySelectorAll('.tool-card[aria-hidden="false"]')).toHaveLength(1);
+    expect(toolkit.querySelectorAll('.toolkit-step a[aria-current="step"]')).toHaveLength(1);
+    expect(toolkit.querySelector('.toolkit-current')).toHaveTextContent(names[i]);
+    toolkit.querySelectorAll('.tool-card').forEach(card => expect(card.style.transform).not.toMatch(/NaN|undefined/));
+  }
+  sectionTop = top - stepTravel * 0.78;
+  fireEvent.scroll(window);
+  act(() => nextFrame());
+  expect(toolkit.querySelectorAll('.tool-card[data-visible]')).toHaveLength(2);
+  expect(toolkit.querySelectorAll('.tool-card[aria-hidden="false"]')).toHaveLength(1);
+  expect(toolkit.querySelector('.tool-card[data-active]').style.getPropertyValue('--card-face')).toBe('1');
+  toolkit.querySelectorAll('.tool-card:not([data-active])').forEach(card => expect(card.inert).toBe(true));
 
-  // Near the end of the sequence, the fifth tool must have its own spotlight.
-  sectionTop = -790;
+  sectionTop = top - stepTravel * 6;
   fireEvent.scroll(window);
   act(() => nextFrame());
   expect(toolkit).toHaveAttribute('data-toolkit-step', '5');
+  expect(toolkit.querySelectorAll('.tool-card[data-visible]')).toHaveLength(1);
   expect(toolkit.querySelector('.tool-card[data-active]')).toHaveAttribute('data-tool-name', 'Oral Exam');
-  expect(toolkit.querySelector('.toolkit-current')).toHaveTextContent('05 / Oral Exam');
-  toolkit.querySelectorAll('.tool-card').forEach(card => expect(card.style.transform).not.toMatch(/NaN|undefined/));
-
-  sectionTop = -1100;
-  fireEvent.scroll(window);
-  act(() => nextFrame());
-  expect(toolkit).toHaveAttribute('data-toolkit-step', 'complete');
-  expect(toolkit.querySelector('.toolkit-current')).toHaveTextContent('Your complete toolkit.');
-  toolkit.querySelectorAll('.tool-card').forEach(card => expect(card.style.transform).toBe(''));
 });
 
-test('reduced motion keeps all five toolkit cards stationary and reachable', () => {
+test('reduced motion changes tools without transforms and the index can seek Oral Exam', () => {
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+  let nextFrame;
+  vi.stubGlobal('requestAnimationFrame', callback => { nextFrame = callback; return 1; });
+  vi.stubGlobal('cancelAnimationFrame', vi.fn());
+  let sectionTop = 0;
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+    return { top: this.id === 'tools' ? sectionTop : 0, height: 200 };
+  });
+  const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(({ top }) => { sectionTop = -top; });
+  showLanding();
+  act(() => nextFrame());
+  const toolkit = screen.getByRole('region', { name: /^Make room for/ });
+  expect(toolkit).toHaveAttribute('data-toolkit-step', '1');
+  fireEvent.click(screen.getByRole('link', { name: '05 Oral Exam' }));
+  expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ behavior: 'instant' }));
+  fireEvent.scroll(window);
+  act(() => nextFrame());
+  expect(toolkit).toHaveAttribute('data-toolkit-step', '5');
+  expect(screen.getByRole('link', { name: 'Explore Oral Exam' })).toHaveAttribute('href', '/login');
+  expect(toolkit.querySelectorAll('.tool-card[data-visible]')).toHaveLength(1);
+  toolkit.querySelectorAll('.tool-card').forEach(card => expect(card.style.transform).toBe('none'));
+});
+
+test('short windows keep one full card accessible through the tool index without pinning', () => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(600);
   let nextFrame;
   vi.stubGlobal('requestAnimationFrame', callback => { nextFrame = callback; return 1; });
   vi.stubGlobal('cancelAnimationFrame', vi.fn());
   showLanding();
   act(() => nextFrame());
   const toolkit = screen.getByRole('region', { name: /^Make room for/ });
-  expect(toolkit).not.toHaveAttribute('data-toolkit-story');
-  expect(toolkit).toHaveAttribute('data-toolkit-step', 'complete');
-  expect(toolkit.querySelectorAll('.tool-link')).toHaveLength(5);
-  toolkit.querySelectorAll('.tool-card').forEach(card => expect(card.style.transform).toBe(''));
+  expect(toolkit).not.toHaveAttribute('data-toolkit-pinned');
+  fireEvent.click(screen.getByRole('link', { name: '03 Academic Chatbot' }));
+  expect(toolkit).toHaveAttribute('data-toolkit-step', '3');
+  expect(screen.getByRole('link', { name: 'Explore Academic Chatbot' })).toBeVisible();
+  expect(toolkit.querySelectorAll('.tool-card[aria-hidden="false"]')).toHaveLength(1);
 });
