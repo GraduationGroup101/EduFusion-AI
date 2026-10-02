@@ -21,16 +21,18 @@ export default function useHeroOrbit(heroRef) {
       hero.toggleAttribute('data-orbit-ready', desktop.matches);
       if (!desktop.matches) { cards.forEach(card => card.style.removeProperty('transform')); return; }
       const width = hero.clientWidth, height = hero.clientHeight;
-      const rx = width / 2 - cards[0].offsetWidth / 2 - 14;
-      const ry = height / 2 - 60;
+      const rx = width / 2 - Math.max(...cards.map(card => card.offsetWidth)) / 2 - 20;
+      const ry = height * 0.47 - 64;
+      hero.style.setProperty('--orbit-width', `${rx * 2}px`);
+      hero.style.setProperty('--orbit-height', `${ry * 2}px`);
       cards.forEach((card, index) => {
         const frames = Array.from({ length: 121 }, (_, step) => {
-          const angle = -Math.PI * 0.75 + index * Math.PI / 2 + step / 120 * Math.PI * 2;
+          const angle = -Math.PI / 2 + index * Math.PI * 2 / cards.length + step / 120 * Math.PI * 2;
           return { transform: `translate(-50%, -50%) translate(${(Math.cos(angle) * rx).toFixed(3)}px, ${(Math.sin(angle) * ry).toFixed(3)}px)` };
         });
         card.style.transform = frames[0].transform;
         if (!reduce.matches) {
-          const animation = card.animate(frames, { duration: 28000, iterations: Infinity, easing: 'linear' });
+          const animation = card.animate(frames, { duration: 48000, iterations: Infinity, easing: 'linear' });
           animation.currentTime = time;
           animations.push(animation);
         }

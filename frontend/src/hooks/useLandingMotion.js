@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 
-const TRAVEL = 840;
+const TRAVEL_PER_TOOL = 210;
 const clamp = value => Math.max(0, Math.min(1, value));
 const ease = value => { const t = clamp(value); return t * t * (3 - 2 * t); };
 const mix = (a, b, t) => a + (b - a) * t;
@@ -19,13 +19,15 @@ export default function useLandingMotion(rootRef) {
     const steps = [...stage.querySelectorAll('.toolkit-step')];
     const caption = stage.querySelector('.toolkit-current');
     const names = cards.map(card => card.dataset.toolName);
+    const travel = TRAVEL_PER_TOOL * cards.length;
+    const last = cards.length - 1;
     let frame = 0, pinned = false, keyboard = false, top = 96;
     let geometry = [];
 
     const deck = (index, active) => {
       const rank = (index - active + cards.length) % cards.length;
       const g = geometry[index];
-      const offsets = [[0, 0, 0, 1.22], [48, 24, 4, 1.1], [-32, -20, -5, 1.06], [12, -42, 2, 1.02]];
+      const offsets = [[0, 0, 0, 1.35], [48, 24, 4, 1.15], [-32, -20, -5, 1.1], [12, -42, 2, 1.05], [-16, -58, -2, 1.02]];
       const [x, y, angle, scale] = offsets[rank];
       return { x: g.x + x, y: g.y + y, angle, scale, face: Number(rank === 0) };
     };
@@ -34,13 +36,13 @@ export default function useLandingMotion(rootRef) {
       // Group layout reads before writing transform/opacity values.
       const rect = section.getBoundingClientRect();
       const cardRects = !pinned ? cards.map(card => card.getBoundingClientRect()) : [];
-      const p = clamp((top - rect.top - 24) / TRAVEL);
-      const phase = Math.min(3, p * 4);
-      const from = Math.floor(phase), to = Math.min(3, from + 1);
+      const p = clamp((top - rect.top - 24) / travel);
+      const phase = Math.min(last, p * cards.length);
+      const from = Math.floor(phase), to = Math.min(last, from + 1);
       const transition = ease(phase - from);
-      const assembly = ease((p - 0.75) / 0.25);
+      const assembly = ease((p - last / cards.length) * cards.length);
       const complete = reduce.matches || keyboard || (pinned && p >= 0.999);
-      const active = pinned ? Math.min(3, Math.round(phase)) : cardRects.reduce((best, r, i) => Math.abs(r.top + r.height / 2 - innerHeight / 2) < Math.abs(cardRects[best].top + cardRects[best].height / 2 - innerHeight / 2) ? i : best, 0);
+      const active = pinned ? Math.min(last, Math.round(phase)) : cardRects.reduce((best, r, i) => Math.abs(r.top + r.height / 2 - innerHeight / 2) < Math.abs(cardRects[best].top + cardRects[best].height / 2 - innerHeight / 2) ? i : best, 0);
       section.toggleAttribute('data-keyboard', keyboard);
       cards.forEach((card, i) => {
         let emphasis = complete ? 1 : Number(i === active);
@@ -77,7 +79,7 @@ export default function useLandingMotion(rootRef) {
       geometry = cards.map(card => ({ x: (grid.clientWidth - card.offsetWidth) / 2 - card.offsetLeft, y: (grid.clientHeight - card.offsetHeight) / 2 - card.offsetTop }));
       section.toggleAttribute('data-toolkit-story', pinned);
       section.style.setProperty('--toolkit-height', `${stage.offsetHeight}px`);
-      section.style.setProperty('--toolkit-travel', `${TRAVEL}px`);
+      section.style.setProperty('--toolkit-travel', `${travel}px`);
       section.style.setProperty('--toolkit-top', `${top}px`);
       schedule();
     };

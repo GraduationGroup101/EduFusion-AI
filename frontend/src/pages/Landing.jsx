@@ -7,6 +7,7 @@ import {
   Youtube,
   MessageSquare,
   FileQuestion,
+  Mic,
   Menu,
   X,
   Check,
@@ -19,6 +20,7 @@ import { useAuth } from "../context/AuthContext";
 import Brand, { BrandMark } from "../components/Brand";
 import useLandingMotion from "../hooks/useLandingMotion";
 import useHeroOrbit from "../hooks/useHeroOrbit";
+import "../styles/landing.css";
 
 const tools = [
   {
@@ -69,6 +71,19 @@ const tools = [
       "Generate and copy question sets",
     ],
     route: "question-gen",
+  },
+  {
+    name: "Oral Exam",
+    label: "Find confidence in your own voice",
+    icon: Mic,
+    className: "oral",
+    description:
+      "Practise answering aloud with an AI examiner, using your course material. Get feedback to understand what you know and where to focus next.",
+    points: [
+      "Voice practice grounded in your material",
+      "Personal feedback after your exam",
+    ],
+    route: "oral-exam",
   },
 ];
 const nav = [
@@ -211,13 +226,13 @@ export default function Landing() {
               </a>
             </div>
             <p className="hero-note">
-              Four connected tools. One account. Your own pace.
+              Five connected tools. One account. Your own pace.
             </p>
           </div>
           <div
             ref={heroRef}
             className="hero-art"
-            aria-label="Four learning tools connected through EduFusion"
+            aria-label="Five learning tools connected through EduFusion"
           >
             <div className="art-core">
               <BrandMark />
@@ -233,9 +248,8 @@ export default function Landing() {
                 className={`orbit-card orbit-card-${i} ${tool.className}`}
                 key={tool.name}
               >
-                <tool.icon size={21} />
-                <span>{tool.name}</span>
-                <ArrowUpRight size={14} />
+                <span className="orbit-icon"><tool.icon size={21} aria-hidden="true" /></span>
+                <span className="orbit-label"><span className="orbit-number" aria-hidden="true">0{i + 1}</span>{tool.name}</span>
               </a>
             ))}
             <div className="art-caption">
@@ -245,7 +259,7 @@ export default function Landing() {
         </section>
         <div className="platform-strip">
           <div className="site-container">
-            <span>ONE SPACE. FOUR POSSIBILITIES.</span>
+            <span>ONE SPACE. FIVE POSSIBILITIES.</span>
             {tools.map((t) => (
               <a key={t.name} href="#tools">
                 <t.icon size={18} />
@@ -266,12 +280,12 @@ export default function Landing() {
               </h2>
             </div>
             <p>
-              One learning journey. Four connected tools.
+              One learning journey. Five connected tools.
             </p>
             <ol className="toolkit-steps" aria-label="Your toolkit sequence">
               {tools.map((tool, i) => <li key={tool.name} className="toolkit-step"><span>0{i + 1}</span>{tool.name}</li>)}
             </ol>
-            <p className="toolkit-current">One learning journey. Four connected tools.</p>
+            <p className="toolkit-current">One learning journey. Five connected tools.</p>
           </div>
           <div className="tool-grid">
             {tools.map((t, i) => (
@@ -405,7 +419,7 @@ export default function Landing() {
             </h2>
             <p>
               EduFusion is a graduation project at the Islamic University of
-              Gaza, bringing four education tools into one connected experience
+              Gaza, bringing five education tools into one connected experience
               for students and educators.
             </p>
             <div className="privacy-note">
