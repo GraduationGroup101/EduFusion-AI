@@ -9,9 +9,11 @@ const { requestUpstream, readJson, upstreamStatus } = require('../lib/upstream')
 
 const router = express.Router();
 
-const CURRENT_CHATBOT_BASE = 'https://final-iug-chat-botv2.onrender.com';
+const CURRENT_CHATBOT_BASE = 'https://final-iug-chat-botv3.onrender.com';
 const LEGACY_CHATBOT_BASES = new Set([
   'https://iug-chatbot.onrender.com',
+  // v2 was removed from Render (it now answers 404 with x-render-routing: no-server).
+  'https://final-iug-chat-botv2.onrender.com',
 ]);
 const configuredChatbotBase = String(
   process.env.CHATBOT_API_URL || CURRENT_CHATBOT_BASE

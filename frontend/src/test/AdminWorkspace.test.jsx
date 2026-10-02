@@ -9,7 +9,7 @@ beforeEach(()=>vi.stubGlobal('matchMedia',vi.fn(()=>({matches:false,addEventList
 it('renders the existing chat inside its administrative section and retains knowledge management access',async()=>{
   render(<ChatbotFilesPage/>);
   await screen.findByRole('heading',{name:'Existing academic chat interface'});
-  expect(screen.getByRole('link',{name:'Manage knowledge base'})).toHaveAttribute('href','https://final-iug-chat-botv2.onrender.com/app/admin.html');
+  expect(screen.getByRole('link',{name:'Manage knowledge base'})).toHaveAttribute('href','https://final-iug-chat-botv3.onrender.com/app/admin.html');
   expect(screen.queryByText('Chatbot administration moved')).not.toBeInTheDocument();
 });
 it('places one academic chatbot link in the administrative navigation',()=>{
