@@ -75,3 +75,13 @@ test('provider JSON validation rejection retries once and rate limiting honors R
   calls=mock([new Response('{}',{status:429,headers:{'retry-after':'120'}})]);
   await assert.rejects(()=>examiner.next(session(),null),{status:429});assert.equal(calls(),1);
 });
+
+test('GPT-OSS reserves JSON headroom and uses supported low reasoning without relaxing the assessment contract',async()=>{
+ const s=session(),deadline=s.expires_at;let body;global.fetch=async(_url,o)=>{body=JSON.parse(o.body);return reply(decision);};
+ assert.deepEqual(await examiner.next(s,null),decision);assert.equal(body.max_tokens,4096);assert.equal(body.reasoning_effort,'low');assert.equal(body.response_format.json_schema.strict,true);assert.deepEqual(body.response_format.json_schema.schema,contracts.decisionJsonSchema);assert.equal(s.expires_at,deadline);
+});
+test('models without GPT-OSS reasoning retain their existing budget and receive no unsupported effort option',async()=>{
+ const prior=process.env.ORAL_EXAM_MODEL;process.env.ORAL_EXAM_MODEL='llama-3.3-70b-versatile';let body;
+ try{global.fetch=async(_url,o)=>{body=JSON.parse(o.body);return reply(decision);};assert.deepEqual(await examiner.next(session(),null),decision);assert.equal(body.max_tokens,1800);assert.ok(!Object.hasOwn(body,'reasoning_effort'));assert.equal(body.response_format.json_schema.strict,true);}
+ finally{process.env.ORAL_EXAM_MODEL=prior;}
+});

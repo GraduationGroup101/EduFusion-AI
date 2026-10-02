@@ -61,7 +61,10 @@ async function jsonModel(messages,{operation,schemaName,schema,contract,signal,e
     active(signal,expiresAt);
     try {
       const model=process.env.ORAL_EXAM_MODEL||'openai/gpt-oss-120b';
-      const body=JSON.stringify({model,temperature:0.2,max_tokens:1800,
+      // GPT-OSS reasoning and structured JSON share generation headroom.
+      // Use its supported low effort without changing the strict contract.
+      const reasoningModel=/^openai\/gpt-oss-(?:20b|120b)$/.test(model);
+      const body=JSON.stringify({model,temperature:0.2,max_tokens:reasoningModel?4096:1800,...(reasoningModel?{reasoning_effort:'low'}:{}),
         response_format:{type:'json_schema',json_schema:{name:schemaName,strict:true,schema}},messages});
       const response=await modelQuota.run(model,body,{signal,expiresAt,check:()=>active(signal,expiresAt)},()=>{
         const remaining=expiresAt?new Date(expiresAt).getTime()-Date.now():25000;
