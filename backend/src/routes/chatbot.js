@@ -6,6 +6,7 @@ const { getHistory, appendExchange, deleteHistory } = require('../db/appStore');
 const { text } = require('../lib/validation');
 const { ownerKey } = require('../lib/owner');
 const { requestUpstream, readJson, upstreamStatus } = require('../lib/upstream');
+const academic = require('../academicAssistant');
 
 const router = express.Router();
 
@@ -63,6 +64,15 @@ router.post('/chat', authenticate, aiLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Question is required' });
     }
 
+    const history = await getHistory(req.user, sessionId);
+    // Questions about a student's own standing (or, for staff, any student's) are
+    // answered from EduFusion's records; the university chatbot never sees them.
+    const local = await academic.respond({ user: req.user, question: trimmedQuestion, history });
+    if (local) {
+      await appendExchange(req.user, sessionId, trimmedQuestion, local);
+      return res.json({ ...local, session_id: sessionId });
+    }
+
     const response = await requestUpstream(req,
       `${CHATBOT_BASE}/api/chat/guest`,
       {
@@ -71,7 +81,7 @@ router.post('/chat', authenticate, aiLimiter, async (req, res) => {
         body: JSON.stringify({
           question: trimmedQuestion,
           conversation_id: getConversationId(req.user, sessionId),
-          history: toGuestHistory(await getHistory(req.user, sessionId)),
+          history: toGuestHistory(history),
         }),
       },
       { timeoutMs: 80000 }

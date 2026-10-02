@@ -66,3 +66,16 @@ it('shows a recoverable message instead of a blank page when a page fails to ren
   expect(screen.getByRole('alert').textContent).toMatch(/could not be displayed/);
   expect(screen.getByRole('link', { name: 'Back to dashboard' })).toBeTruthy();
 });
+
+it('marks answers that come from EduFusion academic records', async () => {
+  respond = (config) => {
+    if (config.url.startsWith('/chatbot/history/')) return { messages: [] };
+    if (config.url === '/chatbot/chat') return { answer: 'You are at **low risk** in DEMO 2026.', source: 'edufusion_records' };
+    return { status: 'ok' };
+  };
+  render(<ChatbotPage />);
+  await waitFor(() => expect(screen.queryByText('Loading your conversation…')).toBeNull());
+  fireEvent.click(screen.getByRole('button', { name: 'Am I at risk in any of my courses?' }));
+  fireEvent.keyDown(screen.getByLabelText('Your question'), { key: 'Enter' });
+  expect(await screen.findByText('From EduFusion academic records')).toBeTruthy();
+});
