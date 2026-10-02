@@ -1,5 +1,6 @@
 const { z } = require('zod');
 const { jsonModel } = require('../oralExam/examiner');
+const { groq } = require('../oralExam/modelProvider');
 const { readQuery } = require('../db');
 const { getStudentBehaviorData, getCurrentStudentPrediction, getCurrentAtRiskStudents } = require('../db/queries');
 
@@ -51,7 +52,7 @@ const classify = async ({ question, history, role }) => {
       return await jsonModel([
         { role: 'system', content: ROUTER_SYSTEM },
         { role: 'user', content: JSON.stringify({ asker_role: role, question, history: history.slice(-4).map((m) => ({ role: m.role, content: String(m.content || '').slice(0, 600) })) }) },
-      ], { operation: 'academic_route', schemaName: 'academic_route', schema: routeSchema, contract: route });
+      ], { operation: 'academic_route', schemaName: 'academic_route', schema: routeSchema, contract: route, provider: groq });
     } catch (error) {
       console.warn('[academic] routing model unavailable:', error.code || error.name);
     }
@@ -118,7 +119,7 @@ const explain = async ({ question, history, audience, student, courses }) => {
         { role: 'user', content: JSON.stringify({ audience, question, language: ar ? 'Arabic' : 'English',
           student: audience === 'staff' ? { id: student.id_student, name: student.student_name } : undefined,
           history: history.slice(-4).map((m) => ({ role: m.role, content: String(m.content || '').slice(0, 1200) })), records: courses }) },
-      ], { operation: 'academic_answer', schemaName: 'academic_answer', schema: replySchema, contract: reply });
+      ], { operation: 'academic_answer', schemaName: 'academic_answer', schema: replySchema, contract: reply, provider: groq });
       return result.answer;
     } catch (error) {
       console.warn('[academic] answer model unavailable:', error.code || error.name);

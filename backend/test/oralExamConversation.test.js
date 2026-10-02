@@ -5,7 +5,7 @@ const contracts=require('../src/oralExam/contracts');
 const examiner=require('../src/oralExam/examiner');
 const originalFetch=global.fetch;
 const originalError=console.error;
-process.env.GROQ_API_KEY='test-only';
+process.env.ORAL_EXAM_API_KEY='test-only';
 after(()=>{global.fetch=originalFetch;console.error=originalError;});
 console.error=()=>{};
 

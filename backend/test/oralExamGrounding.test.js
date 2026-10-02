@@ -196,7 +196,7 @@ test('source fallback selects the target source unit instead of an earlier topic
   assert.deepEqual(next.criterion_ids,['text-1:1']);assert.equal(g.rubric(next,chunks).grading_criteria[0].criterion,'DNS: DNS translates domain names into addresses.');
 });
 test('reconnect during next recovery preserves the committed grade and fences the old proposal without duplicate turns',async()=>{
-  process.env.ORAL_EXAM_ENABLED='true';for(const k of ['GROQ_API_KEY','ELEVENLABS_API_KEY','ELEVENLABS_EN_VOICE_ID','ELEVENLABS_AR_VOICE_ID'])process.env[k]='fixture-only';
+  process.env.ORAL_EXAM_ENABLED='true';for(const k of ['ORAL_EXAM_API_KEY','ELEVENLABS_API_KEY','ELEVENLABS_EN_VOICE_ID','ELEVENLABS_AR_VOICE_ID'])process.env[k]='fixture-only';
   const {once}=require('node:events'),WebSocket=require('ws');
   const row=await store.create(user,material,'en',randomUUID());await store.start(user,row.id);const initial=await store.claim(user,row.id);
   await store.commit(row.id,initial.token,0,null,{assessment:null,next:g.rubric(proposal(),evidence),core_concepts:[{name:'UDP',citations:['text-1']},{name:'DNS',citations:['text-2']}]});await store.release(row.id,initial.token);
