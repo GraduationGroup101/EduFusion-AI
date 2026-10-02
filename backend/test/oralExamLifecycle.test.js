@@ -302,8 +302,6 @@ test('welcome survives transient initialization and reconnect fences delayed gen
  }finally{runtimeDependencies.examiner.next=next;for(const c of [first,second])if(c){c.ws.terminate();await c.closed;}await store.finish(user,row.id);}
 });
 test('persistent oversized generation is explicit without a 4500 reconnect loop and can close normally',async()=>{
- // Only age isolated terminal fixtures; this suite now exceeds the daily cap.
- await database.query("UPDATE edufusion_oral_exam_sessions SET created_at=clock_timestamp()-INTERVAL '1 day' WHERE id_student=990 AND status IN ('completed','timed_out')");
  const row=await session(),next=runtimeDependencies.examiner.next;let client,calls=0;
  try{
   runtimeDependencies.examiner.next=async()=>{calls++;throw Object.assign(new Error('content must not be logged'),{name:'ProviderError',status:413,code:'rate_limit_exceeded'});};
@@ -322,4 +320,27 @@ test('initial JSON validation provider rejection recovers on the welcomed connec
   assert.equal(calls,2);assert.equal(client.ws.readyState,WebSocket.OPEN);assert.equal(client.events.filter(e=>e.type==='welcome').length,1);assert.equal(client.events.some(e=>e.type==='error'),false);
   const saved=await store.get(user,row.id);assert.equal(saved.turns.length,1);assert.equal(+new Date(saved.expires_at),+new Date(row.expires_at));
  }finally{runtimeDependencies.examiner.next=next;if(client){client.ws.terminate();await client.closed;}await store.finish(user,row.id);}
+});
+
+
+test('oral session creation and lifecycle have no daily or shared AI request quota',async()=>{
+ const auth='Bearer '+jwt.sign(user,process.env.JWT_SECRET,{expiresIn:'1h'});
+ const body={language:'en',source:{kind:'text',title:'Quota regression',text:'Routers forward packets between networks using routing tables. Switches connect devices in a local network and forward frames.'}};
+ let first,key;
+ for(let i=0;i<32;i++){
+  const requestKey=randomUUID();
+  const response=await request(server).post('/api/oral-exam/sessions').set('Authorization',auth).set('Idempotency-Key',requestKey).send(body);
+  assert.equal(response.status,201,JSON.stringify(response.body));
+  if(!i){first=response.body.session;key=requestKey;}
+ }
+ const replay=await request(server).post('/api/oral-exam/sessions').set('Authorization',auth).set('Idempotency-Key',key).send(body);
+ assert.equal(replay.status,201);assert.equal(replay.body.session.id,first.id);
+ const conflict=await request(server).post('/api/oral-exam/sessions').set('Authorization',auth).set('Idempotency-Key',key).send({...body,language:'ar'});
+ assert.equal(conflict.status,409);
+ await assert.rejects(()=>store.get({id_student:991},first.id),{statusCode:404});
+ assert.equal((await request(server).post('/api/oral-exam/sessions').set('Idempotency-Key',randomUUID()).send(body)).status,401);
+ try{
+  for(let i=0;i<32;i++)assert.equal((await request(server).post('/api/oral-exam/sessions/'+first.id+'/start').set('Authorization',auth)).status,200);
+  for(let i=0;i<32;i++)assert.equal((await request(server).post('/api/oral-exam/sessions/'+first.id+'/evaluation').set('Authorization',auth)).status,409);
+ }finally{await store.finish(user,first.id);}
 });
