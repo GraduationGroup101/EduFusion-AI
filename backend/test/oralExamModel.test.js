@@ -85,3 +85,16 @@ test('models without GPT-OSS reasoning retain their existing budget and receive 
  try{global.fetch=async(_url,o)=>{body=JSON.parse(o.body);return reply(decision);};assert.deepEqual(await examiner.next(session(),null),decision);assert.equal(body.max_tokens,1800);assert.ok(!Object.hasOwn(body,'reasoning_effort'));assert.equal(body.response_format.json_schema.strict,true);}
  finally{process.env.ORAL_EXAM_MODEL=prior;}
 });
+
+test('actual 9883-token initialization rejection resizes once to fit an 8000-token bucket without changing sources or schema',async()=>{
+ const s=session(),deadline=s.expires_at,bodies=[];
+ global.fetch=async(_url,o)=>{const b=JSON.parse(o.body);bodies.push(b);return bodies.length===1?new Response(JSON.stringify({error:{code:'rate_limit_exceeded',message:'Limit 8000, Requested 9883'}}),{status:413,headers:{'x-ratelimit-limit-tokens':'8000'}}):reply(decision);};
+ assert.deepEqual(await examiner.next(s,null),decision);assert.equal(bodies.length,2);assert.equal(bodies[0].max_tokens,4096);assert.equal(bodies[1].max_tokens,1920);
+ assert.ok(9883-4096+bodies[1].max_tokens<8000);assert.deepEqual(bodies[1].messages,bodies[0].messages);assert.deepEqual(bodies[1].response_format,bodies[0].response_format);assert.equal(bodies[1].reasoning_effort,'low');assert.equal(s.expires_at,deadline);
+});
+test('413 with insufficient JSON headroom or unknown size is never blindly retried',async()=>{
+ for(const message of ['Limit 8000, Requested 12000','untrusted payload']){
+  const calls=mock([new Response(JSON.stringify({error:{code:'rate_limit_exceeded',message}}),{status:413,headers:{'x-ratelimit-limit-tokens':'8000'}})]);
+  await assert.rejects(()=>examiner.next(session(),null),{status:413});assert.equal(calls(),1);
+ }
+});

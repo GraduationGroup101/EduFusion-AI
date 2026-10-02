@@ -57,6 +57,7 @@ function active(signal,expiresAt) {
   if(expiresAt&&Date.now()>=new Date(expiresAt).getTime())throw new DOMException('Exam expired','AbortError');
 }
 async function jsonModel(messages,{operation,schemaName,schema,contract,signal,expiresAt,validate,maxAttempts=2}) {
+  let completionBudget;
   for(let attempt=1;attempt<=maxAttempts;attempt++) {
     active(signal,expiresAt);
     try {
@@ -64,7 +65,8 @@ async function jsonModel(messages,{operation,schemaName,schema,contract,signal,e
       // GPT-OSS reasoning and structured JSON share generation headroom.
       // Use its supported low effort without changing the strict contract.
       const reasoningModel=/^openai\/gpt-oss-(?:20b|120b)$/.test(model);
-      const body=JSON.stringify({model,temperature:0.2,max_tokens:reasoningModel?4096:1800,...(reasoningModel?{reasoning_effort:'low'}:{}),
+      const maxTokens=completionBudget||(reasoningModel?4096:1800);
+      const body=JSON.stringify({model,temperature:0.2,max_tokens:maxTokens,...(reasoningModel?{reasoning_effort:'low'}:{}),
         response_format:{type:'json_schema',json_schema:{name:schemaName,strict:true,schema}},messages});
       const response=await modelQuota.run(model,body,{signal,expiresAt,check:()=>active(signal,expiresAt)},()=>{
         const remaining=expiresAt?new Date(expiresAt).getTime()-Date.now():25000;
@@ -75,14 +77,24 @@ async function jsonModel(messages,{operation,schemaName,schema,contract,signal,e
         body,
       });});
       if(!response.ok) {
-        let code;
-        try {const body=await response.text();code=safeCode(JSON.parse(body.slice(0,8192))?.error?.code);}catch { /* Provider body is not trusted diagnostic data. */ }
+        let code,requested;
+        try {const body=await response.text(),failure=JSON.parse(body.slice(0,8192))?.error;code=safeCode(failure?.code);
+          // Extract numbers only; never log a provider message or student content.
+          const match=typeof failure?.message==='string'&&failure.message.match(/\bRequested[:\s]+(\d{1,9})\b/i);
+          if(match)requested=Number(match[1]);
+        }catch { /* Provider body is not trusted diagnostic data. */ }
         const retryAfter=response.headers.get('retry-after');
         const retryAfterMs=retryAfter===null?10000:Number.isFinite(Number(retryAfter))?Number(retryAfter)*1000:Date.parse(retryAfter)-Date.now();
         const error=new ProviderError(response.status,code,response.status===429?Math.max(1000,Number.isFinite(retryAfterMs)?retryAfterMs:10000):150);
-        if(response.status===429){
+        if([413,429].includes(response.status)){
           const numeric=key=>{const value=response.headers.get(key);return value!==null&&/^\d{1,10}$/.test(value)?Number(value):undefined;};
           error.rateLimits={token_limit:numeric('x-ratelimit-limit-tokens'),remaining_tokens:numeric('x-ratelimit-remaining-tokens'),remaining_requests:numeric('x-ratelimit-remaining-requests'),token_reset_ms:duration(response.headers.get('x-ratelimit-reset-tokens'))};
+        }
+        if(response.status===413&&code==='rate_limit_exceeded'&&requested>=maxTokens&&error.rateLimits.token_limit){
+          // A bucket reset cannot fit an oversized single request. Keep every
+          // source criterion and the strict schema, reducing generation only.
+          const budget=Math.floor((error.rateLimits.token_limit-(requested-maxTokens)-256)/128)*128;
+          if(budget>=1800&&budget<maxTokens){completionBudget=budget;error.resizeRetry=true;}
         }
         throw error;
       }
@@ -93,7 +105,7 @@ async function jsonModel(messages,{operation,schemaName,schema,contract,signal,e
       return validate?validate(value):value;
     } catch(error) {
       console.error('Oral exam model failure:',diagnostic(operation,error,attempt));
-      const recoverable=error?.name==='ZodError'||error instanceof SyntaxError||error?.name==='ModelValidationError'||
+      const recoverable=error.resizeRetry||error?.name==='ZodError'||error instanceof SyntaxError||error?.name==='ModelValidationError'||
         error instanceof ProviderError&&([408,429].includes(error.status)||error.status>=500||error.status===400&&error.code==='json_validate_failed')||
         error?.name==='TimeoutError'||error instanceof TypeError;
       if(attempt===maxAttempts||!recoverable||signal?.aborted||expiresAt&&Date.now()>=new Date(expiresAt).getTime())throw error;
@@ -167,9 +179,9 @@ async function next(session,transcript,signal,{forceAnswer=false}={}) {
   const task=transcript===null?'This is exam initialization, not a student response. Return intent answer, assessment null, reply null, transition null, a source-derived core_concepts plan, and a non-null first next question. Choose the first question.'
     :forceAnswer?'The student has used all repeat, clarification and hint allowances for this question. Treat this response as their answer of record: intent must be "answer", assess it exactly as it stands (a non-answer scores low, with brief encouraging feedback), and choose the next question; next may be null to end the exam.'
     :'Classify the student response. If it is an answer, assess it (0–100 dimensions) and choose the next question; next may be null to end the exam. Otherwise return the intent with a reply and no assessment or next question.';
-  const groundingInstructions=grounded?'Assessment must evaluate EVERY saved criterion, and ONLY those criteria. No numeric scores or academic prose are allowed in assessment. General knowledge must never create expectations. Use current question assessment_evidence only. Communication judges clarity, not omitted knowledge. For next, select criterion_ids from source_criteria and cite exactly their chunks. These source-extractive criteria are private. Question academic terms must appear in the SELECTED criteria, even for bonus/application. Concept labels must use terms in their cited chunks. For core plan names prefer the exact headings in the source. Keep question wording simple, for example Explain [source term], How does [source term] work, or Compare [source term] and [source term]. Use only generic question scaffolding otherwise. Keep academic terms in their source language. Do not quote the criteria as an answer in the question. A follow_up must select only current saved criteria rated partial/missing/incorrect. Never introduce an industry technique not present in those criteria.':'';
+  const groundingInstructions=grounded?'Assessment must evaluate EVERY saved criterion, and ONLY those criteria. No numeric scores or academic prose are allowed in assessment. General knowledge must never create expectations. Use current_question.grading_criteria as the assessment source; assessment_evidence identifies only their allowed citation chunks. Communication judges clarity, not omitted knowledge. For next, select criterion_ids from source_criteria and cite exactly their chunks. These source-extractive criteria are private. Question academic terms must appear in the SELECTED criteria, even for bonus/application. Concept labels must use terms in their cited chunks. For core plan names prefer the exact headings in the source. Keep question wording simple, for example Explain [source term], How does [source term] work, or Compare [source term] and [source term]. Use only generic question scaffolding otherwise. Keep academic terms in their source language. Do not quote the criteria as an answer in the question. A follow_up must select only current saved criteria rated partial/missing/incorrect. Never introduce an industry technique not present in those criteria.':'';
   return jsonModel([{role:'system',content:SYSTEM+'\n'+groundingInstructions},{role:'user',content:JSON.stringify({task,...(grounded?{}:{format}),language:session.language,remaining_seconds:remaining,control_requests_exhausted:Boolean(forceAnswer),
-    ...(grounded?{assessment_evidence:assessmentEvidence,question_generation_evidence:evidence,source_criteria:grounding.catalog(evidence)}:{evidence}),core_plan:session.context.core_plan||null,required_concepts:rules.required_concepts,allowed_question_types:permitted,recent_transitions:session.turns.slice(-3).map(t=>t.transition).filter(Boolean),covered:session.turns.map(t=>t.concept),consecutive_follow_ups:consecutiveFollowUps(session),
+    ...(grounded?{assessment_evidence:assessmentEvidence.map(({id,section})=>({id,section})),question_generation_evidence:evidence.map(({id,section})=>({id,section})),source_criteria:grounding.catalog(evidence)}:{evidence}),core_plan:session.context.core_plan||null,required_concepts:rules.required_concepts,allowed_question_types:permitted,recent_transitions:session.turns.slice(-3).map(t=>t.transition).filter(Boolean),covered:session.turns.map(t=>t.concept),consecutive_follow_ups:consecutiveFollowUps(session),
     current_question:current?{question:current.question,concept:current.concept,exchanges_so_far:publicExchanges(current),...(grounded?{grading_criteria:current.grading_criteria}: {})}:null,
     history:session.turns.slice(-8).map(t=>({question:t.question,answer:t.transcript,...(grounded?{}:{assessment:t.assessment})})),student_response:transcript})}],
   {operation:'next_question',schemaName:'oral_exam_decision',schema:grounded?grounding.decisionSchema:decisionJsonSchema,contract:transcript===null?(grounded?grounding.groundedDecision:decision):(grounded?grounding.assessmentDecision:assessmentDecision),signal,expiresAt:session.expires_at,validate:value=>{
