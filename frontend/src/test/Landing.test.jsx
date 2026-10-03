@@ -33,23 +33,21 @@ test('the complete story and tool links remain available without browser animati
   expect(document.querySelector('[data-toolkit-story]')).toBeNull();
 });
 
-test('the concept film autoplays and repeats both existing clips without captions', () => {
+test('the new showcase plays as one looping film with its own poster', () => {
   showLanding();
-  const film = () => screen.getByLabelText('EduFusion concept film');
-  expect(film()).toHaveAttribute('src', '/edufusion-preview-1.mp4');
-  expect(film()).toHaveAttribute('autoplay');
-  expect(film().muted).toBe(true);
-  expect(film()).toHaveAttribute('playsinline');
-  expect(film()).toHaveAttribute('controls');
+  const film = screen.getByLabelText('EduFusion product showcase');
+  expect(film).toHaveAttribute('src', '/edufusion-showcase.mp4');
+  expect(film).toHaveAttribute('poster', '/edufusion-showcase-poster.jpg');
+  expect(film).toHaveAttribute('autoplay');
+  expect(film.muted).toBe(true);
+  expect(film).toHaveAttribute('playsinline');
+  expect(film).toHaveAttribute('controls');
+  expect(film).toHaveAttribute('loop');
   expect(document.querySelector('.film-caption')).toBeNull();
   expect(document.querySelector('.story-resolution')).toBeNull();
-  fireEvent.ended(film());
-  expect(film()).toHaveAttribute('src', '/edufusion-preview-2.mp4');
-  fireEvent.ended(film());
-  expect(film()).toHaveAttribute('src', '/edufusion-preview-1.mp4');
 });
 
-test('the concept film pauses offscreen, resumes in view, and keeps cycling', () => {
+test('the showcase pauses offscreen and resumes in view', () => {
   let onIntersection;
   vi.stubGlobal('IntersectionObserver', class {
     constructor(callback) { onIntersection = callback; }
@@ -59,8 +57,8 @@ test('the concept film pauses offscreen, resumes in view, and keeps cycling', ()
   const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
   const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
   showLanding();
-  const film = () => screen.getByLabelText('EduFusion concept film');
-  expect(film()).not.toHaveAttribute('autoplay');
+  const film = screen.getByLabelText('EduFusion product showcase');
+  expect(film).not.toHaveAttribute('autoplay');
   expect(play).not.toHaveBeenCalled();
 
   act(() => onIntersection([{ isIntersecting: true }]));
@@ -70,19 +68,13 @@ test('the concept film pauses offscreen, resumes in view, and keeps cycling', ()
   act(() => onIntersection([{ isIntersecting: true }]));
   expect(play).toHaveBeenCalledTimes(2);
 
-  fireEvent.ended(film());
-  expect(film()).toHaveAttribute('src', '/edufusion-preview-2.mp4');
-  expect(play).toHaveBeenCalledTimes(2);
-  act(() => onIntersection([{ isIntersecting: true }]));
-  expect(play).toHaveBeenCalledTimes(3);
-  fireEvent.ended(film());
-  expect(film()).toHaveAttribute('src', '/edufusion-preview-1.mp4');
+  expect(film).toHaveAttribute('src', '/edufusion-showcase.mp4');
 });
 
 test('media failure returns to the poster and leaves the real tools reachable', () => {
   showLanding();
-  fireEvent.error(screen.getByLabelText('EduFusion concept film'));
-  expect(screen.getByAltText('Concept preview of the EduFusion learning workspace')).toBeVisible();
+  fireEvent.error(screen.getByLabelText('EduFusion product showcase'));
+  expect(screen.getByAltText('EduFusion product showcase poster')).toBeVisible();
   expect(screen.getByLabelText('Explore the connected tools').querySelectorAll('a')).toHaveLength(5);
 });
 

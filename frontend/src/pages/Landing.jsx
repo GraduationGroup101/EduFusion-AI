@@ -96,16 +96,17 @@ const team = [
   "Basem Hamdi Daqarem",
   "Nizar Yousef Alqerem",
 ];
-const CLIPS = ['/edufusion-preview-1.mp4', '/edufusion-preview-2.mp4'];
-/** Media is optional; the complete poster and product links work without it. */
+const SHOWCASE_VIDEO = "/edufusion-showcase.mp4";
+const SHOWCASE_POSTER = "/edufusion-showcase-poster.jpg";
+/** Pause the showcase when it is out of view to avoid unnecessary playback. */
 const PreviewFilm = () => {
   const containerRef = useRef(null);
   const videoRef = useRef(null);
-  const [active, setActive] = useState(0);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     if (failed) return;
     const video = videoRef.current;
+    if (!video) return;
     if (!window.IntersectionObserver) return;
     const observer = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting) video.play()?.catch(() => {});
@@ -113,15 +114,14 @@ const PreviewFilm = () => {
     });
     observer.observe(containerRef.current);
     return () => observer.disconnect();
-  }, [active, failed]);
+  }, [failed]);
   return (
     <div className="story-preview" ref={containerRef}>
       <div className="film-frame">
-        {!failed ? <video key={active} ref={videoRef} src={CLIPS[active]} muted playsInline autoPlay={!window.IntersectionObserver} controls preload="metadata"
-          aria-label="EduFusion concept film" poster="/edufusion-preview-poster.jpg"
+        {!failed ? <video ref={videoRef} src={SHOWCASE_VIDEO} muted playsInline autoPlay={!window.IntersectionObserver} loop controls preload="metadata"
+          aria-label="EduFusion product showcase" poster={SHOWCASE_POSTER}
           onError={() => setFailed(true)}
-          onEnded={() => setActive(current => (current + 1) % CLIPS.length)}
-        /> : <img src="/edufusion-preview-poster.jpg" width="1920" height="1080" loading="lazy" alt="Concept preview of the EduFusion learning workspace" />}
+        /> : <img src={SHOWCASE_POSTER} width="1920" height="1080" loading="lazy" alt="EduFusion product showcase poster" />}
       </div>
     </div>
   );
@@ -323,7 +323,7 @@ export default function Landing() {
          </div>
         </section>
         <section id="preview" className="film-section scroll-story" aria-labelledby="story-title">
-          <div className="site-container story-stage">
+          <div className="story-stage">
             <div className="story-heading">
               <h2 id="story-title">See it all <em>come together.</em></h2>
               <p>From your next question to your next breakthrough. One connected learning space.</p>
