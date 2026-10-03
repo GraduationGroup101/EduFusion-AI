@@ -1,7 +1,12 @@
 const {setTimeout:delay}=require('node:timers/promises');
 
-// Groq's token headers describe a per-minute bucket, not an exam allowance.
-// Waiting for its reset never moves the exam's authoritative deadline.
+// Per-model pacing for the Oral Exam model provider. Requests are serialized
+// per model, and a provider that publishes an OpenAI-compatible token budget in
+// response headers is additionally paced by it. Those headers describe the
+// provider's own window, not an exam allowance, so waiting for a reset never
+// moves the exam's authoritative deadline. A provider that omits them (as
+// OpenRouter does) is paced by the request queue alone and relies on the
+// caller's bounded 429 retry.
 function duration(value){
   if(typeof value!=='string'||! /^(?:\d+(?:\.\d+)?(?:ms|s|m|h))+$/.test(value))return null;
   return [...value.matchAll(/(\d+(?:\.\d+)?)(ms|s|m|h)/g)].reduce((sum,m)=>sum+Number(m[1])*({ms:1,s:1000,m:60000,h:3600000}[m[2]]),0);

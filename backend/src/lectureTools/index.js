@@ -1,9 +1,11 @@
 const { z } = require('zod');
 const { jsonModel } = require('../oralExam/examiner');
+const { groq } = require('../oralExam/modelProvider');
 const { badRequest } = require('../lib/validation');
 
-// Lecture tools reuse the Oral Exam model connection: grounded chat and practice
-// questions over a saved transcript. They need only GROQ_API_KEY, not voice keys.
+// Lecture tools reuse the Oral Exam model transport for grounded chat and
+// practice questions over a saved transcript, but keep their own Groq
+// connection. They need only GROQ_API_KEY, not voice keys.
 const enabled = () => Boolean(process.env.GROQ_API_KEY);
 
 const SYSTEM = `You are EduFusion's lecture study assistant. The lecture transcript excerpts are the only source of truth.
@@ -58,7 +60,7 @@ const answer = async ({ title, transcript, history = [], question, signal }) => 
       history: history.slice(-6).map((m) => ({ role: m.role, content: String(m.content || '').slice(0, 2000) })),
       question,
     }) },
-  ], { operation: 'lecture_chat', schemaName: 'lecture_chat_reply', schema: chatReplyJsonSchema, contract: chatReply, signal });
+  ], { operation: 'lecture_chat', schemaName: 'lecture_chat_reply', schema: chatReplyJsonSchema, contract: chatReply, signal, provider: groq });
   return { answer: reply.answer, sources: reply.quotes, covered: reply.covered };
 };
 
@@ -98,7 +100,7 @@ const generateQuestions = async ({ title, transcript, wanted, language = 'auto',
       counts: { mcq: wanted.mcq, tf: wanted.tf, essay: wanted.essay },
       lecture_title: title, transcript: excerpt(transcript),
     }) },
-  ], { operation: 'lecture_quiz', schemaName: 'lecture_quiz', schema: quizJsonSchema, contract: quiz, signal, validate: (value) => validateQuiz(value, wanted) });
+  ], { operation: 'lecture_quiz', schemaName: 'lecture_quiz', schema: quizJsonSchema, contract: quiz, signal, provider: groq, validate: (value) => validateQuiz(value, wanted) });
   return result.questions;
 };
 

@@ -5,7 +5,7 @@ const {PGlite}=require('@electric-sql/pglite');
 process.env.JWT_SECRET='isolated-browser-fixture-not-a-production-secret';
 process.env.ORAL_EXAM_ENABLED='true';
 process.env.FRONTEND_URL='http://localhost:3110';
-for(const key of ['GROQ_API_KEY','ELEVENLABS_API_KEY','ELEVENLABS_EN_VOICE_ID','ELEVENLABS_AR_VOICE_ID'])process.env[key]='test-only';
+for(const key of ['ORAL_EXAM_API_KEY','ELEVENLABS_API_KEY','ELEVENLABS_EN_VOICE_ID','ELEVENLABS_AR_VOICE_ID'])process.env[key]='test-only';
 const db=require('../src/db');
 const examiner=require('../src/oralExam/examiner');
 const store=require('../src/oralExam/store');
@@ -26,7 +26,7 @@ async function main(){
   let tail=Promise.resolve();db.pool.connect=async()=>{const previous=tail;let release;tail=new Promise(r=>{release=r;});await previous;return {query:db.pool.query,release};};
   await require('./migrate').migrate();
   await database.query("INSERT INTO students(id_student,student_name,pin_hash,pin_format) VALUES(99001,'Browser Test Student','fixture-pin','legacy')");
-  global.fetch=async(url,options)=>{if(!String(url).startsWith('https://api.groq.com/'))throw new Error('Fixture blocks external network');const grounded=JSON.parse(options.body).response_format.json_schema.schema.properties.summary.enum;return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(grounded?{summary:'practice',strength_ids:[],improvement_ids:[]}:{summary:report.summary,strengths:report.strengths,areasForImprovement:report.areasForImprovement})}}]}));};
+  global.fetch=async(url,options)=>{if(url!==require('../src/oralExam/modelProvider').oralExam.endpoint())throw new Error('Fixture blocks external network');const grounded=JSON.parse(options.body).response_format.json_schema.schema.properties.summary.enum;return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(grounded?{summary:'practice',strength_ids:[],improvement_ids:[]}:{summary:report.summary,strengths:report.strengths,areasForImprovement:report.areasForImprovement})}}]}));};
   if(process.env.ORAL_EXAM_FIXTURE_REPORTS==='true'){
     const user={id_student:99001},plan=Array.from({length:5},(_,i)=>({name:['Routing','Switching','Addressing','Forwarding','Default routes'][i],citations:['text-1']}));
     const row=await store.create(user,{source:{kind:'text',digest:'report-fixture'},title:'Networks — report recovery test',context:{chunks:[{id:'text-1',section:'Networks',text:'Routers select paths. Switches connect local devices. Addresses identify destinations. Forwarding uses next hops. Default routes handle other destinations.'}]}},'en',require('node:crypto').randomUUID());

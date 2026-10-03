@@ -18,7 +18,7 @@ const evaluation = z.object({ understanding:score, accuracy:score, completeness:
   strengths:z.array(sentence).max(8), areasForImprovement:z.array(sentence).max(8),
   topicsCovered:z.array(z.string().max(160)).max(40), summary:sentence }).strict();
 // Generate provider contracts from the same Zod definitions used after decoding.
-// Groq strict mode requires every object property and closed nested objects.
+// Strict structured output requires every object property and closed nested objects.
 const providerSchema = contract => {
   const schema=z.toJSONSchema(contract);
   delete schema.$schema;
